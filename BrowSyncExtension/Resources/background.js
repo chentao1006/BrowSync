@@ -1,0 +1,582 @@
+// service-worker.js — BrowSync Chromium Extension background service worker
+// Shared for Chrome, Arc, Edge, Brave
+// MV3 — persistent state in chrome.storage, heartbeat via chrome.alarms
+
+'use strict';
+
+const DAEMON_URL = 'ws://127.0.0.1:62333';
+const BROWSER_ID = 'chrome';   // Will be detected dynamically below
+const HEARTBEAT_ALARM = 'ws-heartbeat';
+const RECONNECT_ALARM = 'browsync-reconnect';
+
+const applyingCookies = new Set();
+
+// ─── Browser detection ────────────────────────────────────────────────────────
+
+function detectBrowserId() {
+  const ua = navigator.userAgent;
+  if (ua.includes('Edg/')) return 'edge';
+  if (ua.includes('Safari/') && !ua.includes('Chrome/')) return 'safari';
+  if (ua.includes('Brave/') || navigator.brave) return 'brave';
+  // Arc detection: check for Arc-specific APIs
+  return 'chrome';
+}
+
+const DETECTED_BROWSER = detectBrowserId();
+const INSTANCE_ID = `${DETECTED_BROWSER}-main`;
+
+// ─── WebSocket management ────────────────────────────────────────────────────
+
+let ws = null;
+let isConnecting = false;
+let reconnectDelay = 1000;
+
+async function connect() {
+  if (isConnecting || (ws && ws.readyState === WebSocket.OPEN)) return;
+  isConnecting = true;
+  await chrome.storage.local.set({ wsState: 'connecting' }).catch(() => { });
+  console.log('[BrowSync] Connecting to daemon... browser:', DETECTED_BROWSER);
+
+  try {
+    ws = new WebSocket(DAEMON_URL);
+  } catch (e) {
+    console.warn('[BrowSync] Failed to create WebSocket:', e);
+    isConnecting = false;
+    await chrome.storage.local.set({ wsState: 'closed' }).catch(() => { });
+    scheduleReconnect();
+    return;
+  }
+
+  ws.onopen = async () => {
+    console.log('[BrowSync] Connected');
+    reconnectDelay = 1000;
+    isConnecting = false;
+    await chrome.storage.local.set({ wsState: 'open' }).catch(() => { });
+
+    send({ type: 'register', browser: DETECTED_BROWSER, instanceId: INSTANCE_ID });
+    send({ type: 'pull' });
+
+    if (chrome.alarms) {
+      await chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
+      await chrome.alarms.clear(RECONNECT_ALARM);
+    }
+  };
+
+  ws.onclose = async () => {
+    console.log('[BrowSync] Disconnected');
+    isConnecting = false;
+    await chrome.storage.local.set({ wsState: 'closed' }).catch(() => { });
+    ws = null;
+    scheduleReconnect();
+  };
+
+  ws.onerror = (e) => console.warn('[BrowSync] WS error:', e);
+
+  ws.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data.trim());
+      handleIncoming(msg);
+    } catch (e) {
+      console.warn('[BrowSync] Parse error:', e);
+    }
+  };
+}
+
+function send(message) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(message));
+  }
+}
+
+function scheduleReconnect() {
+  if (chrome.alarms) {
+    chrome.alarms.create(RECONNECT_ALARM, { delayInMinutes: reconnectDelay / 60000 });
+  } else {
+    setTimeout(connect, reconnectDelay);
+  }
+  reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+}
+
+// ─── Incoming messages ───────────────────────────────────────────────────────
+
+async function handleIncoming(message) {
+  if (!message?.type) return;
+
+  switch (message.type) {
+    case 'sync':
+      await applySync(message);
+      break;
+    case 'ack':
+      // Acknowledged
+      break;
+  }
+}
+
+async function applySync(message) {
+  const { category, payload } = message;
+
+  // Empty payload means it's a pull request from the App
+  if (!payload || (payload.kind === 'raw' && Object.keys(payload.raw || {}).length === 0)) {
+    await handlePullRequest(category);
+    return;
+  }
+
+  switch (category) {
+    case 'bookmarks':
+      console.log(`[BrowSync] Applying ${(payload.bookmarks || []).length} bookmarks...`);
+      await applyBookmarkSync(payload.bookmarks || []);
+      break;
+    case 'localStorage':
+    case 'sessionStorage': {
+      const items = payload[category] || [];
+      if (items.length > 0) {
+        const byOrigin = {};
+        for (const item of items) {
+          if (!item.origin) continue;
+          if (!byOrigin[item.origin]) byOrigin[item.origin] = [];
+          byOrigin[item.origin].push(item);
+          
+          if (item.value !== null) {
+            const tKey = `tombstone_${category}_${item.origin}::${item.key}`;
+            browser.storage.local.remove(tKey).catch(() => {});
+          }
+        }
+        for (const origin of Object.keys(byOrigin)) {
+          const key = `sync_${category}_${origin}`;
+          await browser.storage.local.set({ [key]: byOrigin[origin] });
+        }
+      }
+      await broadcastToContentScripts(category, items, message.site);
+      break;
+    }
+    case 'cookies':
+      await applyCookieSync(payload.cookies || []);
+      break;
+  }
+}
+
+async function handlePullRequest(category) {
+  console.log('[BrowSync] Received pull request for:', category);
+  switch (category) {
+    case 'bookmarks': {
+      if (!chrome.bookmarks) return;
+      const tree = await chrome.bookmarks.getTree();
+      const flat = [];
+      function traverse(nodes) {
+        for (const node of nodes) {
+          if (node.url) flat.push({ id: node.id, title: node.title, url: node.url, isFolder: false, dateAdded: node.dateAdded, sourceBrowser: DETECTED_BROWSER });
+          if (node.children) traverse(node.children);
+        }
+      }
+      traverse(tree);
+      console.log(`[BrowSync] Sending ${flat.length} bookmarks...`);
+      send({
+        type: 'sync', browser: DETECTED_BROWSER, category: 'bookmarks',
+        payload: { kind: 'bookmarks', bookmarks: flat },
+        messageId: crypto.randomUUID(), timestamp: Date.now()
+      });
+      break;
+    }
+    case 'browserData':
+    case 'cookies': {
+      console.log('[BrowSync] Processing full cookie pull request...');
+      if (!chrome.cookies) return;
+      const cookies = await chrome.cookies.getAll({});
+      const mapped = cookies.map(c => ({
+        name: c.name, value: c.value, domain: c.domain, path: c.path,
+        expirationDate: c.expirationDate, secure: c.secure, httpOnly: c.httpOnly, sameSite: c.sameSite
+      }));
+
+      const mappedMap = new Map();
+      mapped.forEach(c => mappedMap.set(`${c.domain}::${c.name}`, c));
+
+      // Include tombstones
+      const allStorage = await browser.storage.local.get(null);
+      for (const [key, value] of Object.entries(allStorage)) {
+        if (key.startsWith('tombstone_cookies_') && value) {
+          const mapKey = `${value.domain}::${value.name}`;
+          if (!mappedMap.has(mapKey)) {
+            mappedMap.set(mapKey, value);
+          }
+        }
+      }
+
+      const allCookies = Array.from(mappedMap.values());
+      // Send in chunks of 100 to avoid WS message size limits
+      console.log(`[BrowSync] Sending ${allCookies.length} cookies (including tombstones)...`);
+      for (let i = 0; i < allCookies.length; i += 100) {
+        const chunk = allCookies.slice(i, i + 100);
+        try {
+          send({
+            type: 'sync', browser: DETECTED_BROWSER, category: 'cookies',
+            payload: { kind: 'cookies', cookies: chunk },
+            messageId: crypto.randomUUID(), timestamp: Date.now()
+          });
+          await new Promise(r => setTimeout(r, 50));
+        } catch (e) {
+          console.error('[BrowSync] Error sending cookie chunk:', e);
+        }
+      }
+      break;
+    }
+    case 'browserState': {
+      if (!chrome.tabs) return;
+      const tabs = await chrome.tabs.query({});
+      console.log(`[BrowSync] Sending ${tabs.length} tabs...`);
+      const mapped = tabs.map(tab => ({
+        id: String(tab.id), url: tab.url, title: tab.title || '', isActive: tab.active,
+        windowId: String(tab.windowId), index: tab.index, favIconURL: tab.favIconUrl,
+        sourceBrowser: DETECTED_BROWSER, capturedAt: Date.now()
+      }));
+      send({
+        type: 'sync', browser: DETECTED_BROWSER, category: 'browserState',
+        payload: { kind: 'tabs', tabs: mapped },
+        messageId: crypto.randomUUID(), timestamp: Date.now()
+      });
+      break;
+    }
+    case 'localStorage': {
+      if (!browser.scripting || !browser.tabs) return;
+      const tabs = await browser.tabs.query({});
+      const allItemsMap = new Map(); // Use Map to deduplicate by key+origin
+
+      // 1. Get from currently open tabs
+      for (const tab of tabs) {
+        if (!tab.id || !tab.url || tab.url.startsWith('chrome') || tab.url.startsWith('about') || tab.url.startsWith('safari-extension')) continue;
+        try {
+          const results = await browser.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: () => {
+              const items = [];
+              for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                items.push({ key, value: localStorage.getItem(key), origin: location.origin });
+              }
+              return items;
+            }
+          });
+          if (results?.[0]?.result) {
+            results[0].result.forEach(item => {
+              allItemsMap.set(`${item.origin}::${item.key}`, item);
+            });
+          }
+        } catch (_) { }
+      }
+
+      // 2. Get from passive backups and tombstones in storage.local
+      const allStorage = await browser.storage.local.get(null);
+      for (const [key, value] of Object.entries(allStorage)) {
+        if (key.startsWith('backup_localStorage_') && Array.isArray(value)) {
+          value.forEach(item => {
+            const mapKey = `${item.origin}::${item.key}`;
+            // Add backup only if not in live tabs
+            if (!allItemsMap.has(mapKey)) {
+              allItemsMap.set(mapKey, { ...item, _isBackup: true });
+            }
+          });
+        }
+      }
+
+      for (const [key, value] of Object.entries(allStorage)) {
+        if (key.startsWith('tombstone_localStorage_') && value) {
+          const mapKey = `${value.origin}::${value.key}`;
+          // If not in live tabs, OR if the current item is just a passive backup, the tombstone overrides it
+          if (!allItemsMap.has(mapKey) || allItemsMap.get(mapKey)._isBackup) {
+            allItemsMap.set(mapKey, value);
+          }
+        }
+      }
+
+      const allItems = Array.from(allItemsMap.values());
+      if (allItems.length === 0) return;
+      console.log(`[BrowSync] Sending ${allItems.length} localStorage items (including backups)...`);
+      for (let i = 0; i < allItems.length; i += 200) {
+        send({
+          type: 'sync', browser: DETECTED_BROWSER, category: 'localStorage',
+          payload: { kind: 'localStorage', localStorage: allItems.slice(i, i + 200) },
+          messageId: crypto.randomUUID(), timestamp: Date.now()
+        });
+      }
+      break;
+    }
+  }
+}
+
+// ─── Bookmarks ───────────────────────────────────────────────────────────────
+
+async function applyBookmarkSync(bookmarks) {
+  if (!chrome.bookmarks) return;
+  for (const bookmark of bookmarks) {
+    if (!bookmark.url || bookmark.isFolder) continue;
+    const existing = await chrome.bookmarks.search({ url: bookmark.url });
+    if (existing.length === 0) {
+      await chrome.bookmarks.create({ title: bookmark.title, url: bookmark.url });
+    }
+  }
+}
+
+if (chrome.bookmarks) {
+  chrome.bookmarks.onCreated.addListener(async (id, bookmark) => {
+    if (!bookmark.url) return;
+    send({
+      type: 'sync',
+      browser: DETECTED_BROWSER,
+      site: safeHostname(bookmark.url),
+      category: 'bookmarks',
+      payload: {
+        kind: 'bookmarks',
+        bookmarks: [{ id, title: bookmark.title, url: bookmark.url, isFolder: false, dateAdded: Date.now(), sourceBrowser: DETECTED_BROWSER }]
+      },
+      messageId: crypto.randomUUID(),
+      timestamp: Date.now(),
+    });
+  });
+
+  chrome.bookmarks.onRemoved.addListener((id) => {
+    send({
+      type: 'sync',
+      browser: DETECTED_BROWSER,
+      category: 'bookmarks_removed',
+      payload: { kind: 'bookmarks_removed', id },
+      messageId: crypto.randomUUID(),
+      timestamp: Date.now(),
+    });
+  });
+}
+
+// ─── Cookies ─────────────────────────────────────────────────────────────────
+
+if (browser.cookies) {
+  browser.cookies.onChanged.addListener(({ cookie, removed, cause }) => {
+    if (cause !== 'explicit' && cause !== 'overwrite') return;
+
+    const cookieKey = `${cookie.domain}::${cookie.name}`;
+    if (applyingCookies.has(cookieKey)) return;
+
+    const payloadCookie = {
+      name: cookie.name,
+      value: cookie.value,
+      domain: cookie.domain,
+      path: cookie.path,
+      expirationDate: cookie.expirationDate,
+      secure: cookie.secure,
+      httpOnly: cookie.httpOnly,
+      sameSite: cookie.sameSite,
+      removed: removed
+    };
+
+    const tKey = `tombstone_cookies_${cookie.domain}::${cookie.name}`;
+    if (removed) {
+      browser.storage.local.set({ [tKey]: { ...payloadCookie, timestamp: Date.now() } }).catch(() => { });
+    } else {
+      browser.storage.local.remove(tKey).catch(() => { });
+    }
+
+    send({
+      type: 'sync',
+      browser: DETECTED_BROWSER,
+      site: cookie.domain,
+      category: 'cookies',
+      payload: {
+        kind: 'cookies',
+        cookies: [payloadCookie]
+      },
+      messageId: crypto.randomUUID(),
+      timestamp: Date.now(),
+    });
+  });
+}
+
+async function applyCookieSync(cookies) {
+  console.log(`[BrowSync] Applying ${cookies.length} cookies...`);
+  let successCount = 0;
+  let failCount = 0;
+  if (!browser.cookies) return;
+  for (const cookie of cookies) {
+    const baseDomain = cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain;
+    // Always use https — Safari rejects http cookies for secure contexts
+    const url = `https://${baseDomain}${cookie.path}`;
+
+    const cookieKey = `${cookie.domain}::${cookie.name}`;
+    applyingCookies.add(cookieKey);
+
+    if (cookie.removed) {
+      try {
+        await browser.cookies.remove({ url, name: cookie.name });
+        successCount++;
+      } catch (e) {
+        failCount++;
+      }
+      setTimeout(() => applyingCookies.delete(cookieKey), 1000);
+      continue;
+    } else {
+      const tKey = `tombstone_cookies_${cookie.domain}::${cookie.name}`;
+      browser.storage.local.remove(tKey).catch(() => { });
+    }
+
+    const base = {
+      url,
+      name: cookie.name,
+      value: cookie.value,
+      path: cookie.path,
+      expirationDate: cookie.expirationDate,
+      httpOnly: cookie.httpOnly,
+    };
+    // Only include sameSite if it's a known valid value — Safari rejects 'unspecified'
+    const validSameSite = ['no_restriction', 'lax', 'strict'];
+    if (cookie.sameSite && validSameSite.includes(cookie.sameSite)) {
+      base.sameSite = cookie.sameSite;
+    }
+
+    const cleanDomain = cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain;
+    const baseOpts = { ...base, secure: cookie.secure };
+    if (baseOpts.sameSite === 'no_restriction') baseOpts.secure = true;
+
+    const strategies = cookie.domain.startsWith('.')
+      ? [
+          { ...baseOpts, domain: cleanDomain },
+          { ...baseOpts, domain: cookie.domain },
+          { ...baseOpts },
+          { ...baseOpts, secure: !baseOpts.secure, domain: cleanDomain }
+        ]
+      : [
+          { ...baseOpts },
+          { ...baseOpts, domain: cleanDomain },
+          { ...baseOpts, secure: !baseOpts.secure }
+        ];
+
+    let ok = false;
+    for (const opts of strategies) {
+      try {
+        const result = await browser.cookies.set(opts);
+        if (result) { ok = true; break; }
+      } catch (_) { }
+    }
+    if (ok) {
+      successCount++;
+    } else {
+      failCount++;
+      console.warn(`[BrowSync] Failed to set cookie: ${cookie.name} @ ${cookie.domain} secure=${cookie.secure} httpOnly=${cookie.httpOnly} sameSite=${cookie.sameSite}`);
+    }
+    setTimeout(() => applyingCookies.delete(cookieKey), 1000);
+  }
+  console.log(`[BrowSync] Cookie sync done: ${successCount} set, ${failCount} failed`);
+}
+
+// ─── Content script relay (localStorage / sessionStorage) ───────────────────
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  (async () => {
+    if (message.source !== 'browsync-content') return;
+    if (message.type === 'backup_storage') {
+      const { storageType, items } = message;
+      if (!items || items.length === 0) return;
+      const origin = items[0].origin;
+      if (!origin) return;
+      const key = `backup_${storageType}_${origin}`;
+      await browser.storage.local.set({ [key]: items });
+      console.log(`[BrowSync] Passively accumulated ${items.length} ${storageType} items for ${origin}`);
+      return;
+    }
+
+    if (message.type !== 'storage_change') return;
+
+    // Record tombstones for deleted items
+    for (const item of message.items) {
+      const tKey = `tombstone_${message.storageType}_${item.origin}::${item.key}`;
+      if (item.value === null || item.key === '__clear__') {
+        await browser.storage.local.set({ [tKey]: { ...item, timestamp: Date.now() } });
+      } else {
+        await browser.storage.local.remove(tKey).catch(() => {});
+      }
+    }
+
+    send({
+      type: 'sync',
+      browser: DETECTED_BROWSER,
+      site: sender.tab?.url ? safeHostname(sender.tab.url) : '*',
+      category: message.storageType,
+      payload: {
+        kind: message.storageType,
+        [message.storageType]: message.items,
+      },
+      messageId: crypto.randomUUID(),
+      timestamp: Date.now(),
+    });
+    sendResponse({ ok: true });
+  })();
+  return true;
+});
+
+async function broadcastToContentScripts(category, items, site) {
+  if (!chrome.tabs) return;
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    if (!tab.url || !tab.id) continue;
+    if (site && site !== '*' && safeHostname(tab.url) !== site) continue;
+    try {
+      await chrome.tabs.sendMessage(tab.id, {
+        source: 'browsync-background',
+        type: 'apply_storage',
+        storageType: category,
+        items,
+      });
+    } catch (_) { }
+  }
+}
+
+// ─── Tabs ────────────────────────────────────────────────────────────────────
+
+if (chrome.tabs) {
+  chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (changeInfo.status !== 'complete' || !tab.url) return;
+    send({
+      type: 'sync',
+      browser: DETECTED_BROWSER,
+      site: safeHostname(tab.url),
+      category: 'browserState',
+      payload: {
+        kind: 'tabs',
+        tabs: [{
+          id: String(tabId),
+          url: tab.url,
+          title: tab.title || '',
+          isActive: tab.active,
+          windowId: String(tab.windowId),
+          index: tab.index,
+          favIconURL: tab.favIconUrl,
+          sourceBrowser: DETECTED_BROWSER,
+          capturedAt: Date.now(),
+        }]
+      },
+      messageId: crypto.randomUUID(),
+      timestamp: Date.now(),
+    });
+  });
+}
+
+// ─── Alarms ──────────────────────────────────────────────────────────────────
+
+if (chrome.alarms) {
+  chrome.alarms.onAlarm.addListener(async (alarm) => {
+    if (alarm.name === HEARTBEAT_ALARM) {
+      send({ type: 'heartbeat', timestamp: Date.now() });
+    } else if (alarm.name === RECONNECT_ALARM) {
+      await connect();
+    }
+  });
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function safeHostname(urlStr) {
+  try { return new URL(urlStr).hostname; } catch { return '*'; }
+}
+
+// ─── Startup ─────────────────────────────────────────────────────────────────
+
+chrome.runtime.onStartup.addListener(() => {
+  chrome.storage.local.set({ wsState: 'closed' }).catch(() => { }).then(() => connect());
+});
+chrome.runtime.onInstalled.addListener(() => connect());
+connect();

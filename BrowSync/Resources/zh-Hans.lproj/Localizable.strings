@@ -1,0 +1,148 @@
+/* Localizable.strings (简体中文) */
+
+/* Tab labels */
+"Browsers" = "浏览器";
+"Rules" = "规则";
+"Sync" = "同步";
+"General" = "通用";
+"About" = "关于";
+
+/* Browser status */
+"Not Installed" = "未安装";
+"Extension Required" = "需要安装扩展";
+"Extension Disabled" = "扩展已禁用";
+"Waiting Connection" = "等待连接";
+"Connected" = "已连接";
+"Not installed" = "未安装";
+
+/* Browsers view */
+"Browser detection and extension status" = "浏览器检测与扩展状态";
+"Refresh" = "刷新";
+"Install Extension" = "安装扩展";
+"Enable" = "启用";
+
+/* Rules view */
+"Route URLs to specific browsers based on domain, pattern, or source app" = "根据域名、URL 规则或来源应用将链接路由到指定浏览器";
+"Add Rule" = "添加规则";
+"No Rules" = "暂无规则";
+"Add rules to automatically route URLs to specific browsers based on domain, URL pattern, or source app." = "添加规则，自动根据域名、URL 规律或来源应用将链接路由到指定浏览器。";
+"Add First Rule" = "添加第一条规则";
+"Unnamed Rule" = "未命名规则";
+"Default" = "默认";
+"All other URLs" = "其他所有链接";
+"No conditions set" = "未设置条件";
+"All Others" = "其他所有";
+
+/* Rule edit */
+"New Rule" = "新建规则";
+"Edit Rule" = "编辑规则";
+"Cancel" = "取消";
+"Save" = "保存";
+"Name" = "名称";
+"e.g. Work Docs" = "例如：工作文档";
+"Conditions" = "条件";
+"Domains" = "域名";
+"chatgpt.com, *.github.com" = "chatgpt.com, *.github.com";
+"URL Contains" = "URL 包含";
+"/docs/, ?ref=slack" = "/docs/, ?ref=slack";
+"Source App" = "来源应用";
+"Time Range" = "时间段";
+"From" = "从";
+"To" = "到";
+"Open In" = "在以下浏览器中打开";
+"Browser" = "浏览器";
+"Profile" = "配置文件";
+
+/* Sync view */
+"Last synced %@" = "上次同步：%@";
+"Never synced" = "从未同步";
+"Syncing…" = "同步中…";
+"Sync Now" = "立即同步";
+"Primary Browser" = "主浏览器";
+"The primary source of truth for conflict resolution" = "冲突解决时的主要数据源";
+"Conflict Strategy" = "冲突策略";
+"How to resolve conflicting data between browsers" = "如何解决浏览器之间的数据冲突";
+"What to Sync" = "同步内容";
+"Automatic" = "自动";
+"Off by default" = "默认关闭";
+
+/* Sync categories */
+"Bookmarks" = "书签";
+"Browser State" = "浏览器状态";
+"Browser Data" = "浏览器数据";
+"History" = "历史记录";
+"Bookmarks, folders, and favorites" = "书签、文件夹和收藏夹结构";
+"Current URL, tabs, and active tab" = "当前 URL、标签页和活动标签";
+"Cookies, localStorage, sessionStorage" = "Cookie、localStorage 和 sessionStorage";
+"URLs, titles, visit times and counts" = "URL、标题、访问时间和次数";
+
+/* Conflict strategies */
+"Primary Wins" = "主浏览器优先";
+"Latest Wins" = "最新版本优先";
+"Merge" = "合并";
+
+/* PRO features */
+"Automatic Sync" = "自动同步";
+"Sync automatically whenever changes are detected" = "检测到变化时自动同步";
+"iCloud Sync" = "iCloud 同步";
+"Keep sync data in iCloud across your Macs" = "在多台 Mac 之间通过 iCloud 保持同步数据";
+
+/* General view */
+"App Behavior" = "应用行为";
+"Launch at Login" = "登录时启动";
+"Start Background Service" = "启动后台服务";
+"Appearance" = "外观";
+"Menu Bar Icon" = "菜单栏图标";
+"Always Visible" = "始终显示";
+"Hide When Connected" = "已连接时隐藏";
+"Hidden" = "隐藏";
+"Theme" = "主题";
+"System" = "跟随系统";
+"Light" = "浅色";
+"Dark" = "深色";
+"Language" = "语言";
+"Language change takes effect after restart." = "语言更改将在重启后生效。";
+"Default Browser" = "默认浏览器";
+"Set BrowSync as Default Browser" = "将 BrowSync 设为默认浏览器";
+"BrowSync will receive all http/https links and route them using your rules" = "BrowSync 将接管所有 http/https 链接，并通过您的规则路由到指定浏览器";
+"Restore Safari" = "恢复 Safari";
+"Set as Default" = "设为默认";
+"Notifications" = "通知";
+"Sync Complete" = "同步完成";
+"Browser Connected" = "浏览器已连接";
+"Rule Match" = "规则匹配";
+"Updates" = "更新";
+"Automatically check for updates" = "自动检查更新";
+"Powered by Sparkle (coming soon)" = "由 Sparkle 驱动（即将推出）";
+
+/* About view */
+"同览" = "同览";
+"Links" = "链接";
+"Website" = "官网";
+"Privacy Policy" = "隐私政策";
+"Support" = "支持";
+"Diagnostics" = "诊断";
+"Open Logs" = "打开日志";
+"Export Diagnostics" = "导出诊断报告";
+"Diagnostics Exported" = "诊断报告已导出";
+"Diagnostic report saved successfully." = "诊断报告已成功保存。";
+"Show in Finder" = "在访达中显示";
+"OK" = "确定";
+"Made with ♥ for multi-browser workflows" = "为多浏览器工作流而生 ♥";
+"All rights reserved." = "保留所有权利。";
+
+/* Menu bar */
+"Open BrowSync" = "打开 BrowSync";
+"Quit" = "退出";
+
+/* Notifications */
+"Synced: %@" = "已同步：%@";
+"%@ is now connected to BrowSync" = "%@ 已连接到 BrowSync";
+"Rule Matched" = "规则匹配";
+"'%@' → %@: %@" = "「%@」→ %@：%@";
+
+/* Focus modes */
+"Work" = "工作";
+"AI" = "AI";
+"Entertainment" = "娱乐";
+"Deep Focus" = "深度专注";

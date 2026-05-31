@@ -1,0 +1,30 @@
+{
+  "extensionName": {
+    "message": "BrowSync",
+    "description": "Extension name"
+  },
+  "extensionDescription": {
+    "message": "Multi-browser collaboration powered by BrowSync. Sync bookmarks, cookies, and storage across Safari, Chrome, Arc, Edge, and Brave.",
+    "description": "Extension description"
+  },
+  "connected": {
+    "message": "Connected to BrowSync",
+    "description": "Status: connected"
+  },
+  "disconnected": {
+    "message": "Disconnected",
+    "description": "Status: disconnected"
+  },
+  "syncBookmarks": {
+    "message": "Bookmarks",
+    "description": "Sync toggle label"
+  },
+  "syncCookies": {
+    "message": "Cookies",
+    "description": "Sync toggle label"
+  },
+  "openApp": {
+    "message": "Open BrowSync App",
+    "description": "Button to open the main app"
+  }
+}

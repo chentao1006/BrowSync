@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- App Sandbox is DISABLED for direct distribution -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+    <!-- App Group for sharing with Safari extension -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.com.ct106.browsync</string>
+    </array>
+</dict>
+</plist>

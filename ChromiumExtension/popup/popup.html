@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>BrowSync</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 280px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #1a1a2e;
+      color: #e8e8f0;
+    }
+    .header {
+      padding: 16px;
+      background: linear-gradient(135deg, #16213e 0%, #0f3460 100%);
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .header-top {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .logo {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #4facfe, #00f2fe);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+    .app-name {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .app-subtitle {
+      font-size: 11px;
+      color: rgba(255,255,255,0.5);
+    }
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ff4444;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .status-dot.connected {
+      background: #4ade80;
+      box-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
+    }
+    .status-text {
+      color: rgba(255,255,255,0.7);
+    }
+    .section {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.4);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+    }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 0;
+    }
+    .toggle-label {
+      font-size: 13px;
+      color: rgba(255,255,255,0.85);
+    }
+    .toggle {
+      position: relative;
+      width: 36px;
+      height: 20px;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute;
+      inset: 0;
+      background: rgba(255,255,255,0.15);
+      border-radius: 20px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .slider::before {
+      content: '';
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: white;
+      left: 3px;
+      top: 3px;
+      transition: transform 0.2s;
+    }
+    input:checked + .slider { background: #4facfe; }
+    input:checked + .slider::before { transform: translateX(16px); }
+    .footer {
+      padding: 10px 16px;
+      text-align: center;
+    }
+    .open-app-btn {
+      width: 100%;
+      padding: 8px;
+      background: linear-gradient(135deg, #4facfe, #00f2fe);
+      color: #000;
+      font-weight: 600;
+      font-size: 13px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .open-app-btn:hover { opacity: 0.85; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-top">
+      <div class="logo">🔄</div>
+      <div>
+        <div class="app-name">BrowSync</div>
+        <div class="app-subtitle">同览</div>
+      </div>
+    </div>
+    <div class="status-row">
+      <div class="status-dot" id="statusDot"></div>
+      <span class="status-text" id="statusText">Connecting...</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Sync</div>
+    <div class="toggle-row">
+      <span class="toggle-label">Bookmarks</span>
+      <label class="toggle">
+        <input type="checkbox" id="syncBookmarks" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="toggle-row">
+      <span class="toggle-label">Cookies</span>
+      <label class="toggle">
+        <input type="checkbox" id="syncCookies" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="toggle-row">
+      <span class="toggle-label">localStorage</span>
+      <label class="toggle">
+        <input type="checkbox" id="syncLocalStorage" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="toggle-row">
+      <span class="toggle-label">sessionStorage</span>
+      <label class="toggle">
+        <input type="checkbox" id="syncSessionStorage" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="footer">
+    <button class="open-app-btn" id="openApp">Open BrowSync App</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

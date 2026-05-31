@@ -1,0 +1,102 @@
+name: BrowSync
+options:
+  bundleIdPrefix: com.ct106
+  deploymentTarget:
+    macOS: "14.0"
+  defaultConfig: Debug
+  xcodeVersion: "15"
+  generateEmptyDirectories: true
+
+settings:
+  SWIFT_VERSION: "5.10"
+  MACOSX_DEPLOYMENT_TARGET: "14.0"
+  ENABLE_HARDENED_RUNTIME: YES
+  SWIFT_STRICT_CONCURRENCY: minimal
+
+configs:
+  Debug: debug
+  Release: release
+
+targets:
+
+  # ─── Main App ───────────────────────────────────────────────────────────────
+
+  BrowSync:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+
+    info:
+      path: BrowSync/Resources/Info.plist
+
+    sources:
+      - path: BrowSync
+        excludes:
+          - "Resources/Info.plist"
+
+    resources:
+      - path: BrowSync/Resources
+        excludes:
+          - "Info.plist"
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ct106.browsync
+        PRODUCT_NAME: BrowSync
+        INFOPLIST_FILE: BrowSync/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: BrowSync.entitlements
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic
+        APPLICATION_EXTENSION_API_ONLY: NO
+        SWIFT_EMIT_LOC_STRINGS: YES
+
+    dependencies:
+      - target: BrowSyncExtension
+
+  # ─── Safari Web Extension ────────────────────────────────────────────────────
+
+  BrowSyncExtension:
+    type: app-extension
+    platform: macOS
+    deploymentTarget: "14.0"
+
+    info:
+      path: BrowSyncExtension/Info.plist
+      properties:
+        CFBundleIdentifier: com.ct106.browsync.extension
+        CFBundleName: BrowSyncExtension
+        CFBundleDisplayName: BrowSync Extension
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.Safari.web-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SafariWebExtensionHandler
+        NSHumanReadableCopyright: "© 2026 BrowSync"
+        LSMinimumSystemVersion: "14.0"
+
+    sources:
+      - BrowSyncExtension/SafariWebExtensionHandler.swift
+      - BrowSyncExtension/Resources
+
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ct106.browsync.extension
+        CODE_SIGN_ENTITLEMENTS: BrowSyncExtension.entitlements
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_EMIT_LOC_STRINGS: YES
+
+schemes:
+  BrowSync:
+    build:
+      targets:
+        BrowSync: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    archive:
+      config: Release
+    analyze:
+      config: Debug

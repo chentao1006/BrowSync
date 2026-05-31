@@ -1,0 +1,152 @@
+/* Localizable.strings (English) */
+
+/* Tab labels */
+"Browsers" = "Browsers";
+"Rules" = "Rules";
+"Sync" = "Sync";
+"General" = "General";
+"About" = "About";
+
+/* Browser status */
+"Not Installed" = "Not Installed";
+"Extension Required" = "Extension Required";
+"Extension Disabled" = "Extension Disabled";
+"Waiting Connection" = "Waiting Connection";
+"Connected" = "Connected";
+"Not installed" = "Not installed";
+
+/* Browsers view */
+"Browser detection and extension status" = "Browser detection and extension status";
+"Refresh" = "Refresh";
+"Install Extension" = "Install Extension";
+"Enable" = "Enable";
+
+/* Rules view */
+"Route URLs to specific browsers based on domain, pattern, or source app" = "Route URLs to specific browsers based on domain, pattern, or source app";
+"Add Rule" = "Add Rule";
+"No Rules" = "No Rules";
+"Add rules to automatically route URLs to specific browsers based on domain, URL pattern, or source app." = "Add rules to automatically route URLs to specific browsers based on domain, URL pattern, or source app.";
+"Add First Rule" = "Add First Rule";
+"Unnamed Rule" = "Unnamed Rule";
+"Default" = "Default";
+"All other URLs" = "All other URLs";
+"No conditions set" = "No conditions set";
+"All Others" = "All Others";
+
+/* Rule edit */
+"New Rule" = "New Rule";
+"Edit Rule" = "Edit Rule";
+"Cancel" = "Cancel";
+"Save" = "Save";
+"Name" = "Name";
+"e.g. Work Docs" = "e.g. Work Docs";
+"Conditions" = "Conditions";
+"Domains" = "Domains";
+"chatgpt.com, *.github.com" = "chatgpt.com, *.github.com";
+"URL Contains" = "URL Contains";
+"/docs/, ?ref=slack" = "/docs/, ?ref=slack";
+"Source App" = "Source App";
+"Time Range" = "Time Range";
+"From" = "From";
+"To" = "To";
+"Open In" = "Open In";
+"Browser" = "Browser";
+"Default" = "Default";
+"Profile" = "Profile";
+
+/* Sync view */
+"Last synced %@" = "Last synced %@";
+"Never synced" = "Never synced";
+"Syncing…" = "Syncing…";
+"Sync Now" = "Sync Now";
+"Primary Browser" = "Primary Browser";
+"The primary source of truth for conflict resolution" = "The primary source of truth for conflict resolution";
+"Conflict Strategy" = "Conflict Strategy";
+"How to resolve conflicting data between browsers" = "How to resolve conflicting data between browsers";
+"What to Sync" = "What to Sync";
+"Automatic" = "Automatic";
+"Off by default" = "Off by default";
+
+/* Sync categories */
+"Bookmarks" = "Bookmarks";
+"Browser State" = "Browser State";
+"Browser Data" = "Browser Data";
+"History" = "History";
+"Bookmarks, folders, and favorites" = "Bookmarks, folders, and favorites";
+"Current URL, tabs, and active tab" = "Current URL, tabs, and active tab";
+"Cookies, localStorage, sessionStorage" = "Cookies, localStorage, sessionStorage";
+"URLs, titles, visit times and counts" = "URLs, titles, visit times and counts";
+
+/* Conflict strategies */
+"Primary Wins" = "Primary Wins";
+"Latest Wins" = "Latest Wins";
+"Merge" = "Merge";
+
+/* PRO features */
+"Automatic Sync" = "Automatic Sync";
+"Sync automatically whenever changes are detected" = "Sync automatically whenever changes are detected";
+"iCloud Sync" = "iCloud Sync";
+"Keep sync data in iCloud across your Macs" = "Keep sync data in iCloud across your Macs";
+
+/* General view */
+"App Behavior" = "App Behavior";
+"Launch at Login" = "Launch at Login";
+"Start Background Service" = "Start Background Service";
+"Appearance" = "Appearance";
+"Menu Bar Icon" = "Menu Bar Icon";
+"Always Visible" = "Always Visible";
+"Hide When Connected" = "Hide When Connected";
+"Hidden" = "Hidden";
+"Theme" = "Theme";
+"System" = "System";
+"Light" = "Light";
+"Dark" = "Dark";
+"Language" = "Language";
+"Language change takes effect after restart." = "Language change takes effect after restart.";
+"English" = "English";
+"Default Browser" = "Default Browser";
+"Set BrowSync as Default Browser" = "Set BrowSync as Default Browser";
+"BrowSync will receive all http/https links and route them using your rules" = "BrowSync will receive all http/https links and route them using your rules";
+"Restore Safari" = "Restore Safari";
+"Set as Default" = "Set as Default";
+"Notifications" = "Notifications";
+"Sync Complete" = "Sync Complete";
+"Browser Connected" = "Browser Connected";
+"Rule Match" = "Rule Match";
+"Updates" = "Updates";
+"Automatically check for updates" = "Automatically check for updates";
+"Powered by Sparkle (coming soon)" = "Powered by Sparkle (coming soon)";
+
+/* About view */
+"同览" = "同览";
+"Links" = "Links";
+"Website" = "Website";
+"Privacy Policy" = "Privacy Policy";
+"Support" = "Support";
+"Diagnostics" = "Diagnostics";
+"Open Logs" = "Open Logs";
+"Export Diagnostics" = "Export Diagnostics";
+"Diagnostics Exported" = "Diagnostics Exported";
+"Diagnostic report saved successfully." = "Diagnostic report saved successfully.";
+"Show in Finder" = "Show in Finder";
+"OK" = "OK";
+"Made with ♥ for multi-browser workflows" = "Made with ♥ for multi-browser workflows";
+"All rights reserved." = "All rights reserved.";
+
+/* Menu bar */
+"Open BrowSync" = "Open BrowSync";
+"Quit" = "Quit";
+
+/* Notifications */
+"Sync Complete" = "Sync Complete";
+"Synced: %@" = "Synced: %@";
+"Browser Connected" = "Browser Connected";
+"%@ is now connected to BrowSync" = "%@ is now connected to BrowSync";
+"Rule Matched" = "Rule Matched";
+"'%@' → %@: %@" = "'%@' → %@: %@";
+
+/* Focus modes */
+"Work" = "Work";
+"AI" = "AI";
+"Entertainment" = "Entertainment";
+"Deep Focus" = "Deep Focus";

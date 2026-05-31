@@ -1,0 +1,177 @@
+// SettingsService.swift
+// BrowSync — App settings persistence
+
+import Foundation
+import ServiceManagement
+import os.log
+
+// MARK: - General Settings
+
+struct GeneralSettings: Codable, Equatable {
+    var launchAtLogin: Bool = false
+    var startBackgroundService: Bool = true
+    var menuBarMode: MenuBarMode = .alwaysVisible
+    var theme: AppTheme = .system
+    var language: AppLanguage = .system
+    var isDefaultBrowser: Bool = false
+
+    // Notifications
+    var notifySyncComplete: Bool = true
+    var notifyBrowserConnected: Bool = true
+    var notifyRuleMatch: Bool = false
+
+    // Auto update (Sparkle placeholder)
+    var autoUpdate: Bool = true
+}
+
+enum MenuBarMode: String, CaseIterable, Codable, Identifiable {
+    case alwaysVisible = "always_visible"
+    case hideWhenConnected = "hide_when_connected"
+    case hidden = "hidden"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .alwaysVisible: return String(localized: "Always Visible")
+        case .hideWhenConnected: return String(localized: "Hide When Connected")
+        case .hidden: return String(localized: "Hidden")
+        }
+    }
+}
+
+enum AppTheme: String, CaseIterable, Codable, Identifiable {
+    case system = "system"
+    case light = "light"
+    case dark = "dark"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .system: return String(localized: "System")
+        case .light: return String(localized: "Light")
+        case .dark: return String(localized: "Dark")
+        }
+    }
+}
+
+enum AppLanguage: String, CaseIterable, Codable, Identifiable {
+    case system = "system"
+    case english = "en"
+    case chineseSimplified = "zh-Hans"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .system: return String(localized: "System")
+        case .english: return "English"
+        case .chineseSimplified: return "简体中文"
+        }
+    }
+}
+
+// MARK: - Settings Service
+
+@MainActor
+final class SettingsService: ObservableObject {
+    private let logger = Logger(subsystem: "com.ct106.browsync", category: "SettingsService")
+    private let settingsURL: URL
+
+    @Published var general: GeneralSettings = GeneralSettings()
+    @Published var syncSettings: SyncSettings = SyncSettings()
+    @Published var rules: [BrowserRule] = []
+
+    init() {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let browsyncDir = appSupport.appendingPathComponent("BrowSync")
+        try? FileManager.default.createDirectory(at: browsyncDir, withIntermediateDirectories: true)
+        settingsURL = browsyncDir.appendingPathComponent("settings.json")
+        load()
+    }
+
+    // MARK: - Persistence
+
+    func load() {
+        guard let data = try? Data(contentsOf: settingsURL) else {
+            logger.info("No settings file found, using defaults")
+            return
+        }
+        do {
+            let saved = try JSONDecoder().decode(SettingsBundle.self, from: data)
+            general = saved.general
+            syncSettings = saved.sync
+            rules = saved.rules
+            // Migration: add any new defaultEnabled categories not in saved settings
+            let allDefault = Set(SyncCategory.allCases.filter { $0.defaultEnabled })
+            let missing = allDefault.subtracting(syncSettings.enabledCategories)
+            if !missing.isEmpty {
+                syncSettings.enabledCategories.formUnion(missing)
+                logger.info("Migrated new sync categories: \(missing.map(\.rawValue).joined(separator: ", "))")
+                save()
+            }
+        } catch {
+            logger.error("Failed to load settings: \(error)")
+        }
+    }
+
+    func save() {
+        do {
+            let bundle = SettingsBundle(general: general, sync: syncSettings, rules: rules)
+            let data = try JSONEncoder().encode(bundle)
+            try data.write(to: settingsURL, options: .atomicWrite)
+        } catch {
+            logger.error("Failed to save settings: \(error)")
+        }
+    }
+
+    // MARK: - Launch at Login
+
+    func applyLaunchAtLogin(_ enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            general.launchAtLogin = enabled
+            save()
+            logger.info("Launch at login: \(enabled)")
+        } catch {
+            logger.error("SMAppService error: \(error)")
+        }
+    }
+
+    // MARK: - Rules
+
+    func addRule(_ rule: BrowserRule) {
+        rules.append(rule)
+        save()
+    }
+
+    func updateRule(_ rule: BrowserRule) {
+        if let idx = rules.firstIndex(where: { $0.id == rule.id }) {
+            rules[idx] = rule
+            save()
+        }
+    }
+
+    func deleteRule(at offsets: IndexSet) {
+        rules.remove(atOffsets: offsets)
+        save()
+    }
+
+    func moveRule(from source: IndexSet, to destination: Int) {
+        rules.move(fromOffsets: source, toOffset: destination)
+        save()
+    }
+}
+
+// MARK: - Settings Bundle (Codable wrapper)
+
+private struct SettingsBundle: Codable {
+    var general: GeneralSettings
+    var sync: SyncSettings
+    var rules: [BrowserRule]
+}

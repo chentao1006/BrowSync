@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "BrowSync",
+  "version": "1.0.0",
+  "description": "__MSG_extensionDescription__",
+  "default_locale": "en",
+
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/content-script.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+
+  "permissions": [
+    "bookmarks",
+    "tabs",
+    "cookies",
+    "storage",
+    "scripting",
+    "alarms",
+    "unlimitedStorage"
+  ],
+
+  "host_permissions": [
+    "<all_urls>"
+  ],
+
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "BrowSync"
+  }
+}
