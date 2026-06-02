@@ -10,8 +10,8 @@ import os.log
 final class BrowserScanner: ObservableObject {
     private let logger = Logger(subsystem: "com.ct106.browsync", category: "BrowserScanner")
 
-    /// The extension ID used by the BrowSync Chromium extension (update after publishing)
-    static let chromiumExtensionID = "browsync-extension-placeholder"
+    /// The extension ID used by the BrowSync Chromium extension (update in AppConfig)
+    static var chromiumExtensionID: String { AppConfig.chromiumExtensionID }
 
     // MARK: - Scan All Browsers
 
@@ -38,11 +38,17 @@ final class BrowserScanner: ObservableObject {
         info.appURL = appURL
         info.version = extractVersion(from: appURL)
 
-        // 2. Check extension status
         if browser == .safari {
             info.extensionStatus = await checkSafariExtensionStatus()
         } else {
             info.extensionStatus = checkChromiumExtensionStatus(for: browser)
+        }
+
+        // 3. Check if default
+        if let defaultURL = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "http://apple.com")!) {
+            if let defaultBundleId = Bundle(url: defaultURL)?.bundleIdentifier {
+                info.isDefault = (defaultBundleId == browser.bundleIdentifier)
+            }
         }
 
         return info

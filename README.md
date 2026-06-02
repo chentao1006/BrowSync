@@ -1,12 +1,30 @@
-# BrowSync（同览）
+# BrowSync
 
-**让多个浏览器协同工作。**
+[English] | [简体中文](README_zh.md)
 
-A macOS native app that makes Safari, Chrome, Arc, Edge, and Brave work together — unified through a local WebSocket daemon with browser extensions, URL routing rules, and cross-browser data sync.
+**BrowSync** is a macOS native app that makes Safari, Chrome, Arc, Edge, and Brave work together. It unifies your browsing experience through a local WebSocket daemon, browser extensions, intelligent URL routing rules, and cross-browser data synchronization.
 
----
+[![Download BrowSync](https://img.shields.io/badge/Download-Latest%20Release-blue?style=for-the-badge&logo=apple)](https://github.com/chentao1006/browsync/releases/latest)
 
-## Requirements
+> [!IMPORTANT]
+> **Privacy First by Design**
+> BrowSync is built on a strict privacy-first architecture. All synchronization and URL routing happen **entirely locally** on your device via a local WebSocket daemon. Your browsing data (history, bookmarks, cookies) **never** leaves your machine, and no external servers or cloud services are involved.
+
+## 🚀 Key Features
+
+- **Intelligent URL Routing**: Register BrowSync as your default macOS browser. Its powerful rule engine automatically directs links to your preferred browser based on domain, URL patterns, query strings, source application, time of day, or Focus mode.
+- **Cross-Browser Synchronization**: Seamlessly sync Cookies, LocalStorage, sessionStorage, Tab states, and Bookmarks across Safari and Chromium-based browsers (Chrome, Arc, Edge, Brave).
+- **Flexible Sync Strategies**: Choose the synchronization logic that fits your workflow:
+  - *Unidirectional (Master-slave)*
+  - *Last-Write-Wins* (based on access time)
+  - *Bidirectional Merging*
+- **Granular Control**: Manage sync scope with whitelist/blacklist rules. Apply per-site policy overrides for ultimate customization.
+- **Local & Secure**: All communication happens entirely on your machine via a local WebSocket daemon (`ws://127.0.0.1:62333`). No external servers are involved.
+- **Native macOS Experience**: Built with SwiftUI. Supports Dark/Light themes, Menu Bar integration, Focus Mode, and Launch at Login.
+
+## 🛠 Installation & Setup
+
+### 1. Requirements
 
 | Tool | Version |
 |------|---------|
@@ -16,9 +34,7 @@ A macOS native app that makes Safari, Chrome, Arc, Edge, and Brave work together
 | Homebrew | Latest |
 | XcodeGen | 2.40+ |
 
----
-
-## Quick Start
+### 2. Quick Start
 
 ```bash
 # 1. Clone the repo
@@ -38,9 +54,7 @@ Then in Xcode:
 2. Set your **Development Team**
 3. Press **⌘R** to build and run
 
----
-
-## Loading the Chromium Extension
+### 3. Loading the Chromium Extension
 
 For Chrome, Arc, Edge, or Brave:
 
@@ -48,13 +62,13 @@ For Chrome, Arc, Edge, or Brave:
 2. Enable **Developer Mode** (top-right toggle)
 3. Click **Load Unpacked**
 4. Select the `ChromiumExtension/` folder
-5. The BrowSync extension icon will appear in the toolbar
+5. The BrowSync extension icon will appear in the toolbar. Safari users can enable the extension directly in Safari Settings.
 
----
+## 🔍 Architecture & Protocol
 
-## Architecture
+### System Architecture
 
-```
+```text
 Safari Extension           Chrome / Arc / Edge / Brave Extension
       │                                    │
       └──────────── WebSocket ─────────────┘
@@ -68,16 +82,11 @@ Safari Extension           Chrome / Arc / Edge / Brave Extension
 
 ### Directory Structure
 
-```
+```text
 BrowSync/
 ├── BrowSync/                   # macOS App (Swift/SwiftUI)
 │   ├── App/                    # Entry point, AppState
 │   ├── Views/                  # 5-tab UI
-│   │   ├── Browsers/           # Tab 1: Browser status
-│   │   ├── Rules/              # Tab 2: URL routing rules
-│   │   ├── Sync/               # Tab 3: Sync settings
-│   │   ├── General/            # Tab 4: App settings
-│   │   └── About/              # Tab 5: About + diagnostics
 │   ├── Core/                   # DaemonServer, BrowserScanner, BrowserLauncher
 │   ├── Models/                 # Data models (Browser, Rule, SyncModels, WSMessage)
 │   ├── Services/               # RulesEngine, SyncService, SettingsService
@@ -107,27 +116,16 @@ BrowSync/
 │
 ├── project.yml                 # XcodeGen configuration
 ├── BrowSync.entitlements       # App entitlements (Sandbox: NO)
-├── BrowSyncExtension.entitlements
 └── setup.sh                    # One-command project setup
 ```
 
----
-
-## WebSocket Protocol
+### WebSocket Protocol
 
 All browser extensions connect to the BrowSync daemon at `ws://127.0.0.1:62333`.
 
-### Registration
-```json
-{ "type": "register", "browser": "chrome", "instanceId": "chrome-main" }
-```
-
-### Heartbeat (every 30s)
-```json
-{ "type": "heartbeat" }
-```
-
-### Sync
+- **Registration**: `{ "type": "register", "browser": "chrome", "instanceId": "chrome-main" }`
+- **Heartbeat (every 30s)**: `{ "type": "heartbeat" }`
+- **Sync**: 
 ```json
 {
   "type": "sync",
@@ -140,11 +138,11 @@ All browser extensions connect to the BrowSync daemon at `ws://127.0.0.1:62333`.
 }
 ```
 
----
+## 📁 Data Directory & Identifiers
 
-## Data Directory
+BrowSync stores its data locally in your Application Support folder:
 
-```
+```text
 ~/Library/Application Support/BrowSync/
 ├── sites/          # Per-site sync state
 ├── bookmarks/      # Synced bookmark snapshots
@@ -153,61 +151,33 @@ All browser extensions connect to the BrowSync daemon at `ws://127.0.0.1:62333`.
 └── settings.json   # All app settings
 ```
 
----
+**Bundle IDs:**
+- App: `com.ct106.browsync`
+- Safari Extension: `com.ct106.browsync.extension`
+- App Group: `group.com.ct106.browsync`
 
-## Bundle IDs
-
-| Target | Bundle ID |
-|--------|-----------|
-| App | `com.ct106.browsync` |
-| Safari Extension | `com.ct106.browsync.extension` |
-| App Group | `group.com.ct106.browsync` |
-
----
-
-## Internationalization
-
-All UI strings use `String(localized:)` and `Localizable.strings`.
-
-| Language | Code |
-|----------|------|
-| English | `en` |
-| 简体中文 | `zh-Hans` |
-
-To add a new language:
-1. Create `BrowSync/Resources/<lang-code>.lproj/Localizable.strings`
-2. Add the language code to `CFBundleLocalizations` in `Info.plist`
-
----
-
-## Feature Status (MVP)
+## 🎯 Feature Status (MVP)
 
 | Feature | Status |
 |---------|--------|
-| Browser detection | ✅ |
-| Browser extension status | ✅ |
+| Browser detection & extension status | ✅ |
 | WebSocket Daemon | ✅ |
+| URL routing rules & Default browser handling | ✅ |
 | Bookmark sync | ✅ |
-| localStorage sync | ✅ |
-| sessionStorage sync | ✅ |
+| localStorage & sessionStorage sync | ✅ |
 | Cookie sync | ✅ |
 | Tab state sync | ✅ |
-| URL routing rules | ✅ |
-| Default browser handling | ✅ |
-| Safari Extension | ✅ |
-| Chrome/Arc/Edge/Brave Extension | ✅ |
-| Launch at Login | ✅ |
-| Menu Bar icon | ✅ |
-| Dark/Light/System theme | ✅ |
-| EN + 简体中文 localization | ✅ |
+| Safari & Chromium Extensions | ✅ |
 | Focus Mode (data + UI) | ✅ |
-| Automatic Sync | 🔜 PRO |
-| iCloud Sync | 🔜 PRO |
-| Sparkle auto-update | 🔜 Phase 2 |
+| Dark/Light/System theme & EN/zh-Hans localization | ✅ |
+| Automatic Sync & iCloud Sync | 🔜 PRO |
 | History sync | ⚠️ Off by default |
 
----
+## ⚠️ Important Notes
 
-## License
+- **Default Browser**: To utilize the URL routing feature, BrowSync must be set as your default system browser in macOS Settings.
+- **History Sync**: History synchronization is currently disabled by default for performance and privacy considerations.
+
+## 🛡 License
 
 © 2026 BrowSync. All rights reserved.

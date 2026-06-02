@@ -11,6 +11,7 @@ struct Bookmark: Identifiable, Codable, Equatable {
     var url: String??
     var parentId: String?
     var isFolder: Bool
+    var inBookmarksBar: Bool? // True if it belongs to the Favorites/Bookmarks Bar
     var dateAdded: Date
     var dateModified: Date?
     var sourceBrowser: Browser
@@ -128,19 +129,106 @@ enum ConflictStrategy: String, CaseIterable, Codable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .primaryWins: return String(localized: "Primary Wins")
+        case .primaryWins: return String(localized: "以指定源为准")
         case .latestWins: return String(localized: "Latest Wins")
         case .merge: return String(localized: "Merge")
         }
     }
 }
 
+// MARK: - Bookmark Sync Strategy
+
+enum BookmarkSyncStrategy: String, CaseIterable, Codable, Identifiable {
+    case oneWay = "one_way"
+    case twoWayMerge = "two_way_merge"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .oneWay: return String(localized: "以指定源为主 (单向同步)")
+        case .twoWayMerge: return String(localized: "双向合并")
+        }
+    }
+}
+
+// MARK: - Browser Data Sync Strategy
+
+enum BrowserDataSyncStrategy: String, CaseIterable, Codable, Identifiable {
+    case primaryWins = "primary_wins"
+    case latestWins = "latest_wins"
+    case twoWayMerge = "two_way_merge"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .primaryWins: return String(localized: "以指定源为准 (单向)")
+        case .latestWins: return String(localized: "最近活动为准")
+        case .twoWayMerge: return String(localized: "双向合并")
+        }
+    }
+}
+
+// MARK: - Website List Policy
+
+enum WebsiteListPolicy: String, CaseIterable, Codable, Identifiable {
+    case allowList = "allow_list"
+    case blockList = "block_list"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .allowList: return String(localized: "仅同步列出的网站")
+        case .blockList: return String(localized: "排除列出的网站")
+        }
+    }
+}
+
+// MARK: - Website Sync Setting
+
+struct WebsiteSyncSetting: Codable, Identifiable, Equatable {
+    var id: UUID = UUID()
+    var domain: String
+    var strategy: BrowserDataSyncStrategy? // nil means use default
+    var sourceBrowser: Browser? // nil means use default
+}
+
 // MARK: - Sync Settings
 
 struct SyncSettings: Codable, Equatable {
-    var primaryBrowser: Browser = .safari
     var conflictStrategy: ConflictStrategy = .primaryWins
+    var bookmarkSyncStrategy: BookmarkSyncStrategy = .twoWayMerge
+    var bookmarkSourceBrowser: Browser = .safari
+    
+    // Browser Data (Cookies & LocalStorage) Settings
+    var browserDataSyncStrategy: BrowserDataSyncStrategy = .latestWins
+    var stateSourceBrowser: Browser = .safari
+    var websiteListPolicy: WebsiteListPolicy = .allowList
+    var websiteSettings: [WebsiteSyncSetting] = []
+    
     var enabledCategories: Set<SyncCategory> = Set(SyncCategory.allCases.filter { $0.defaultEnabled })
     var automaticSync: Bool = false  // PRO
     var iCloudSync: Bool = false     // PRO
+
+    private enum CodingKeys: String, CodingKey {
+        case conflictStrategy, bookmarkSyncStrategy, bookmarkSourceBrowser, browserDataSyncStrategy, stateSourceBrowser, websiteListPolicy, websiteSettings, enabledCategories, automaticSync, iCloudSync
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        conflictStrategy = try container.decodeIfPresent(ConflictStrategy.self, forKey: .conflictStrategy) ?? .primaryWins
+        bookmarkSyncStrategy = try container.decodeIfPresent(BookmarkSyncStrategy.self, forKey: .bookmarkSyncStrategy) ?? .twoWayMerge
+        bookmarkSourceBrowser = try container.decodeIfPresent(Browser.self, forKey: .bookmarkSourceBrowser) ?? .safari
+        browserDataSyncStrategy = try container.decodeIfPresent(BrowserDataSyncStrategy.self, forKey: .browserDataSyncStrategy) ?? .latestWins
+        stateSourceBrowser = try container.decodeIfPresent(Browser.self, forKey: .stateSourceBrowser) ?? .safari
+        websiteListPolicy = try container.decodeIfPresent(WebsiteListPolicy.self, forKey: .websiteListPolicy) ?? .allowList
+        websiteSettings = try container.decodeIfPresent([WebsiteSyncSetting].self, forKey: .websiteSettings) ?? []
+        enabledCategories = try container.decodeIfPresent(Set<SyncCategory>.self, forKey: .enabledCategories) ?? Set(SyncCategory.allCases.filter { $0.defaultEnabled })
+        automaticSync = try container.decodeIfPresent(Bool.self, forKey: .automaticSync) ?? false
+        iCloudSync = try container.decodeIfPresent(Bool.self, forKey: .iCloudSync) ?? false
+    }
 }

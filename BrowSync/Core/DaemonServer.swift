@@ -29,6 +29,7 @@ protocol DaemonServerDelegate: AnyObject {
     func daemonServer(_ server: DaemonServer, didConnect client: ConnectedClient)
     func daemonServer(_ server: DaemonServer, didDisconnect clientId: String, browser: Browser)
     func daemonServer(_ server: DaemonServer, didReceiveSync message: WSMessage, from clientId: String)
+    func daemonServer(_ server: DaemonServer, didReceivePullBookmarks clientId: String)
 }
 
 // MARK: - Daemon Server
@@ -226,12 +227,6 @@ final class DaemonServer: ObservableObject {
             }) else { return }
             client.lastSeen = Date()
 
-            // Save to persistent global store
-            GlobalStateStore.shared.save(message: message)
-
-            // Broadcast to all other registered clients
-            broadcast(message, excluding: client.id)
-
             // Notify delegate
             delegate?.daemonServer(self, didReceiveSync: message, from: client.id)
 
@@ -246,9 +241,14 @@ final class DaemonServer: ObservableObject {
             }) else { return }
             client.lastSeen = Date()
             
-            let payloads = GlobalStateStore.shared.pull(site: message.site, category: message.category)
-            for payloadData in payloads {
-                sendData(payloadData, on: client.connection)
+            // For bookmarks, always serve fresh state (not stale cache)
+            if message.category == "bookmarks" {
+                delegate?.daemonServer(self, didReceivePullBookmarks: client.id)
+            } else {
+                let payloads = GlobalStateStore.shared.pull(site: message.site, category: message.category)
+                for payloadData in payloads {
+                    sendData(payloadData, on: client.connection)
+                }
             }
 
         case .disconnect:
@@ -321,6 +321,12 @@ final class DaemonServer: ObservableObject {
             if id == excludedId { continue }
             sendData(data, on: client.connection)
         }
+    }
+    
+    func send(_ message: WSMessage, toClientId clientId: String) {
+        guard let data = try? JSONEncoder().encode(message),
+              let client = clients[clientId] else { return }
+        sendData(data, on: client.connection)
     }
 
     // MARK: - Cleanup
@@ -425,7 +431,8 @@ final class GlobalStateStore {
     private func load() {
         if let data = try? Data(contentsOf: fileURL),
            let cache = try? JSONDecoder().decode([String: Data].self, from: data) {
-            self.stateCache = cache
+            // Drop any cached bookmarks — these are always served fresh from Safari
+            self.stateCache = cache.filter { !$0.key.hasPrefix("bookmarks_") }
         }
     }
 }

@@ -1,5 +1,5 @@
 // ContentView.swift
-// BrowSync — Root TabView with 5 tabs
+// BrowSync — Root TabView
 
 import SwiftUI
 
@@ -9,33 +9,40 @@ struct ContentView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            BrowsersView()
+            BrowsersTabView()
                 .tabItem {
-                    Label(String(localized: "Browsers"), systemImage: "globe")
+                    Label("浏览器", systemImage: "safari")
                 }
                 .tag(AppTab.browsers)
 
-            RulesView()
+            RouterTabView()
                 .tabItem {
-                    Label(String(localized: "Rules"), systemImage: "list.bullet.rectangle")
+                    Label("分流", systemImage: "arrow.triangle.branch")
                 }
-                .tag(AppTab.rules)
+                .tag(AppTab.router)
 
-            SyncView()
+            StateSyncTabView()
                 .tabItem {
-                    Label(String(localized: "Sync"), systemImage: "arrow.triangle.2.circlepath")
+                    Label("状态同步", systemImage: "arrow.triangle.2.circlepath")
                 }
-                .tag(AppTab.sync)
+                .tag(AppTab.stateSync)
+
+            BookmarkSyncTabView()
+                .environmentObject(appState.backupService)
+                .tabItem {
+                    Label("书签同步", systemImage: "bookmark")
+                }
+                .tag(AppTab.bookmarkSync)
 
             GeneralView()
                 .tabItem {
-                    Label(String(localized: "General"), systemImage: "gearshape")
+                    Label("通用", systemImage: "gearshape")
                 }
                 .tag(AppTab.general)
-
-            AboutView()
+                
+            AboutTabView()
                 .tabItem {
-                    Label(String(localized: "About"), systemImage: "info.circle")
+                    Label("关于", systemImage: "info.circle")
                 }
                 .tag(AppTab.about)
         }
@@ -46,5 +53,73 @@ struct ContentView: View {
 }
 
 enum AppTab: Hashable {
-    case browsers, rules, sync, general, about
+    case browsers, router, stateSync, bookmarkSync, general, about
+}
+
+// MARK: - About Tab View
+
+struct AboutTabView: View {
+    @EnvironmentObject var appState: AppState
+
+    private var settings: Binding<GeneralSettings> {
+        Binding(
+            get: { appState.settingsService.general },
+            set: { appState.settingsService.general = $0; appState.settingsService.save() }
+        )
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("关于")
+                    .font(.title2.bold())
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+
+            Divider()
+
+            Form {
+                Section {
+                    VStack(alignment: .center, spacing: 12) {
+                        if let nsImage = NSImage(named: "AppIcon") {
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .frame(width: 80, height: 80)
+                        } else {
+                            Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                                .resizable()
+                                .frame(width: 80, height: 80)
+                                .foregroundStyle(.blue)
+                        }
+                        
+                        Text("BrowSync")
+                            .font(.title)
+                            .fontWeight(.bold)
+                        
+                        Text("版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"))")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical)
+                }
+                
+                Section("更新") {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Toggle("自动检查更新", isOn: settings.autoUpdate)
+                            Text("由 Sparkle 提供支持")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .formStyle(.grouped)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
 }

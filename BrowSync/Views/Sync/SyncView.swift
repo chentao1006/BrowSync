@@ -61,10 +61,10 @@ struct SyncView: View {
 
             ScrollView {
                 VStack(spacing: 20) {
-                    // Primary Browser
-                    SettingsGroupBox(title: String(localized: "Primary Browser"),
-                                     description: String(localized: "The primary source of truth for conflict resolution")) {
-                        Picker(String(localized: "Primary Browser"), selection: syncSettings.primaryBrowser) {
+                    // Bookmark Source Browser
+                    SettingsGroupBox(title: String(localized: "Bookmark Source Browser"),
+                                     description: String(localized: "The primary source of truth for bookmarks")) {
+                        Picker(String(localized: "Bookmark Source"), selection: syncSettings.bookmarkSourceBrowser) {
                             ForEach(Browser.allCases) { browser in
                                 HStack {
                                     Image(systemName: browser.sfSymbol)
@@ -73,6 +73,18 @@ struct SyncView: View {
                             }
                         }
                         .pickerStyle(.segmented)
+                        .labelsHidden()
+                    }
+
+                    // Bookmark Sync Strategy
+                    SettingsGroupBox(title: String(localized: "Bookmark Sync Strategy"),
+                                     description: String(localized: "How bookmarks should be synced between browsers")) {
+                        Picker(String(localized: "Bookmark Strategy"), selection: syncSettings.bookmarkSyncStrategy) {
+                            ForEach(BookmarkSyncStrategy.allCases) { strategy in
+                                Text(strategy.displayName).tag(strategy)
+                            }
+                        }
+                        .pickerStyle(.radioGroup)
                         .labelsHidden()
                     }
 
@@ -86,6 +98,71 @@ struct SyncView: View {
                         }
                         .pickerStyle(.radioGroup)
                         .labelsHidden()
+                    }
+
+                    // Browser Data Strategy
+                    SettingsGroupBox(title: String(localized: "Browser Data Sync Strategy"),
+                                     description: String(localized: "How to resolve conflicting cookies and local storage")) {
+                        Picker(String(localized: "Browser Data Strategy"), selection: syncSettings.browserDataSyncStrategy) {
+                            ForEach(BrowserDataSyncStrategy.allCases) { strategy in
+                                Text(strategy.displayName).tag(strategy)
+                            }
+                        }
+                        .pickerStyle(.radioGroup)
+                        .labelsHidden()
+                    }
+
+                    // Website Filtering
+                    SettingsGroupBox(title: String(localized: "Website Filtering"),
+                                     description: String(localized: "Control which websites to sync data for")) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Picker(String(localized: "List Policy"), selection: syncSettings.websiteListPolicy) {
+                                ForEach(WebsiteListPolicy.allCases) { policy in
+                                    Text(policy.displayName).tag(policy)
+                                }
+                            }
+                            .pickerStyle(.radioGroup)
+                            .labelsHidden()
+
+                            Divider()
+
+                            HStack {
+                                Text(String(localized: "Website List"))
+                                    .font(.subheadline.bold())
+                                Spacer()
+                                Button {
+                                    syncSettings.websiteSettings.wrappedValue.append(WebsiteSyncSetting(domain: "", strategy: nil))
+                                    appState.settingsService.save()
+                                } label: {
+                                    Image(systemName: "plus")
+                                }
+                                .buttonStyle(.plain)
+                            }
+
+                            ForEach(syncSettings.websiteSettings) { $site in
+                                HStack {
+                                    TextField(String(localized: "Domain (e.g. apple.com)"), text: $site.domain)
+                                        .textFieldStyle(.roundedBorder)
+                                    
+                                    Picker("", selection: $site.strategy) {
+                                        Text(String(localized: "Default")).tag(BrowserDataSyncStrategy?.none)
+                                        ForEach(BrowserDataSyncStrategy.allCases) { s in
+                                            Text(s.displayName).tag(BrowserDataSyncStrategy?.some(s))
+                                        }
+                                    }
+                                    .labelsHidden()
+
+                                    Button(role: .destructive) {
+                                        syncSettings.websiteSettings.wrappedValue.removeAll(where: { $0.id == $site.wrappedValue.id })
+                                        appState.settingsService.save()
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .foregroundStyle(.red)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
                     }
 
                     // Sync Categories

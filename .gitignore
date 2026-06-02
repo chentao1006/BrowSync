@@ -1,8 +1,45 @@
-/.DS_Store
-/setup.sh
-/test_decode.swift
-/test_encode.swift
-/test_import.scpt
-/test_safari_cookies.js
-/test_tabs.swift
-/wstest.js
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode
+build/
+DerivedData/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.xccheckout
+*.moved-aside
+DerivedData
+*.hmap
+*.ipa
+*.xcuserstate
+
+# Build & Release
+dist/
+Sparkle_tmp/
+*.dmg
+*.xcarchive
+*.zip
+
+# Logs
+*.log
+*.txt
+build_log.txt
+
+# Local Setup Scripts
+setup.sh
+*test*
+
+# Credentials & Sensitive info
+ExportOptions.plist
+.env
+*.pem
+*.p12

@@ -169,4 +169,27 @@
     }
   }
 
+  // ── Keep Background Alive ──────────────────────────────────────────────────
+  let keepAlivePort = null;
+  function connectKeepAlive() {
+    keepAlivePort = api.runtime.connect({ name: 'browsync-keepalive' });
+    keepAlivePort.onDisconnect.addListener(() => {
+      keepAlivePort = null;
+      setTimeout(connectKeepAlive, 5000);
+    });
+  }
+  connectKeepAlive();
+
+  setInterval(() => {
+    if (keepAlivePort) {
+      try {
+        keepAlivePort.postMessage({ type: 'ping' });
+      } catch (e) {
+        connectKeepAlive();
+      }
+    } else {
+      api.runtime.sendMessage({ source: 'browsync-content', type: 'heartbeat_ping' }).catch(() => {});
+    }
+  }, 15000);
+
 })();

@@ -9,19 +9,43 @@ import os.log
 
 struct GeneralSettings: Codable, Equatable {
     var launchAtLogin: Bool = false
-    var startBackgroundService: Bool = true
+    var hideWindowOnStartup: Bool = true
     var menuBarMode: MenuBarMode = .alwaysVisible
     var theme: AppTheme = .system
     var language: AppLanguage = .system
-    var isDefaultBrowser: Bool = false
 
     // Notifications
     var notifySyncComplete: Bool = true
     var notifyBrowserConnected: Bool = true
-    var notifyRuleMatch: Bool = false
 
     // Auto update (Sparkle placeholder)
     var autoUpdate: Bool = true
+    
+    private enum CodingKeys: String, CodingKey {
+        case launchAtLogin, hideWindowOnStartup, menuBarMode, theme, language, notifySyncComplete, notifyBrowserConnected, autoUpdate
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
+        hideWindowOnStartup = try container.decodeIfPresent(Bool.self, forKey: .hideWindowOnStartup) ?? true
+        menuBarMode = try container.decodeIfPresent(MenuBarMode.self, forKey: .menuBarMode) ?? .alwaysVisible
+        theme = try container.decodeIfPresent(AppTheme.self, forKey: .theme) ?? .system
+        language = try container.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .system
+        notifySyncComplete = try container.decodeIfPresent(Bool.self, forKey: .notifySyncComplete) ?? true
+        notifyBrowserConnected = try container.decodeIfPresent(Bool.self, forKey: .notifyBrowserConnected) ?? true
+        autoUpdate = try container.decodeIfPresent(Bool.self, forKey: .autoUpdate) ?? true
+    }
+}
+
+// MARK: - Router Settings
+
+struct RouterSettings: Codable, Equatable {
+    var isEnabled: Bool = true
+    var fallbackBrowserId: String? = nil
+    var rules: [RouterRule] = []
 }
 
 enum MenuBarMode: String, CaseIterable, Codable, Identifiable {
@@ -81,7 +105,7 @@ final class SettingsService: ObservableObject {
 
     @Published var general: GeneralSettings = GeneralSettings()
     @Published var syncSettings: SyncSettings = SyncSettings()
-    @Published var rules: [BrowserRule] = []
+    @Published var routerSettings: RouterSettings = RouterSettings()
 
     init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -102,7 +126,7 @@ final class SettingsService: ObservableObject {
             let saved = try JSONDecoder().decode(SettingsBundle.self, from: data)
             general = saved.general
             syncSettings = saved.sync
-            rules = saved.rules
+            routerSettings = saved.router ?? RouterSettings()
             // Migration: add any new defaultEnabled categories not in saved settings
             let allDefault = Set(SyncCategory.allCases.filter { $0.defaultEnabled })
             let missing = allDefault.subtracting(syncSettings.enabledCategories)
@@ -118,7 +142,7 @@ final class SettingsService: ObservableObject {
 
     func save() {
         do {
-            let bundle = SettingsBundle(general: general, sync: syncSettings, rules: rules)
+            let bundle = SettingsBundle(general: general, sync: syncSettings, router: routerSettings)
             let data = try JSONEncoder().encode(bundle)
             try data.write(to: settingsURL, options: .atomicWrite)
         } catch {
@@ -142,30 +166,6 @@ final class SettingsService: ObservableObject {
             logger.error("SMAppService error: \(error)")
         }
     }
-
-    // MARK: - Rules
-
-    func addRule(_ rule: BrowserRule) {
-        rules.append(rule)
-        save()
-    }
-
-    func updateRule(_ rule: BrowserRule) {
-        if let idx = rules.firstIndex(where: { $0.id == rule.id }) {
-            rules[idx] = rule
-            save()
-        }
-    }
-
-    func deleteRule(at offsets: IndexSet) {
-        rules.remove(atOffsets: offsets)
-        save()
-    }
-
-    func moveRule(from source: IndexSet, to destination: Int) {
-        rules.move(fromOffsets: source, toOffset: destination)
-        save()
-    }
 }
 
 // MARK: - Settings Bundle (Codable wrapper)
@@ -173,5 +173,5 @@ final class SettingsService: ObservableObject {
 private struct SettingsBundle: Codable {
     var general: GeneralSettings
     var sync: SyncSettings
-    var rules: [BrowserRule]
+    var router: RouterSettings?
 }

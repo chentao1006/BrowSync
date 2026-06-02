@@ -35,13 +35,7 @@ final class NotificationService {
         )
     }
 
-    func notifyRuleMatch(rule: BrowserRule, url: URL, browser: Browser) {
-        send(
-            id: "rule.match",
-            title: String(localized: "Rule Matched"),
-            body: String(localized: "'\(rule.name)' → \(browser.displayName): \(url.host ?? url.absoluteString)")
-        )
-    }
+
 
     private func send(id: String, title: String, body: String) {
         let content = UNMutableNotificationContent()

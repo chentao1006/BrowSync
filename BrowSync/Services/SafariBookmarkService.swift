@@ -27,25 +27,9 @@ final class SafariBookmarkService {
 
     // MARK: - Apply bookmarks from another browser
 
-    /// Returns the number of bookmarks applied, or -1 if Safari was running and a HTML file was exported instead.
+    /// Returns the number of bookmarks applied or staged.
     @discardableResult
-    func applyBookmarks(_ bookmarks: [SyncBookmark], from sourceBrowser: String) -> Int {
-        if isSafariRunning {
-            // Safari is running — write to plist directly (often overwritten) and export HTML
-            let plistCount = writeToPlist(bookmarks, from: sourceBrowser)
-            if let html = exportHTML(bookmarks, from: sourceBrowser) {
-                logger.info("Safari is running. HTML exported to \(html.path). Manual import required.")
-            }
-            return plistCount
-        } else {
-            // Safari is not running — safe to write plist
-            return writeToPlist(bookmarks, from: sourceBrowser)
-        }
-    }
-
-    // MARK: - Plist Write (works when Safari is quit)
-
-    private func writeToPlist(_ bookmarks: [SyncBookmark], from sourceBrowser: String) -> Int {
+    func applyBookmarks(_ bookmarks: [SyncBookmark], from sourceBrowser: String, isFullMirror: Bool = false) -> Int {
         guard let url = bookmarksURL else {
             logger.warning("Safari Bookmarks.plist not found, skipping")
             return 0
@@ -58,18 +42,32 @@ final class SafariBookmarkService {
                 return 0
             }
 
-            let added = insertBookmarks(bookmarks, into: &plist, sourceBrowser: sourceBrowser)
-            if added == 0 {
+            let added = insertBookmarks(bookmarks, into: &plist, sourceBrowser: sourceBrowser, isFullMirror: isFullMirror)
+            if added == 0 && !isFullMirror {
                 logger.info("No new bookmarks to add from \(sourceBrowser)")
                 return 0
             }
 
-            let newData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
-            try newData.write(to: url, options: .atomic)
-            logger.info("Wrote \(added) bookmarks to Safari Bookmarks.plist from \(sourceBrowser)")
+            let writeBlock = {
+                do {
+                    let newData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+                    try newData.write(to: url, options: .atomic)
+                    self.logger.info("Wrote \(added) bookmarks to Safari Bookmarks.plist from \(sourceBrowser)")
+                } catch {
+                    self.logger.error("Failed to write Safari bookmarks: \(error)")
+                }
+            }
+
+            // Generate HTML backup as a fallback just in case
+            if let html = exportHTML(bookmarks, from: sourceBrowser) {
+                logger.info("HTML exported to \(html.path) as fallback.")
+            }
+            
+            // macOS automatically reloads Bookmarks.plist even when Safari is running
+            writeBlock()
             return added
         } catch {
-            logger.error("Failed to write Safari bookmarks: \(error)")
+            logger.error("Failed to process Safari bookmarks: \(error)")
             return 0
         }
     }
@@ -109,7 +107,7 @@ final class SafariBookmarkService {
 
     // MARK: - Plist Manipulation
 
-    private func insertBookmarks(_ bookmarks: [SyncBookmark], into plist: inout [String: Any], sourceBrowser: String) -> Int {
+    private func insertBookmarks(_ bookmarks: [SyncBookmark], into plist: inout [String: Any], sourceBrowser: String, isFullMirror: Bool = false) -> Int {
         guard var children = plist["Children"] as? [[String: Any]] else { return 0 }
 
         var barIdx = children.firstIndex { ($0["Title"] as? String) == "BookmarksBar" }
@@ -120,54 +118,118 @@ final class SafariBookmarkService {
         guard let idx = barIdx else { return 0 }
         guard var barChildren = children[idx]["Children"] as? [[String: Any]] else { return 0 }
 
-        let folderTitle = "BrowSync (\(sourceBrowser))"
-        let folderIdx = barChildren.firstIndex { ($0["Title"] as? String) == folderTitle }
-        var folder: [String: Any]
-        var folderChildren: [[String: Any]]
-
-        if let fi = folderIdx {
-            folder = barChildren[fi]
-            folderChildren = folder["Children"] as? [[String: Any]] ?? []
-        } else {
-            folder = [
-                "WebBookmarkType": "WebBookmarkTypeList",
-                "Title": folderTitle,
-                "WebBookmarkUUID": UUID().uuidString.lowercased(),
-                "Children": [[String: Any]]()
-            ]
-            folderChildren = []
-        }
-
-        let existingURLs = Set(folderChildren.compactMap { $0["URLString"] as? String })
         var addedCount = 0
-        for bookmark in bookmarks {
-            guard let urlStr = bookmark.url, !existingURLs.contains(urlStr) else { continue }
-            let entry: [String: Any] = [
-                "WebBookmarkType": "WebBookmarkTypeLeaf",
-                "URLString": urlStr,
-                "WebBookmarkUUID": UUID().uuidString.lowercased(),
-                "ReadingListNonSync": false,
-                "URIDictionary": ["title": bookmark.title]
-            ]
-            folderChildren.append(entry)
-            addedCount += 1
+
+        func buildNode(from bookmark: SyncBookmark, allBookmarks: [SyncBookmark]) -> [String: Any]? {
+            let uuid = UUID().uuidString.lowercased()
+            if bookmark.isFolder {
+                let children = allBookmarks.filter { $0.parentId == bookmark.id }
+                let childNodes = children.compactMap { buildNode(from: $0, allBookmarks: allBookmarks) }
+                return [
+                    "WebBookmarkType": "WebBookmarkTypeList",
+                    "Title": bookmark.title,
+                    "WebBookmarkUUID": uuid,
+                    "Children": childNodes
+                ]
+            } else {
+                guard let urlStr = bookmark.url else { return nil }
+                return [
+                    "WebBookmarkType": "WebBookmarkTypeLeaf",
+                    "URLString": urlStr,
+                    "WebBookmarkUUID": uuid,
+                    "ReadingListNonSync": false,
+                    "URIDictionary": ["title": bookmark.title]
+                ]
+            }
         }
 
-        folder["Children"] = folderChildren
-        if let fi = folderIdx {
-            barChildren[fi] = folder
-        } else {
-            barChildren.append(folder)
+        // We flatten existing URLs to avoid duplicates (ignoring folders)
+        var existingURLs = Set<String>()
+        func scanExistingURLs(nodes: [[String: Any]]) {
+            for node in nodes {
+                if let url = node["URLString"] as? String { existingURLs.insert(url) }
+                if let children = node["Children"] as? [[String: Any]] { scanExistingURLs(nodes: children) }
+            }
         }
+        scanExistingURLs(nodes: barChildren)
+
+        let topLevelBookmarks = bookmarks.filter { $0.parentId == nil || $0.parentId == "1" || $0.parentId == "0" || $0.parentId == "2" }
+
+        if isFullMirror {
+            barChildren = topLevelBookmarks.compactMap { buildNode(from: $0, allBookmarks: bookmarks) }
+            addedCount = bookmarks.count
+        } else {
+            for bookmark in topLevelBookmarks {
+                // Skip existing URLs
+                if !bookmark.isFolder, let url = bookmark.url, existingURLs.contains(url) { continue }
+                // Skip existing folders by title at top level
+                if bookmark.isFolder && barChildren.contains(where: { ($0["Title"] as? String) == bookmark.title }) { continue }
+
+                if let node = buildNode(from: bookmark, allBookmarks: bookmarks) {
+                    barChildren.append(node)
+                    addedCount += 1
+                }
+            }
+        }
+
         children[idx]["Children"] = barChildren
         plist["Children"] = children
         return addedCount
+    }
+    
+    // MARK: - Read Safari Bookmarks
+
+    func readBookmarks() -> [SyncBookmark] {
+        guard let url = bookmarksURL else { return [] }
+        do {
+            let data = try Data(contentsOf: url)
+            guard let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                  let children = plist["Children"] as? [[String: Any]] else {
+                return []
+            }
+
+            var barIdx = children.firstIndex { ($0["Title"] as? String) == "BookmarksBar" }
+            if barIdx == nil {
+                barIdx = children.firstIndex { ($0["WebBookmarkType"] as? String) == "WebBookmarkTypeList" }
+            }
+
+            guard let idx = barIdx, let barChildren = children[idx]["Children"] as? [[String: Any]] else {
+                return []
+            }
+
+            var result: [SyncBookmark] = []
+            
+            func traverse(nodes: [[String: Any]], parentId: String?) {
+                for child in nodes {
+                    let isFolder = (child["WebBookmarkType"] as? String) == "WebBookmarkTypeList"
+                    let titleDict = child["URIDictionary"] as? [String: Any]
+                    let titleStr = titleDict?["title"] as? String ?? child["Title"] as? String ?? child["URLString"] as? String ?? "Untitled"
+                    let urlStr = child["URLString"] as? String
+                    let id = (child["WebBookmarkUUID"] as? String) ?? UUID().uuidString
+                    
+                    result.append(SyncBookmark(id: id, title: titleStr, url: urlStr, parentId: parentId, isFolder: isFolder, inBookmarksBar: parentId == nil))
+                    
+                    if isFolder, let subChildren = child["Children"] as? [[String: Any]] {
+                        traverse(nodes: subChildren, parentId: id)
+                    }
+                }
+            }
+            
+            traverse(nodes: barChildren, parentId: nil)
+            return result
+        } catch {
+            logger.error("Failed to read Safari bookmarks: \(error)")
+            return []
+        }
     }
 }
 
 // Lightweight struct for the bookmark data from the extension
 struct SyncBookmark {
+    let id: String
     let title: String
     let url: String?
+    let parentId: String?
     let isFolder: Bool
+    var inBookmarksBar: Bool = false
 }

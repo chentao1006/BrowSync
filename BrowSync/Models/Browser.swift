@@ -64,14 +64,16 @@ enum ExtensionStatus: String, Codable, Equatable {
     case extensionDisabled = "extension_disabled"
     case waitingConnection = "waiting_connection"
     case connected = "connected"
+    case offline = "offline"
 
     var displayName: String {
         switch self {
         case .notInstalled: return String(localized: "Not Installed")
         case .extensionRequired: return String(localized: "Extension Required")
         case .extensionDisabled: return String(localized: "Extension Disabled")
-        case .waitingConnection: return String(localized: "Waiting Connection")
-        case .connected: return String(localized: "Connected")
+        case .waitingConnection: return String(localized: "连接中...")
+        case .connected: return String(localized: "已连接")
+        case .offline: return String(localized: "已离线")
         }
     }
 
@@ -82,6 +84,7 @@ enum ExtensionStatus: String, Codable, Equatable {
         case .extensionDisabled: return "red"
         case .waitingConnection: return "yellow"
         case .connected: return "green"
+        case .offline: return "gray"
         }
     }
 }
@@ -96,6 +99,7 @@ struct BrowserInfo: Identifiable, Equatable {
     var appURL: URL?
     var isInstalled: Bool
     var extensionStatus: ExtensionStatus
+    var isDefault: Bool
     var lastSeen: Date?
 
     var isConnected: Bool {
@@ -109,6 +113,7 @@ struct BrowserInfo: Identifiable, Equatable {
             appURL: nil,
             isInstalled: false,
             extensionStatus: .notInstalled,
+            isDefault: false,
             lastSeen: nil
         )
     }

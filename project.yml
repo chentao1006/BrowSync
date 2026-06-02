@@ -7,6 +7,11 @@ options:
   xcodeVersion: "15"
   generateEmptyDirectories: true
 
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.6.0
+
 settings:
   SWIFT_VERSION: "5.10"
   MACOSX_DEPLOYMENT_TARGET: "14.0"
@@ -45,13 +50,14 @@ targets:
         PRODUCT_NAME: BrowSync
         INFOPLIST_FILE: BrowSync/Resources/Info.plist
         CODE_SIGN_ENTITLEMENTS: BrowSync.entitlements
-        DEVELOPMENT_TEAM: ""
+        DEVELOPMENT_TEAM: "U2NEAJ73J2"
         CODE_SIGN_STYLE: Automatic
         APPLICATION_EXTENSION_API_ONLY: NO
         SWIFT_EMIT_LOC_STRINGS: YES
 
     dependencies:
       - target: BrowSyncExtension
+      - package: Sparkle
 
   # ─── Safari Web Extension ────────────────────────────────────────────────────
 
@@ -83,7 +89,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ct106.browsync.extension
         CODE_SIGN_ENTITLEMENTS: BrowSyncExtension.entitlements
-        DEVELOPMENT_TEAM: ""
+        DEVELOPMENT_TEAM: "U2NEAJ73J2"
         CODE_SIGN_STYLE: Automatic
         SWIFT_EMIT_LOC_STRINGS: YES
 

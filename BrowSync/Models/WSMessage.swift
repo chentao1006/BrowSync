@@ -28,6 +28,7 @@ struct WSMessage: Codable {
     var messageId: String?
     var timestamp: Double?
     var error: String?
+    var isFullMirror: Bool?
 
     // MARK: Factory Methods
 
@@ -53,7 +54,8 @@ struct WSMessage: Codable {
             category: category.rawValue,
             payload: payload,
             messageId: UUID().uuidString,
-            timestamp: Date().timeIntervalSince1970
+            timestamp: Date().timeIntervalSince1970,
+            isFullMirror: nil
         )
     }
 
@@ -77,6 +79,7 @@ struct WSMessage: Codable {
 enum WSPayload: Codable {
     case bookmarks([Bookmark])
     case tabs([BrowserTab])
+    case browserState([BrowserTab])
     case localStorage([StorageItem])
     case sessionStorage([StorageItem])
     case cookies([SyncCookie])
@@ -95,6 +98,8 @@ enum WSPayload: Codable {
             self = .bookmarks(try container.decode([Bookmark].self, forKey: .bookmarks))
         case "tabs":
             self = .tabs(try container.decode([BrowserTab].self, forKey: .tabs))
+        case "browserState":
+            self = .browserState(try container.decode([BrowserTab].self, forKey: .tabs))
         case "localStorage":
             self = .localStorage(try container.decode([StorageItem].self, forKey: .localStorage))
         case "sessionStorage":
@@ -116,6 +121,9 @@ enum WSPayload: Codable {
             try container.encode(v, forKey: .bookmarks)
         case .tabs(let v):
             try container.encode("tabs", forKey: .kind)
+            try container.encode(v, forKey: .tabs)
+        case .browserState(let v):
+            try container.encode("browserState", forKey: .kind)
             try container.encode(v, forKey: .tabs)
         case .localStorage(let v):
             try container.encode("localStorage", forKey: .kind)

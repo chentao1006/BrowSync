@@ -6,7 +6,7 @@
 
 const DAEMON_URL = 'ws://127.0.0.1:62333';
 const BROWSER_ID = 'chrome';   // Will be detected dynamically below
-const HEARTBEAT_ALARM = 'ws-heartbeat';
+const HEARTBEAT_ALARM = 'browsync-heartbeat';
 const RECONNECT_ALARM = 'browsync-reconnect';
 
 const applyingCookies = new Set();
@@ -60,6 +60,7 @@ async function connect() {
       await chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
       await chrome.alarms.clear(RECONNECT_ALARM);
     }
+    updateBadge();
   };
 
   ws.onclose = async () => {
@@ -67,6 +68,7 @@ async function connect() {
     isConnecting = false;
     await chrome.storage.local.set({ wsState: 'closed' }).catch(() => { });
     ws = null;
+    updateBadge();
     scheduleReconnect();
   };
 
@@ -97,7 +99,35 @@ function scheduleReconnect() {
   reconnectDelay = Math.min(reconnectDelay * 2, 30000);
 }
 
+function updateBadge(state = null) {
+  if (state === 'syncing') {
+    chrome.action.setBadgeText({ text: 'SYNC' });
+    chrome.action.setBadgeBackgroundColor({ color: '#3b82f6' });
+    setTimeout(() => updateBadge(), 2000);
+    return;
+  }
+  
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    chrome.action.setBadgeText({ text: 'ON' }).catch(() => {});
+    chrome.action.setBadgeBackgroundColor({ color: '#22c55e' }).catch(() => {});
+  } else {
+    chrome.action.setBadgeText({ text: 'OFF' }).catch(() => {});
+    chrome.action.setBadgeBackgroundColor({ color: '#94a3b8' }).catch(() => {});
+  }
+}
+
 // ─── Incoming messages ───────────────────────────────────────────────────────
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === 'browsync-keepalive') {
+    port.onMessage.addListener((msg) => {
+      if (msg.type === 'ping') {
+        port.postMessage({ type: 'pong' });
+      }
+    });
+  }
+});
+
 
 async function handleIncoming(message) {
   if (!message?.type) return;
@@ -113,6 +143,7 @@ async function handleIncoming(message) {
 }
 
 async function applySync(message) {
+  updateBadge('syncing');
   const { category, payload } = message;
 
   // Empty payload means it's a pull request from the App
@@ -123,8 +154,8 @@ async function applySync(message) {
 
   switch (category) {
     case 'bookmarks':
-      console.log(`[BrowSync] Applying ${(payload.bookmarks || []).length} bookmarks...`);
-      await applyBookmarkSync(payload.bookmarks || []);
+      console.log(`[BrowSync] Applying ${(payload.bookmarks || []).length} bookmarks... isFullMirror: ${message.isFullMirror}`);
+      await applyBookmarkSync(payload.bookmarks || [], message.isFullMirror);
       break;
     case 'localStorage':
     case 'sessionStorage': {
@@ -138,12 +169,12 @@ async function applySync(message) {
           
           if (item.value !== null) {
             const tKey = `tombstone_${category}_${item.origin}::${item.key}`;
-            browser.storage.local.remove(tKey).catch(() => {});
+            chrome.storage.local.remove(tKey).catch(() => {});
           }
         }
         for (const origin of Object.keys(byOrigin)) {
           const key = `sync_${category}_${origin}`;
-          await browser.storage.local.set({ [key]: byOrigin[origin] });
+          await chrome.storage.local.set({ [key]: byOrigin[origin] }).catch(e => console.warn('[BrowSync] Failed to set storage chunk:', e));
         }
       }
       await broadcastToContentScripts(category, items, message.site);
@@ -164,7 +195,17 @@ async function handlePullRequest(category) {
       const flat = [];
       function traverse(nodes) {
         for (const node of nodes) {
-          if (node.url) flat.push({ id: node.id, title: node.title, url: node.url, isFolder: false, dateAdded: node.dateAdded, sourceBrowser: DETECTED_BROWSER });
+          if (node.id !== '0') { // Skip root
+            flat.push({ 
+              id: node.id, 
+              title: node.title, 
+              url: node.url, 
+              parentId: node.parentId,
+              isFolder: !node.url, 
+              dateAdded: node.dateAdded, 
+              sourceBrowser: DETECTED_BROWSER 
+            });
+          }
           if (node.children) traverse(node.children);
         }
       }
@@ -191,7 +232,7 @@ async function handlePullRequest(category) {
       mapped.forEach(c => mappedMap.set(`${c.domain}::${c.name}`, c));
 
       // Include tombstones
-      const allStorage = await browser.storage.local.get(null);
+      const allStorage = await chrome.storage.local.get(null);
       for (const [key, value] of Object.entries(allStorage)) {
         if (key.startsWith('tombstone_cookies_') && value) {
           const mapKey = `${value.domain}::${value.name}`;
@@ -236,15 +277,15 @@ async function handlePullRequest(category) {
       break;
     }
     case 'localStorage': {
-      if (!browser.scripting || !browser.tabs) return;
-      const tabs = await browser.tabs.query({});
+      if (!chrome.scripting || !chrome.tabs) return;
+      const tabs = await chrome.tabs.query({});
       const allItemsMap = new Map(); // Use Map to deduplicate by key+origin
 
       // 1. Get from currently open tabs
       for (const tab of tabs) {
         if (!tab.id || !tab.url || tab.url.startsWith('chrome') || tab.url.startsWith('about') || tab.url.startsWith('safari-extension')) continue;
         try {
-          const results = await browser.scripting.executeScript({
+          const results = await chrome.scripting.executeScript({
             target: { tabId: tab.id },
             func: () => {
               const items = [];
@@ -264,7 +305,7 @@ async function handlePullRequest(category) {
       }
 
       // 2. Get from passive backups and tombstones in storage.local
-      const allStorage = await browser.storage.local.get(null);
+      const allStorage = await chrome.storage.local.get(null);
       for (const [key, value] of Object.entries(allStorage)) {
         if (key.startsWith('backup_localStorage_') && Array.isArray(value)) {
           value.forEach(item => {
@@ -304,28 +345,151 @@ async function handlePullRequest(category) {
 
 // ─── Bookmarks ───────────────────────────────────────────────────────────────
 
-async function applyBookmarkSync(bookmarks) {
+async function applyBookmarkSync(bookmarks, isFullMirror = false) {
   if (!chrome.bookmarks) return;
-  for (const bookmark of bookmarks) {
-    if (!bookmark.url || bookmark.isFolder) continue;
-    const existing = await chrome.bookmarks.search({ url: bookmark.url });
-    if (existing.length === 0) {
-      await chrome.bookmarks.create({ title: bookmark.title, url: bookmark.url });
+
+  console.log(`[BrowSync] applyBookmarkSync: ${bookmarks.length} bookmarks, isFullMirror=${isFullMirror}`);
+
+  // STEP 1: If full mirror, snapshot current Chrome state and send back as backup
+  if (isFullMirror) {
+    const preTree = await chrome.bookmarks.getTree();
+    const snapshot = [];
+    function flatForBackup(nodes) {
+      for (const node of nodes) {
+        if (node.id !== '0') {
+          snapshot.push({
+            id: node.id,
+            title: node.title || '',
+            url: node.url || null,
+            parentId: node.parentId || null,
+            isFolder: !node.url,
+            inBookmarksBar: node.parentId === '1',
+            dateAdded: (node.dateAdded || Date.now()) / 1000,
+            sourceBrowser: DETECTED_BROWSER
+          });
+        }
+        if (node.children) flatForBackup(node.children);
+      }
     }
+    flatForBackup(preTree);
+    console.log(`[BrowSync] Sending pre-sync backup: ${snapshot.length} items`);
+    send({
+      type: 'sync',
+      browser: DETECTED_BROWSER,
+      category: 'bookmark_backup',
+      payload: { kind: 'bookmarks', bookmarks: snapshot },
+      messageId: crypto.randomUUID(),
+      timestamp: Date.now()
+    });
+  }
+
+  const idMap = new Map(); // incoming id -> local chrome id
+  idMap.set('1', '1'); // Map root to Bookmarks Bar
+  idMap.set(null, '1');
+  idMap.set(undefined, '1');
+
+  // Build a tree to process parents before children
+  const byParent = new Map();
+  const roots = [];
+
+  for (const bm of bookmarks) {
+    if (!bm.parentId || bm.parentId === '1' || bm.parentId === '0') {
+      roots.push(bm);
+    } else {
+      if (!byParent.has(bm.parentId)) byParent.set(bm.parentId, []);
+      byParent.get(bm.parentId).push(bm);
+    }
+  }
+
+  async function processNodes(nodes, localParentId) {
+    for (const bm of nodes) {
+      let existingNode = null;
+      if (bm.isFolder) {
+        const children = await chrome.bookmarks.getChildren(localParentId);
+        existingNode = children.find(c => !c.url && c.title === bm.title);
+      } else if (bm.url) {
+        const searchResults = await chrome.bookmarks.search({ url: bm.url });
+        existingNode = searchResults.find(r => r.parentId === localParentId);
+      }
+
+      let localId;
+      if (existingNode) {
+        localId = existingNode.id;
+      } else {
+        const created = await chrome.bookmarks.create({
+          parentId: localParentId,
+          title: bm.title,
+          url: bm.isFolder ? undefined : bm.url
+        });
+        localId = created.id;
+      }
+
+      idMap.set(bm.id, localId);
+
+      if (bm.isFolder && byParent.has(bm.id)) {
+        await processNodes(byParent.get(bm.id), localId);
+      }
+    }
+  }
+
+  await processNodes(roots, '1');
+
+  // STEP 2: Prune items not in incoming payload
+  if (isFullMirror) {
+    const mappedLocalIds = new Set(Array.from(idMap.values()));
+    // Always keep system roots
+    mappedLocalIds.add('0');
+    mappedLocalIds.add('1');
+    mappedLocalIds.add('2');
+    mappedLocalIds.add('3'); // Mobile bookmarks in some browsers
+
+    console.log(`[BrowSync] Pruning. Mapped local IDs: ${mappedLocalIds.size}`);
+
+    const freshTree = await chrome.bookmarks.getTree();
+
+    async function pruneTree(nodes) {
+      for (const node of nodes) {
+        if (!mappedLocalIds.has(node.id)) {
+          console.log(`[BrowSync] Pruning: deleting "${node.title}" (${node.id})`);
+          try {
+            await chrome.bookmarks.removeTree(node.id);
+          } catch(e) {
+            try { await chrome.bookmarks.remove(node.id); } catch(_) {}
+          }
+          // Don't recurse into deleted nodes
+        } else if (node.children) {
+          await pruneTree(node.children);
+        }
+      }
+    }
+
+    // Only prune inside id=1 (Bookmarks Bar) to be safe
+    const bar = freshTree[0]?.children?.find(c => c.id === '1');
+    if (bar?.children) {
+      await pruneTree(bar.children);
+    }
+    console.log('[BrowSync] Pruning complete');
   }
 }
 
 if (chrome.bookmarks) {
   chrome.bookmarks.onCreated.addListener(async (id, bookmark) => {
-    if (!bookmark.url) return;
     send({
       type: 'sync',
       browser: DETECTED_BROWSER,
-      site: safeHostname(bookmark.url),
+      site: bookmark.url ? safeHostname(bookmark.url) : 'folder',
       category: 'bookmarks',
       payload: {
         kind: 'bookmarks',
-        bookmarks: [{ id, title: bookmark.title, url: bookmark.url, isFolder: false, dateAdded: Date.now(), sourceBrowser: DETECTED_BROWSER }]
+        bookmarks: [{ 
+          id, 
+          title: bookmark.title, 
+          url: bookmark.url, 
+          parentId: bookmark.parentId,
+          isFolder: !bookmark.url, 
+          dateAdded: Date.now(), 
+          sourceBrowser: DETECTED_BROWSER 
+        }]
       },
       messageId: crypto.randomUUID(),
       timestamp: Date.now(),
@@ -346,8 +510,8 @@ if (chrome.bookmarks) {
 
 // ─── Cookies ─────────────────────────────────────────────────────────────────
 
-if (browser.cookies) {
-  browser.cookies.onChanged.addListener(({ cookie, removed, cause }) => {
+if (chrome.cookies) {
+  chrome.cookies.onChanged.addListener(({ cookie, removed, cause }) => {
     if (cause !== 'explicit' && cause !== 'overwrite') return;
 
     const cookieKey = `${cookie.domain}::${cookie.name}`;
@@ -367,9 +531,9 @@ if (browser.cookies) {
 
     const tKey = `tombstone_cookies_${cookie.domain}::${cookie.name}`;
     if (removed) {
-      browser.storage.local.set({ [tKey]: { ...payloadCookie, timestamp: Date.now() } }).catch(() => { });
+      chrome.storage.local.set({ [tKey]: { ...payloadCookie, timestamp: Date.now() } }).catch(() => { });
     } else {
-      browser.storage.local.remove(tKey).catch(() => { });
+      chrome.storage.local.remove(tKey).catch(() => { });
     }
 
     send({
@@ -388,21 +552,18 @@ if (browser.cookies) {
 }
 
 async function applyCookieSync(cookies) {
-  console.log(`[BrowSync] Applying ${cookies.length} cookies...`);
   let successCount = 0;
   let failCount = 0;
-  if (!browser.cookies) return;
+  if (!chrome.cookies) return;
   for (const cookie of cookies) {
     const baseDomain = cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain;
-    // Always use https — Safari rejects http cookies for secure contexts
     const url = `https://${baseDomain}${cookie.path}`;
-
     const cookieKey = `${cookie.domain}::${cookie.name}`;
     applyingCookies.add(cookieKey);
 
     if (cookie.removed) {
       try {
-        await browser.cookies.remove({ url, name: cookie.name });
+        await chrome.cookies.remove({ url, name: cookie.name });
         successCount++;
       } catch (e) {
         failCount++;
@@ -411,7 +572,7 @@ async function applyCookieSync(cookies) {
       continue;
     } else {
       const tKey = `tombstone_cookies_${cookie.domain}::${cookie.name}`;
-      browser.storage.local.remove(tKey).catch(() => { });
+      chrome.storage.local.remove(tKey).catch(() => { });
     }
 
     const base = {
@@ -422,7 +583,6 @@ async function applyCookieSync(cookies) {
       expirationDate: cookie.expirationDate,
       httpOnly: cookie.httpOnly,
     };
-    // Only include sameSite if it's a known valid value — Safari rejects 'unspecified'
     const validSameSite = ['no_restriction', 'lax', 'strict'];
     if (cookie.sameSite && validSameSite.includes(cookie.sameSite)) {
       base.sameSite = cookie.sameSite;
@@ -434,10 +594,10 @@ async function applyCookieSync(cookies) {
 
     const strategies = cookie.domain.startsWith('.')
       ? [
-          { ...baseOpts, domain: cleanDomain },
           { ...baseOpts, domain: cookie.domain },
+          { ...baseOpts, domain: cleanDomain },
           { ...baseOpts },
-          { ...baseOpts, secure: !baseOpts.secure, domain: cleanDomain }
+          { ...baseOpts, secure: !baseOpts.secure, domain: cookie.domain }
         ]
       : [
           { ...baseOpts },
@@ -448,7 +608,7 @@ async function applyCookieSync(cookies) {
     let ok = false;
     for (const opts of strategies) {
       try {
-        const result = await browser.cookies.set(opts);
+        const result = await chrome.cookies.set(opts);
         if (result) { ok = true; break; }
       } catch (_) { }
     }
@@ -468,13 +628,14 @@ async function applyCookieSync(cookies) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     if (message.source !== 'browsync-content') return;
+    if (message.type === 'heartbeat_ping') return;
     if (message.type === 'backup_storage') {
       const { storageType, items } = message;
       if (!items || items.length === 0) return;
       const origin = items[0].origin;
       if (!origin) return;
       const key = `backup_${storageType}_${origin}`;
-      await browser.storage.local.set({ [key]: items });
+      await chrome.storage.local.set({ [key]: items }).catch(e => console.warn('[BrowSync] Failed to store backup items:', e));
       console.log(`[BrowSync] Passively accumulated ${items.length} ${storageType} items for ${origin}`);
       return;
     }
@@ -485,9 +646,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     for (const item of message.items) {
       const tKey = `tombstone_${message.storageType}_${item.origin}::${item.key}`;
       if (item.value === null || item.key === '__clear__') {
-        await browser.storage.local.set({ [tKey]: { ...item, timestamp: Date.now() } });
+        await chrome.storage.local.set({ [tKey]: { ...item, timestamp: Date.now() } });
       } else {
-        await browser.storage.local.remove(tKey).catch(() => {});
+        await chrome.storage.local.remove(tKey).catch(() => {});
       }
     }
 
