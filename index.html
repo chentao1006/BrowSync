@@ -1,0 +1,1566 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="BrowSync is a privacy-first macOS app for local cross-browser synchronization and intelligent URL routing across all browsers." />
+  <title>同览 BrowSync | Local Browser Sync and Smart Routing</title>
+  <script>
+    (function () {
+      var savedTheme = localStorage.getItem("browsync-theme");
+      var prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+      var theme = savedTheme === "light" || savedTheme === "dark" ? savedTheme : (prefersLight ? "light" : "dark");
+      document.documentElement.dataset.theme = theme;
+
+      var savedLang = localStorage.getItem("browsync-lang");
+      var browserLang = (navigator.language || "en").toLowerCase();
+      var lang = savedLang === "en" || savedLang === "zh" ? savedLang : (browserLang.indexOf("zh") === 0 ? "zh" : "en");
+      document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+    })();
+  </script>
+  <style>
+    :root {
+      color-scheme: dark light;
+      --header-offset: 68px;
+      --bg: #070a10;
+      --bg-top: #0a1018;
+      --bg-end: #05070b;
+      --header: rgba(7, 10, 16, 0.84);
+      --panel: rgba(255, 255, 255, 0.04);
+      --panel-strong: rgba(255, 255, 255, 0.06);
+      --text: #f4f7fb;
+      --muted: #9caabd;
+      --soft: #d1dae6;
+      --line: rgba(154, 178, 205, 0.16);
+      --cyan: #6fb7e8;
+      --teal: #7fcae2;
+      --green: #8ab7d6;
+      --button-text: #031014;
+      --code-bg: #020506;
+      --code-text: #c4e3f2;
+      --shadow: rgba(0, 0, 0, 0.38);
+      --max: 1120px;
+    }
+
+    html[data-theme="light"] {
+      color-scheme: light;
+      --bg: #f6f8fb;
+      --bg-top: #edf4fa;
+      --bg-end: #ffffff;
+      --header: rgba(250, 253, 255, 0.86);
+      --panel: rgba(255, 255, 255, 0.82);
+      --panel-strong: rgba(255, 255, 255, 0.94);
+      --text: #101923;
+      --muted: #586575;
+      --soft: #2f3d4d;
+      --line: rgba(35, 61, 91, 0.14);
+      --cyan: #316f9f;
+      --teal: #4a89ad;
+      --green: #416f95;
+      --button-text: #ffffff;
+      --code-bg: #0a1117;
+      --code-text: #c8f7ea;
+      --shadow: rgba(35, 59, 78, 0.16);
+    }
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
+    html {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
+      padding-top: var(--header-offset);
+      color: var(--text);
+      background:
+        radial-gradient(circle at 68% 14%, rgba(95, 148, 198, 0.15), transparent 34%),
+        radial-gradient(circle at 22% 62%, rgba(70, 112, 160, 0.10), transparent 32%),
+        linear-gradient(180deg, var(--bg-top) 0%, var(--bg) 52%, var(--bg-end) 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      line-height: 1.6;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+    }
+
+    figure {
+      margin: 0;
+    }
+
+    h1,
+    h2,
+    h3,
+    p,
+    td,
+    span,
+    strong {
+      overflow-wrap: break-word;
+    }
+
+    [data-i18n] {
+      transition: opacity 120ms ease;
+    }
+
+    .site-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 20;
+      width: 100%;
+      max-width: 100%;
+      border-bottom: 1px solid var(--line);
+      background: var(--header);
+      backdrop-filter: blur(18px);
+    }
+
+    .nav {
+      max-width: var(--max);
+      width: 100%;
+      max-width: min(var(--max), 100%);
+      min-height: 68px;
+      margin: 0 auto;
+      padding: 0 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .brand img {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      box-shadow: 0 0 22px rgba(111, 183, 232, 0.18);
+    }
+
+    .brand-name {
+      font-size: 17px;
+      font-weight: 720;
+      letter-spacing: 0;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      min-width: 0;
+      max-width: 100%;
+      color: var(--muted);
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    .nav-links a:hover {
+      color: var(--text);
+    }
+
+    .segmented {
+      display: inline-flex;
+      align-items: center;
+      height: 36px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .segmented button {
+      appearance: none;
+      border: 0;
+      min-width: 38px;
+      height: 28px;
+      padding: 0 9px;
+      border-radius: 6px;
+      color: var(--muted);
+      background: transparent;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .segmented button[aria-pressed="true"] {
+      color: var(--button-text);
+      background: linear-gradient(135deg, var(--cyan), var(--teal));
+    }
+
+    .theme-toggle {
+      appearance: none;
+      width: 36px;
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--soft);
+      background: var(--panel);
+      cursor: pointer;
+      font-size: 17px;
+      line-height: 1;
+    }
+
+    .menu-toggle {
+      display: none;
+      appearance: none;
+      width: 38px;
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--soft);
+      background: var(--panel);
+      cursor: pointer;
+      font-size: 20px;
+      line-height: 1;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 0 16px;
+      border-radius: 8px;
+      border: 1px solid rgba(111, 183, 232, 0.34);
+      background: linear-gradient(135deg, var(--cyan), var(--teal));
+      color: var(--button-text);
+      font-weight: 720;
+      box-shadow: 0 14px 30px rgba(82, 133, 184, 0.14);
+    }
+
+    .button.secondary {
+      color: var(--soft);
+      background: var(--panel);
+      border-color: var(--line);
+      box-shadow: none;
+    }
+
+    .hero {
+      max-width: var(--max);
+      width: 100%;
+      max-width: min(var(--max), 100%);
+      margin: 0 auto;
+      padding: 82px 22px 42px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+      gap: 34px;
+      align-items: center;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border: 1px solid rgba(111, 183, 232, 0.28);
+      border-radius: 999px;
+      color: var(--green);
+      background: rgba(111, 183, 232, 0.075);
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    h1 {
+      margin: 18px 0 16px;
+      max-width: 680px;
+      font-size: clamp(36px, 5vw, 58px);
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    html[lang^="zh"] h1 {
+      max-width: 640px;
+      font-size: clamp(32px, 4.2vw, 50px);
+      line-height: 1.14;
+    }
+
+    .lead {
+      max-width: 590px;
+      margin: 0;
+      color: var(--soft);
+      font-size: 19px;
+      line-height: 1.78;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 28px;
+    }
+
+    .hero-points {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 28px;
+      max-width: 620px;
+    }
+
+    .point {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 13px;
+    }
+
+    .point strong {
+      display: block;
+      margin-bottom: 3px;
+      font-size: 15px;
+    }
+
+    .point span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .hero-visual {
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      overflow: hidden;
+      background: #05090d;
+      box-shadow: 0 30px 80px var(--shadow);
+      max-width: 500px;
+      justify-self: end;
+    }
+
+    .hero-visual img {
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      object-fit: cover;
+    }
+
+    section {
+      max-width: var(--max);
+      width: 100%;
+      max-width: min(var(--max), 100%);
+      margin: 0 auto;
+      padding: 58px 22px;
+    }
+
+    .section-head {
+      max-width: 760px;
+      margin-bottom: 26px;
+    }
+
+    .section-head h2,
+    .privacy-band h2 {
+      margin: 0 0 10px;
+      font-size: clamp(28px, 4vw, 42px);
+      line-height: 1.16;
+      letter-spacing: 0;
+    }
+
+    .section-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 17px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: linear-gradient(180deg, var(--panel-strong), var(--panel));
+      padding: 20px;
+      min-height: 188px;
+      min-width: 0;
+    }
+
+    .card .label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      margin-bottom: 18px;
+      border-radius: 8px;
+      color: var(--button-text);
+      background: linear-gradient(135deg, var(--cyan), var(--teal));
+      font-weight: 800;
+    }
+
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      line-height: 1.35;
+      letter-spacing: 0;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 24px;
+      min-width: 0;
+    }
+
+    .panel h3 {
+      margin: 0 0 10px;
+      font-size: 21px;
+      letter-spacing: 0;
+    }
+
+    .panel p {
+      margin: 0 0 16px;
+      color: var(--muted);
+    }
+
+    .flow,
+    .architecture,
+    .facts {
+      display: grid;
+      gap: 10px;
+    }
+
+    .flow-item {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.10);
+      min-width: 0;
+    }
+
+    html[data-theme="light"] .flow-item {
+      background: rgba(255, 255, 255, 0.5);
+    }
+
+    .num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      color: var(--button-text);
+      background: var(--cyan);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .flow-item strong,
+    .arch-box strong {
+      display: block;
+      margin-bottom: 2px;
+      font-size: 15px;
+    }
+
+    .flow-item span,
+    .arch-box span {
+      display: block;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .arch-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .arch-box {
+      min-height: 78px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: var(--panel);
+      min-width: 0;
+    }
+
+    .arch-center {
+      border-color: rgba(111, 183, 232, 0.34);
+      background: linear-gradient(135deg, rgba(111, 183, 232, 0.13), rgba(74, 137, 173, 0.075));
+    }
+
+    .privacy-band {
+      border: 1px solid rgba(111, 183, 232, 0.22);
+      border-radius: 12px;
+      background:
+        linear-gradient(135deg, rgba(111, 183, 232, 0.10), rgba(74, 137, 173, 0.055)),
+        var(--panel);
+      padding: 28px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr);
+      gap: 24px;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .privacy-band p {
+      margin: 0;
+      color: var(--soft);
+      font-size: 16px;
+    }
+
+    .fact {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.14);
+      padding: 13px;
+      color: var(--soft);
+      font-weight: 650;
+      overflow-wrap: anywhere;
+    }
+
+    html[data-theme="light"] .fact {
+      background: rgba(255, 255, 255, 0.58);
+    }
+
+    .status-table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .status-table th,
+    .status-table td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      font-size: 15px;
+    }
+
+    .status-table th {
+      color: var(--soft);
+      background: var(--panel-strong);
+    }
+
+    .status-table tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .status-table td {
+      color: var(--muted);
+    }
+
+    .status-table .ready {
+      color: var(--green);
+      font-weight: 720;
+      white-space: nowrap;
+    }
+
+    .install {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 14px;
+    }
+
+    .code {
+      margin: 14px 0 0;
+      max-width: 100%;
+      padding: 14px;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--code-bg);
+      color: var(--code-text);
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .site-footer {
+      max-width: var(--max);
+      width: 100%;
+      max-width: min(var(--max), 100%);
+      margin: 0 auto;
+      padding: 26px 22px 48px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      font-size: 14px;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+
+    @media (max-width: 980px) {
+      .nav {
+        align-items: center;
+        flex-wrap: wrap;
+        min-height: 0;
+        padding-top: 12px;
+        padding-bottom: 12px;
+        gap: 10px 12px;
+      }
+
+      .nav-actions {
+        display: contents;
+      }
+
+      .brand {
+        flex: 1 1 0;
+        min-width: 0;
+      }
+
+      .segmented {
+        order: 2;
+      }
+
+      .theme-toggle {
+        order: 3;
+      }
+
+      .nav-links {
+        order: 4;
+        flex: 0 0 100%;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        padding: 2px 0 4px;
+        overflow: visible;
+        white-space: normal;
+        flex-wrap: wrap;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .hero,
+      .split,
+      .privacy-band,
+      .install {
+        grid-template-columns: 1fr;
+      }
+
+      .hero {
+        padding-top: 48px;
+      }
+
+      .hero-visual {
+        width: 100%;
+        max-width: 640px;
+        justify-self: stretch;
+      }
+
+      .hero-points,
+      .grid,
+      .arch-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .nav,
+      .hero,
+      section {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+
+      .nav-links {
+        width: 100%;
+        max-width: 100%;
+        gap: 8px;
+        font-size: 13px;
+      }
+
+      .nav-links a {
+        display: inline-flex;
+        flex: 1 1 auto;
+        align-items: center;
+        justify-content: center;
+        min-height: 32px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+
+      .brand img {
+        width: 30px;
+        height: 30px;
+      }
+
+      .brand-name {
+        font-size: 16px;
+      }
+
+      .segmented button {
+        min-width: 34px;
+        padding: 0 8px;
+      }
+
+      .button {
+        min-height: 38px;
+        padding: 0 12px;
+        font-size: 14px;
+      }
+
+      .hero {
+        padding-top: 34px;
+        padding-bottom: 26px;
+        gap: 24px;
+        max-width: 100%;
+      }
+
+      .hero-visual {
+        max-width: 100%;
+      }
+
+      .hero-actions .button {
+        width: 100%;
+      }
+
+      .hero-points {
+        margin-top: 20px;
+      }
+
+      .lead {
+        font-size: 17px;
+        line-height: 1.65;
+      }
+
+      h1,
+      html[lang^="zh"] h1 {
+        font-size: clamp(30px, 9vw, 40px);
+        line-height: 1.16;
+      }
+
+      .panel,
+      .privacy-band {
+        padding: 18px;
+      }
+
+      section {
+        padding-top: 38px;
+        padding-bottom: 38px;
+      }
+
+      .section-head {
+        margin-bottom: 18px;
+      }
+
+      .section-head h2,
+      .privacy-band h2 {
+        font-size: 26px;
+      }
+
+      .card {
+        min-height: 0;
+        padding: 18px;
+      }
+
+      .code {
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .status-table,
+      .status-table thead,
+      .status-table tbody,
+      .status-table tr,
+      .status-table td {
+        display: block;
+        width: 100%;
+      }
+
+      .status-table {
+        border: 0;
+        background: transparent;
+      }
+
+      .status-table thead {
+        display: none;
+      }
+
+      .status-table tr {
+        margin-bottom: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        overflow: hidden;
+      }
+
+      .status-table td {
+        display: grid;
+        grid-template-columns: 86px minmax(0, 1fr);
+        gap: 12px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .status-table td:last-child {
+        border-bottom: 0;
+      }
+
+      .status-table td::before {
+        content: attr(data-label);
+        color: var(--soft);
+        font-weight: 700;
+      }
+
+      .site-footer {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+    }
+
+    @media (max-width: 760px) {
+      :root {
+        --header-offset: 62px;
+      }
+
+      html,
+      body {
+        width: 100%;
+        min-width: 0;
+        overflow-x: hidden;
+      }
+
+      body * {
+        max-width: 100%;
+      }
+
+      .site-header,
+      .nav,
+      .hero,
+      section,
+      .site-footer {
+        width: auto;
+        max-width: 100%;
+        min-width: 0;
+        margin-left: 0;
+        margin-right: 0;
+      }
+
+      .nav,
+      .hero,
+      section,
+      .site-footer {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+
+      .nav {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px 8px;
+      }
+
+      .brand {
+        grid-column: 1;
+        min-width: 0;
+      }
+
+      .brand-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .menu-toggle {
+        display: inline-flex;
+        grid-column: 2;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .nav-actions {
+        grid-column: 1 / -1;
+        display: none;
+        width: 100%;
+        min-width: 0;
+        padding: 10px 0 2px;
+        border-top: 1px solid var(--line);
+      }
+
+      .nav[data-open="true"] .nav-actions {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 10px;
+      }
+
+      .nav[data-open="true"] .menu-toggle {
+        color: var(--button-text);
+        background: linear-gradient(135deg, var(--cyan), var(--teal));
+      }
+
+      .nav-links {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        gap: 8px;
+        white-space: normal;
+      }
+
+      .nav-links a {
+        min-width: 0;
+        width: 100%;
+        justify-content: center;
+        text-align: center;
+        overflow-wrap: anywhere;
+      }
+
+      .segmented,
+      .theme-toggle {
+        justify-self: stretch;
+      }
+
+      .segmented {
+        width: 100%;
+      }
+
+      .segmented button {
+        flex: 1 1 0;
+      }
+
+      .theme-toggle {
+        width: 100%;
+      }
+
+      .hero,
+      .split,
+      .privacy-band,
+      .install,
+      .grid,
+      .arch-row,
+      .hero-points {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) !important;
+        width: auto;
+        max-width: 100%;
+        min-width: 0;
+      }
+
+      .hero > *,
+      section > *,
+      .split > *,
+      .privacy-band > *,
+      .install > *,
+      .grid > *,
+      .arch-row > *,
+      .hero-points > * {
+        min-width: 0;
+      }
+
+      .hero-visual,
+      .hero-visual img {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+      }
+
+      .fact,
+      .code,
+      .panel,
+      .card,
+      .flow-item,
+      .arch-box,
+      .status-table td {
+        width: auto;
+        max-width: 100%;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .code {
+        display: block;
+        overflow-x: hidden;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      table,
+      tbody,
+      thead,
+      tr,
+      td,
+      th,
+      pre,
+      figure,
+      img {
+        max-width: 100%;
+        min-width: 0;
+      }
+
+      figure,
+      pre,
+      table {
+        margin-left: 0;
+        margin-right: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary navigation">
+      <a class="brand" href="#top" aria-label="BrowSync home">
+        <img src="BrowSync/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-128.png" alt="" />
+        <span class="brand-name" data-i18n="brand.name">同览 BrowSync</span>
+      </a>
+      <button class="menu-toggle" type="button" data-menu-toggle aria-label="Open menu" aria-expanded="false" aria-controls="site-menu">☰</button>
+      <div class="nav-actions" id="site-menu">
+        <div class="nav-links">
+          <a href="#features" data-i18n="nav.features">功能</a>
+          <a href="#architecture" data-i18n="nav.architecture">架构</a>
+          <a href="#privacy" data-i18n="nav.privacy">隐私</a>
+          <a href="#install" data-i18n="nav.install">安装</a>
+          <a href="privacy.html" data-i18n="nav.policy">隐私政策</a>
+        </div>
+        <div class="segmented" aria-label="Language">
+          <button type="button" data-lang-option="zh" aria-pressed="true">中</button>
+          <button type="button" data-lang-option="en" aria-pressed="false">EN</button>
+        </div>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Toggle theme">☾</button>
+      </div>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div>
+        <span class="eyebrow" data-i18n="hero.eyebrow">macOS 本地浏览器协同工具</span>
+        <h1 data-i18n="hero.title">让所有浏览器协同工作。</h1>
+        <p class="lead" data-i18n="hero.lead">
+          BrowSync 通过本地 WebSocket 守护进程、浏览器扩展、智能 URL 分流规则和跨浏览器数据同步，把分散在不同浏览器里的工作流统一起来。所有同步和路由都在本机完成。
+        </p>
+        <div class="hero-actions">
+          <a class="button" href="https://github.com/chentao1006/browsync/releases/latest" data-i18n="hero.download">下载最新版本</a>
+          <a class="button secondary" href="https://github.com/chentao1006/browsync" data-i18n="hero.github">查看 GitHub</a>
+        </div>
+        <div class="hero-points" aria-label="BrowSync highlights">
+          <div class="point">
+            <strong data-i18n="hero.point1.title">本地优先</strong>
+            <span data-i18n="hero.point1.body">浏览数据不经过云端服务器。</span>
+          </div>
+          <div class="point">
+            <strong data-i18n="hero.point2.title">智能分流</strong>
+            <span data-i18n="hero.point2.body">按域名、来源应用、时间和专注模式选择浏览器。</span>
+          </div>
+          <div class="point">
+            <strong data-i18n="hero.point3.title">跨浏览器同步</strong>
+            <span data-i18n="hero.point3.body">同步书签、Cookie、标签页状态和站点存储。</span>
+          </div>
+        </div>
+      </div>
+      <figure class="hero-visual" aria-label="BrowSync promotional visual">
+        <img src="BrowSync/Resources/Marketing/BrowSync-Promo-1280x800.png" alt="BrowSync local browser synchronization visual" />
+      </figure>
+    </section>
+
+    <section id="features">
+      <div class="section-head">
+        <h2 data-i18n="features.title">核心能力清晰聚焦。</h2>
+        <p data-i18n="features.lead">
+          BrowSync 不是另一个浏览器，而是你的浏览器协调层：负责把链接送到正确的位置，并让多浏览器之间的重要状态保持一致。
+        </p>
+      </div>
+      <div class="grid">
+        <article class="card">
+          <span class="label">01</span>
+          <h3 data-i18n="features.routing.title">智能 URL 分流</h3>
+          <p data-i18n="features.routing.body">将 BrowSync 设置为 macOS 默认浏览器后，可根据域名、URL 模式、查询参数、来源应用、时间段或专注模式自动选择目标浏览器。</p>
+        </article>
+        <article class="card">
+          <span class="label">02</span>
+          <h3 data-i18n="features.sync.title">跨浏览器数据同步</h3>
+          <p data-i18n="features.sync.body">在所有浏览器之间同步书签、Cookie、LocalStorage、sessionStorage 和标签页状态。</p>
+        </article>
+        <article class="card">
+          <span class="label">03</span>
+          <h3 data-i18n="features.strategy.title">灵活同步策略</h3>
+          <p data-i18n="features.strategy.body">支持单向主从同步、基于访问时间的最后写入者胜出，以及双向合并，适配不同工作流和站点使用习惯。</p>
+        </article>
+        <article class="card">
+          <span class="label">04</span>
+          <h3 data-i18n="features.control.title">细粒度站点控制</h3>
+          <p data-i18n="features.control.body">通过白名单、黑名单和站点级策略覆盖，精确控制哪些站点参与同步、哪些数据类型可以被同步。</p>
+        </article>
+        <article class="card">
+          <span class="label">05</span>
+          <h3 data-i18n="features.native.title">原生 macOS 体验</h3>
+          <p data-i18n="features.native.body">使用 SwiftUI 构建，支持深色/浅色主题、菜单栏集成、专注模式、登录时启动和系统级默认浏览器处理。</p>
+        </article>
+        <article class="card">
+          <span class="label">06</span>
+          <h3 data-i18n="features.extension.title">扩展与守护进程协作</h3>
+          <p data-i18n="features.extension.body">浏览器扩展连接到本地守护进程，统一完成注册、心跳、同步消息和状态维护。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="architecture">
+      <div class="split">
+        <div class="panel">
+          <h3 data-i18n="architecture.title">本地架构</h3>
+          <p data-i18n="architecture.lead">所有扩展连接到本机地址 ws://127.0.0.1:62333。BrowSync App 负责规则配置、同步策略和本地状态管理。</p>
+          <div class="architecture" aria-label="BrowSync architecture">
+            <div class="arch-row">
+              <div class="arch-box">
+                <strong data-i18n="architecture.safari.title">浏览器扩展</strong>
+                <span data-i18n="architecture.safari.body">书签、Cookie、标签页和站点存储代理</span>
+              </div>
+              <div class="arch-box">
+                <strong data-i18n="architecture.chromium.title">Web Extensions</strong>
+                <span data-i18n="architecture.chromium.body">在不同浏览器中共享同步与路由能力</span>
+              </div>
+              <div class="arch-box">
+                <strong data-i18n="architecture.default.title">默认浏览器入口</strong>
+                <span data-i18n="architecture.default.body">接收系统打开链接请求</span>
+              </div>
+            </div>
+            <div class="arch-row">
+              <div class="arch-box arch-center">
+                <strong data-i18n="architecture.daemon.title">本地 WebSocket Daemon</strong>
+                <span data-i18n="architecture.daemon.body">统一注册、心跳和同步消息</span>
+              </div>
+              <div class="arch-box arch-center">
+                <strong data-i18n="architecture.rules.title">Rules Engine</strong>
+                <span data-i18n="architecture.rules.body">执行 URL 分流和策略匹配</span>
+              </div>
+              <div class="arch-box arch-center">
+                <strong data-i18n="architecture.service.title">Sync Service</strong>
+                <span data-i18n="architecture.service.body">处理同步策略、冲突和站点状态</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3 data-i18n="flow.title">典型流程</h3>
+          <p data-i18n="flow.lead">从打开链接到同步状态，BrowSync 的工作链路保持短、清晰、可控。</p>
+          <div class="flow">
+            <div class="flow-item">
+              <span class="num">1</span>
+              <div>
+                <strong data-i18n="flow.step1.title">链接进入 BrowSync</strong>
+                <span data-i18n="flow.step1.body">系统或应用发起打开 URL 请求。</span>
+              </div>
+            </div>
+            <div class="flow-item">
+              <span class="num">2</span>
+              <div>
+                <strong data-i18n="flow.step2.title">规则引擎匹配</strong>
+                <span data-i18n="flow.step2.body">按站点、路径、来源应用、时间和专注模式选择目标浏览器。</span>
+              </div>
+            </div>
+            <div class="flow-item">
+              <span class="num">3</span>
+              <div>
+                <strong data-i18n="flow.step3.title">浏览器启动或复用</strong>
+                <span data-i18n="flow.step3.body">将链接送到规则匹配出的目标浏览器。</span>
+              </div>
+            </div>
+            <div class="flow-item">
+              <span class="num">4</span>
+              <div>
+                <strong data-i18n="flow.step4.title">扩展同步状态</strong>
+                <span data-i18n="flow.step4.body">浏览器扩展通过本地连接同步选定的数据类型。</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="privacy">
+      <div class="privacy-band">
+        <div>
+          <h2 data-i18n="privacy.title">隐私优先，不依赖外部服务器。</h2>
+          <p data-i18n="privacy.body">BrowSync 的同步和 URL 路由完全在你的设备本地进行。浏览历史、书签、Cookie 和站点存储不会被发送到 BrowSync 云端、第三方分析服务、广告网络或数据经纪商。</p>
+        </div>
+        <div class="facts">
+          <div class="fact" data-i18n="privacy.fact1">本地地址：ws://127.0.0.1:62333</div>
+          <div class="fact" data-i18n="privacy.fact2">数据目录：~/Library/Application Support/BrowSync</div>
+          <div class="fact" data-i18n="privacy.fact3">支持按站点开启或关闭同步范围</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2 data-i18n="status.title">当前功能状态。</h2>
+        <p data-i18n="status.lead">MVP 已覆盖浏览器检测、扩展状态、URL 分流、书签同步、站点存储同步、Cookie 同步和标签页状态同步。</p>
+      </div>
+      <table class="status-table" aria-label="BrowSync feature status">
+        <thead>
+          <tr>
+            <th data-i18n="status.col1">能力</th>
+            <th data-i18n="status.col2">说明</th>
+            <th data-i18n="status.col3">状态</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-label="能力" data-i18n-label="status.col1" data-i18n="status.row1.name">浏览器检测与扩展状态</td>
+            <td data-label="说明" data-i18n-label="status.col2" data-i18n="status.row1.body">扫描已安装浏览器，并展示扩展连接与运行状态。</td>
+            <td data-label="状态" data-i18n-label="status.col3" class="ready" data-i18n="status.ready">已支持</td>
+          </tr>
+          <tr>
+            <td data-label="能力" data-i18n-label="status.col1" data-i18n="status.row2.name">URL 分流规则</td>
+            <td data-label="说明" data-i18n-label="status.col2" data-i18n="status.row2.body">支持按 URL、域名、来源应用、时间和专注模式做默认浏览器路由。</td>
+            <td data-label="状态" data-i18n-label="status.col3" class="ready" data-i18n="status.ready">已支持</td>
+          </tr>
+          <tr>
+            <td data-label="能力" data-i18n-label="status.col1" data-i18n="status.row3.name">跨浏览器同步</td>
+            <td data-label="说明" data-i18n-label="status.col2" data-i18n="status.row3.body">同步书签、Cookie、LocalStorage、sessionStorage 和标签页状态。</td>
+            <td data-label="状态" data-i18n-label="status.col3" class="ready" data-i18n="status.ready">已支持</td>
+          </tr>
+          <tr>
+            <td data-label="能力" data-i18n-label="status.col1" data-i18n="status.row4.name">主题与本地化</td>
+            <td data-label="说明" data-i18n-label="status.col2" data-i18n="status.row4.body">支持深色、浅色、系统主题，以及英文和简体中文界面。</td>
+            <td data-label="状态" data-i18n-label="status.col3" class="ready" data-i18n="status.ready">已支持</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="install">
+      <div class="section-head">
+        <h2 data-i18n="install.title">安装与使用。</h2>
+        <p data-i18n="install.lead">下载发布版本即可开始使用；开发者也可以从源码生成 Xcode 工程。</p>
+      </div>
+      <div class="install">
+        <article class="panel">
+          <h3 data-i18n="install.release.title">下载发布版</h3>
+          <p data-i18n="install.release.body">前往 GitHub Releases 下载最新版本。运行后可在 macOS 设置中将 BrowSync 设置为默认浏览器，以启用 URL 分流。</p>
+          <a class="button" href="https://github.com/chentao1006/browsync/releases/latest" data-i18n="install.release.button">打开 Releases</a>
+        </article>
+        <article class="panel">
+          <h3 data-i18n="install.source.title">从源码运行</h3>
+          <p data-i18n="install.source.body">项目使用 XcodeGen 生成工程。完成签名 Team 配置后，可直接在 Xcode 中运行 BrowSync target。</p>
+          <pre class="code">git clone https://github.com/chentao1006/browsync.git
+cd browsync
+chmod +x setup.sh
+./setup.sh
+open BrowSync.xcodeproj</pre>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span data-i18n="footer.copyright">© 2026 BrowSync. All rights reserved.</span>
+    <div class="footer-links">
+      <a href="README.md">README</a>
+      <a href="README_zh.md" data-i18n="footer.zh">中文说明</a>
+      <a href="privacy.html" data-i18n="footer.privacy">隐私政策</a>
+      <a href="https://github.com/chentao1006/browsync">GitHub</a>
+    </div>
+  </footer>
+
+  <script>
+    var copy = {
+      zh: {
+        "brand.name": "同览 BrowSync",
+        "nav.features": "功能",
+        "nav.architecture": "架构",
+        "nav.privacy": "隐私",
+        "nav.install": "安装",
+        "nav.policy": "隐私政策",
+        "hero.eyebrow": "同览 BrowSync · macOS 本地浏览器协同工具",
+        "hero.title": "让所有浏览器协同工作。",
+        "hero.lead": "BrowSync 通过本地 WebSocket 守护进程、浏览器扩展、智能 URL 分流规则和跨浏览器数据同步，把分散在不同浏览器里的工作流统一起来。所有同步和路由都在本机完成。",
+        "hero.download": "下载最新版本",
+        "hero.github": "查看 GitHub",
+        "hero.point1.title": "本地优先",
+        "hero.point1.body": "浏览数据不经过云端服务器。",
+        "hero.point2.title": "智能分流",
+        "hero.point2.body": "按域名、来源应用、时间和专注模式选择浏览器。",
+        "hero.point3.title": "跨浏览器同步",
+        "hero.point3.body": "同步书签、Cookie、标签页状态和站点存储。",
+        "features.title": "核心能力清晰聚焦。",
+        "features.lead": "BrowSync 不是另一个浏览器，而是你的浏览器协调层：负责把链接送到正确的位置，并让多浏览器之间的重要状态保持一致。",
+        "features.routing.title": "智能 URL 分流",
+        "features.routing.body": "将 BrowSync 设置为 macOS 默认浏览器后，可根据域名、URL 模式、查询参数、来源应用、时间段或专注模式自动选择目标浏览器。",
+        "features.sync.title": "跨浏览器数据同步",
+        "features.sync.body": "在所有浏览器之间同步书签、Cookie、LocalStorage、sessionStorage 和标签页状态。",
+        "features.strategy.title": "灵活同步策略",
+        "features.strategy.body": "支持单向主从同步、基于访问时间的最后写入者胜出，以及双向合并，适配不同工作流和站点使用习惯。",
+        "features.control.title": "细粒度站点控制",
+        "features.control.body": "通过白名单、黑名单和站点级策略覆盖，精确控制哪些站点参与同步、哪些数据类型可以被同步。",
+        "features.native.title": "原生 macOS 体验",
+        "features.native.body": "使用 SwiftUI 构建，支持深色/浅色主题、菜单栏集成、专注模式、登录时启动和系统级默认浏览器处理。",
+        "features.extension.title": "扩展与守护进程协作",
+        "features.extension.body": "浏览器扩展连接到本地守护进程，统一完成注册、心跳、同步消息和状态维护。",
+        "architecture.title": "本地架构",
+        "architecture.lead": "所有扩展连接到本机地址 ws://127.0.0.1:62333。BrowSync App 负责规则配置、同步策略和本地状态管理。",
+        "architecture.safari.title": "浏览器扩展",
+        "architecture.safari.body": "书签、Cookie、标签页和站点存储代理",
+        "architecture.chromium.title": "Web Extensions",
+        "architecture.chromium.body": "在不同浏览器中共享同步与路由能力",
+        "architecture.default.title": "默认浏览器入口",
+        "architecture.default.body": "接收系统打开链接请求",
+        "architecture.daemon.title": "本地 WebSocket Daemon",
+        "architecture.daemon.body": "统一注册、心跳和同步消息",
+        "architecture.rules.title": "Rules Engine",
+        "architecture.rules.body": "执行 URL 分流和策略匹配",
+        "architecture.service.title": "Sync Service",
+        "architecture.service.body": "处理同步策略、冲突和站点状态",
+        "flow.title": "典型流程",
+        "flow.lead": "从打开链接到同步状态，BrowSync 的工作链路保持短、清晰、可控。",
+        "flow.step1.title": "链接进入 BrowSync",
+        "flow.step1.body": "系统或应用发起打开 URL 请求。",
+        "flow.step2.title": "规则引擎匹配",
+        "flow.step2.body": "按站点、路径、来源应用、时间和专注模式选择目标浏览器。",
+        "flow.step3.title": "浏览器启动或复用",
+        "flow.step3.body": "将链接送到规则匹配出的目标浏览器。",
+        "flow.step4.title": "扩展同步状态",
+        "flow.step4.body": "浏览器扩展通过本地连接同步选定的数据类型。",
+        "privacy.title": "隐私优先，不依赖外部服务器。",
+        "privacy.body": "BrowSync 的同步和 URL 路由完全在你的设备本地进行。浏览历史、书签、Cookie 和站点存储不会被发送到 BrowSync 云端、第三方分析服务、广告网络或数据经纪商。",
+        "privacy.fact1": "本地地址：ws://127.0.0.1:62333",
+        "privacy.fact2": "数据目录：~/Library/Application Support/BrowSync",
+        "privacy.fact3": "支持按站点开启或关闭同步范围",
+        "status.title": "当前功能状态。",
+        "status.lead": "MVP 已覆盖浏览器检测、扩展状态、URL 分流、书签同步、站点存储同步、Cookie 同步和标签页状态同步。",
+        "status.col1": "能力",
+        "status.col2": "说明",
+        "status.col3": "状态",
+        "status.row1.name": "浏览器检测与扩展状态",
+        "status.row1.body": "扫描已安装浏览器，并展示扩展连接与运行状态。",
+        "status.row2.name": "URL 分流规则",
+        "status.row2.body": "支持按 URL、域名、来源应用、时间和专注模式做默认浏览器路由。",
+        "status.row3.name": "跨浏览器同步",
+        "status.row3.body": "同步书签、Cookie、LocalStorage、sessionStorage 和标签页状态。",
+        "status.row4.name": "主题与本地化",
+        "status.row4.body": "支持深色、浅色、系统主题，以及英文和简体中文界面。",
+        "status.ready": "已支持",
+        "install.title": "安装与使用。",
+        "install.lead": "下载发布版本即可开始使用；开发者也可以从源码生成 Xcode 工程。",
+        "install.release.title": "下载发布版",
+        "install.release.body": "前往 GitHub Releases 下载最新版本。运行后可在 macOS 设置中将 BrowSync 设置为默认浏览器，以启用 URL 分流。",
+        "install.release.button": "打开 Releases",
+        "install.source.title": "从源码运行",
+        "install.source.body": "项目使用 XcodeGen 生成工程。完成签名 Team 配置后，可直接在 Xcode 中运行 BrowSync target。",
+        "footer.copyright": "© 2026 BrowSync. All rights reserved.",
+        "footer.zh": "中文说明",
+        "footer.privacy": "隐私政策"
+      },
+      en: {
+        "brand.name": "BrowSync",
+        "nav.features": "Features",
+        "nav.architecture": "Architecture",
+        "nav.privacy": "Privacy",
+        "nav.install": "Install",
+        "nav.policy": "Privacy Policy",
+        "hero.eyebrow": "BrowSync · Chinese name: 同览",
+        "hero.title": "Make all browsers work together.",
+        "hero.lead": "BrowSync unifies your browsing workflow through a local WebSocket daemon, browser extensions, intelligent URL routing rules, and cross-browser data synchronization. Sync and routing stay on your device.",
+        "hero.download": "Download Latest",
+        "hero.github": "View GitHub",
+        "hero.point1.title": "Local first",
+        "hero.point1.body": "Browsing data does not pass through cloud servers.",
+        "hero.point2.title": "Smart routing",
+        "hero.point2.body": "Choose browsers by domain, source app, time, and Focus mode.",
+        "hero.point3.title": "Cross-browser sync",
+        "hero.point3.body": "Sync bookmarks, cookies, tab state, and site storage.",
+        "features.title": "Focused capabilities for daily browsing.",
+        "features.lead": "BrowSync is not another browser. It is the coordination layer that sends links to the right place and keeps important state consistent across browsers.",
+        "features.routing.title": "Intelligent URL routing",
+        "features.routing.body": "Set BrowSync as your default macOS browser and route links by domain, URL pattern, query string, source app, time window, or Focus mode.",
+        "features.sync.title": "Cross-browser data sync",
+        "features.sync.body": "Synchronize bookmarks, cookies, LocalStorage, sessionStorage, and tab state across all browsers.",
+        "features.strategy.title": "Flexible sync strategies",
+        "features.strategy.body": "Use one-way master-slave sync, last-write-wins based on access time, or bidirectional merging depending on the site and workflow.",
+        "features.control.title": "Granular site control",
+        "features.control.body": "Use allowlists, blocklists, and per-site policy overrides to decide which sites and data categories participate in synchronization.",
+        "features.native.title": "Native macOS experience",
+        "features.native.body": "Built with SwiftUI, with dark and light appearance, menu bar integration, Focus mode support, launch at login, and system-level default browser handling.",
+        "features.extension.title": "Extension and daemon workflow",
+        "features.extension.body": "Browser extensions connect to the local daemon for registration, heartbeat, sync messages, and state maintenance.",
+        "architecture.title": "Local architecture",
+        "architecture.lead": "All extensions connect to ws://127.0.0.1:62333. The BrowSync app manages rules, sync strategies, and local state.",
+        "architecture.safari.title": "Browser Extension",
+        "architecture.safari.body": "Bookmark, cookie, tab, and site-storage proxy",
+        "architecture.chromium.title": "Web Extensions",
+        "architecture.chromium.body": "Shared sync and routing capabilities across browsers",
+        "architecture.default.title": "Default browser entry",
+        "architecture.default.body": "Receives system URL open requests",
+        "architecture.daemon.title": "Local WebSocket Daemon",
+        "architecture.daemon.body": "Registration, heartbeat, and sync messages",
+        "architecture.rules.title": "Rules Engine",
+        "architecture.rules.body": "URL routing and policy matching",
+        "architecture.service.title": "Sync Service",
+        "architecture.service.body": "Sync policies, conflict handling, and site state",
+        "flow.title": "Typical flow",
+        "flow.lead": "From opening a link to syncing browser state, BrowSync keeps the path short and controlled.",
+        "flow.step1.title": "A link enters BrowSync",
+        "flow.step1.body": "The system or an app opens a URL.",
+        "flow.step2.title": "Rules are matched",
+        "flow.step2.body": "Site, path, source app, time, and Focus mode determine the target browser.",
+        "flow.step3.title": "Browser opens or reuses a window",
+        "flow.step3.body": "The link is routed to the target browser selected by your rules.",
+        "flow.step4.title": "Extensions sync state",
+        "flow.step4.body": "Browser extensions synchronize the selected data categories through the local connection.",
+        "privacy.title": "Privacy first, with no external server dependency.",
+        "privacy.body": "BrowSync synchronization and URL routing happen entirely on your device. History, bookmarks, cookies, and site storage are not sent to BrowSync cloud servers, third-party analytics, advertising networks, or data brokers.",
+        "privacy.fact1": "Local endpoint: ws://127.0.0.1:62333",
+        "privacy.fact2": "Data directory: ~/Library/Application Support/BrowSync",
+        "privacy.fact3": "Per-site control for enabling or disabling sync scope",
+        "status.title": "Current feature status.",
+        "status.lead": "The MVP covers browser detection, extension status, URL routing, bookmark sync, site-storage sync, cookie sync, and tab-state sync.",
+        "status.col1": "Capability",
+        "status.col2": "Description",
+        "status.col3": "Status",
+        "status.row1.name": "Browser detection and extension status",
+        "status.row1.body": "Scans installed browsers and displays extension connection and runtime status.",
+        "status.row2.name": "URL routing rules",
+        "status.row2.body": "Routes default-browser links by URL, domain, source app, time, and Focus mode.",
+        "status.row3.name": "Cross-browser sync",
+        "status.row3.body": "Syncs bookmarks, cookies, LocalStorage, sessionStorage, and tab state.",
+        "status.row4.name": "Theme and localization",
+        "status.row4.body": "Supports dark, light, and system appearance, plus English and Simplified Chinese content.",
+        "status.ready": "Ready",
+        "install.title": "Install and run.",
+        "install.lead": "Download a release build to start using BrowSync, or generate the Xcode project from source.",
+        "install.release.title": "Download release",
+        "install.release.body": "Open GitHub Releases for the latest build. After running BrowSync, set it as the default browser in macOS Settings to enable URL routing.",
+        "install.release.button": "Open Releases",
+        "install.source.title": "Run from source",
+        "install.source.body": "The project uses XcodeGen to generate the Xcode project. Configure your signing team, then run the BrowSync target in Xcode.",
+        "footer.copyright": "© 2026 BrowSync. All rights reserved.",
+        "footer.zh": "Chinese README",
+        "footer.privacy": "Privacy Policy"
+      }
+    };
+
+    function preferredLanguage() {
+      var saved = localStorage.getItem("browsync-lang");
+      if (saved === "zh" || saved === "en") return saved;
+      return (navigator.language || "en").toLowerCase().indexOf("zh") === 0 ? "zh" : "en";
+    }
+
+    function preferredTheme() {
+      var saved = localStorage.getItem("browsync-theme");
+      if (saved === "dark" || saved === "light") return saved;
+      return window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    }
+
+    function applyLanguage(lang) {
+      document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+      document.querySelectorAll("[data-i18n]").forEach(function (node) {
+        var value = copy[lang][node.dataset.i18n];
+        if (value) node.textContent = value;
+      });
+      document.querySelectorAll("[data-i18n-label]").forEach(function (node) {
+        var value = copy[lang][node.dataset.i18nLabel];
+        if (value) node.dataset.label = value;
+      });
+      document.querySelectorAll("[data-lang-option]").forEach(function (button) {
+        button.setAttribute("aria-pressed", button.dataset.langOption === lang ? "true" : "false");
+      });
+    }
+
+    function applyTheme(theme) {
+      document.documentElement.dataset.theme = theme;
+      var toggle = document.querySelector("[data-theme-toggle]");
+      if (toggle) {
+        toggle.textContent = theme === "dark" ? "☾" : "☀";
+        toggle.setAttribute("aria-label", theme === "dark" ? "Switch to light theme" : "Switch to dark theme");
+      }
+    }
+
+    document.querySelectorAll("[data-lang-option]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        localStorage.setItem("browsync-lang", button.dataset.langOption);
+        applyLanguage(button.dataset.langOption);
+      });
+    });
+
+    document.querySelector("[data-theme-toggle]").addEventListener("click", function () {
+      var next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      localStorage.setItem("browsync-theme", next);
+      applyTheme(next);
+    });
+
+    var menuToggle = document.querySelector("[data-menu-toggle]");
+    var nav = document.querySelector(".nav");
+    if (menuToggle && nav) {
+      menuToggle.addEventListener("click", function () {
+        var isOpen = nav.dataset.open === "true";
+        nav.dataset.open = isOpen ? "false" : "true";
+        menuToggle.setAttribute("aria-expanded", isOpen ? "false" : "true");
+        menuToggle.textContent = isOpen ? "☰" : "×";
+      });
+
+      document.querySelectorAll(".nav-links a").forEach(function (link) {
+        link.addEventListener("click", function () {
+          nav.dataset.open = "false";
+          menuToggle.setAttribute("aria-expanded", "false");
+          menuToggle.textContent = "☰";
+        });
+      });
+    }
+
+    if (window.matchMedia) {
+      window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", function () {
+        if (!localStorage.getItem("browsync-theme")) applyTheme(preferredTheme());
+      });
+    }
+
+    applyLanguage(preferredLanguage());
+    applyTheme(preferredTheme());
+  </script>
+</body>
+</html>

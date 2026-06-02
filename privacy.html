@@ -21,10 +21,21 @@
       --accent-soft: #ccfbf1;
     }
 
-    * { box-sizing: border-box; }
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
+    html {
+      width: 100%;
+      overflow-x: hidden;
+    }
 
     body {
       margin: 0;
+      width: 100%;
+      overflow-x: hidden;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
       color: var(--text);
       background: linear-gradient(180deg, #eff6ff 0%, var(--bg) 220px);
@@ -32,6 +43,7 @@
     }
 
     .wrap {
+      width: 100%;
       max-width: 880px;
       margin: 0 auto;
       padding: 28px 16px 64px;
@@ -43,6 +55,8 @@
       border-radius: 14px;
       padding: 28px;
       box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+      min-width: 0;
+      overflow-wrap: anywhere;
     }
 
     h1, h2 { line-height: 1.3; margin: 0 0 12px; }
@@ -73,7 +87,12 @@
       margin: 12px 0;
     }
 
-    a { color: var(--accent); text-decoration: none; }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
     a:hover { text-decoration: underline; }
 
     .foot {
@@ -97,9 +116,46 @@
     }
 
     @media (max-width: 640px) {
-      .card { padding: 20px; }
+      html,
+      body {
+        width: 100%;
+        min-width: 0;
+        overflow-x: hidden;
+      }
+
+      body * {
+        max-width: 100%;
+      }
+
+      .wrap {
+        width: auto;
+        max-width: 100%;
+        min-width: 0;
+        padding: 16px 12px 40px;
+      }
+
+      .card {
+        width: auto;
+        max-width: 100%;
+        min-width: 0;
+        padding: 18px;
+        border-radius: 10px;
+      }
+
       h1 { font-size: 24px; }
       h2 { font-size: 18px; }
+
+      ul {
+        margin-left: 0;
+        padding-left: 18px;
+      }
+
+      p,
+      li,
+      .note,
+      .foot {
+        overflow-wrap: anywhere;
+      }
     }
   </style>
 </head>
