@@ -44,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let updaterController: SPUStandardUpdaterController
     private var shouldShowSettingsWindow = false
     private var pendingURLRequests: [(url: URL, sourceAppBundleId: String?)] = []
+    private var lastActiveAppBundleId: String?
 
     override init() {
         updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
@@ -64,6 +65,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)), forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
         NotificationCenter.default.addObserver(self, selector: #selector(windowWillClose(_:)), name: NSWindow.willCloseNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(settingsWindowDidBecomeKey(_:)), name: NSWindow.didBecomeKeyNotification, object: nil)
+        
+        // Track the last active application to reliably identify the source app even during URL routing focus jumps
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] notification in
+            if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+               app.bundleIdentifier != Bundle.main.bundleIdentifier {
+                self?.lastActiveAppBundleId = app.bundleIdentifier
+            }
+        }
         
         let settingsService = SettingsService()
         if settingsService.general.hideWindowOnStartup {
@@ -149,8 +158,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let url = URL(string: urlString) else { return }
 
         hideDockIconIfNoVisibleMainWindow()
+        
         let sourceAppBundleId = sourceBundleIdentifier(from: event)
-
+        processURL(url, sourceAppBundleId: sourceAppBundleId)
+    }
+    
+    private func processURL(_ url: URL, sourceAppBundleId: String?) {
         if let appState {
             appState.handleIncomingURL(url, sourceAppBundleId: sourceAppBundleId)
         } else {
@@ -178,6 +191,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func sourceBundleIdentifier(from event: NSAppleEventDescriptor) -> String? {
         let selfBundleId = Bundle.main.bundleIdentifier
+        
+        // Attempt 1: Extract the true sender PID directly from the Apple Event (macOS 10.15+)
+        if let pidDescriptor = event.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr)) {
+            let pid = pid_t(pidDescriptor.int32Value)
+            if let app = NSRunningApplication(processIdentifier: pid),
+               let bundleId = app.bundleIdentifier,
+               bundleId != selfBundleId,
+               !bundleId.contains("com.apple.coreservices") {
+                return bundleId
+            }
+        }
+        
         let attributeKeys: [AEKeyword] = [keyOriginalAddressAttr, keyAddressAttr]
 
         for key in attributeKeys {
@@ -191,6 +216,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let frontmost = NSWorkspace.shared.frontmostApplication,
            frontmost.bundleIdentifier != selfBundleId {
             return frontmost.bundleIdentifier
+        }
+
+        if #available(macOS 13.0, *) {
+            if let menuBarApp = NSWorkspace.shared.menuBarOwningApplication,
+               menuBarApp.bundleIdentifier != selfBundleId {
+                return menuBarApp.bundleIdentifier
+            }
+        }
+
+        for app in NSWorkspace.shared.runningApplications {
+            if app.isActive && app.bundleIdentifier != selfBundleId {
+                return app.bundleIdentifier
+            }
+        }
+        
+        if let lastActive = lastActiveAppBundleId {
+            return lastActive
         }
 
         return nil
@@ -227,7 +269,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "BrowSync",
             "BrowSync/sites",
             "BrowSync/bookmarks",
-            "BrowSync/history",
             "BrowSync/logs",
         ]
         for dir in dirs {
@@ -244,15 +285,31 @@ struct MenuBarView: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
+        Button(String(localized: "打开同览")) {
+            if (NSApp.delegate as? AppDelegate)?.showExistingSettingsWindowIfPossible() != true {
+                (NSApp.delegate as? AppDelegate)?.prepareToOpenSettingsWindow()
+                openWindow(id: "SettingsWindow")
+            }
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        
+        Menu(String(localized: "立即同步")) {
+            Button(String(localized: "全部同步")) {
+                Task { await appState.syncAll() }
+            }
+            Button(String(localized: "同步状态")) {
+                Task { await appState.sync(categories: [.browserState, .browserData, .localStorage, .history]) }
+            }
+            Button(String(localized: "同步书签")) {
+                Task { await appState.sync(categories: [.bookmarks]) }
+            }
+        }
+        
+        Divider()
+
         // Installed Browsers Section
         ForEach(appState.browserInfos.filter { $0.isInstalled }) { info in
             Menu {
-                Button(String(localized: "设为默认")) {
-                    // Placeholder for set default
-                    print("Set default: \(info.displayName)")
-                }
-                .disabled(info.isDefault)
-
                 Button(String(localized: "打开 \(info.displayName)")) {
                     if let appURL = info.appURL {
                         NSWorkspace.shared.open(appURL)
@@ -273,36 +330,8 @@ struct MenuBarView: View {
 
         Divider()
 
-        // Current Domain Section
-        if let domain = appState.activeDomain {
-            Menu {
-                Button("添加到网站名单") {
-                    let newSetting = WebsiteSyncSetting(domain: domain, strategy: nil)
-                    if !appState.settingsService.syncSettings.websiteSettings.contains(where: { $0.domain == domain }) {
-                        appState.objectWillChange.send()
-                        appState.settingsService.syncSettings.websiteSettings.append(newSetting)
-                        appState.settingsService.save()
-                    }
-                }
-            } label: {
-                Text("当前网站 \(domain)")
-            }
-
-            Divider()
-        }
 
         // Actions Section
-        Button(String(localized: "立即同步")) {
-            Task { await appState.syncAll() }
-        }
-
-        Button(String(localized: "设置")) {
-            if (NSApp.delegate as? AppDelegate)?.showExistingSettingsWindowIfPossible() != true {
-                (NSApp.delegate as? AppDelegate)?.prepareToOpenSettingsWindow()
-                openWindow(id: "SettingsWindow")
-            }
-            NSApp.activate(ignoringOtherApps: true)
-        }
 
         Button(String(localized: "检查更新...")) {
             (NSApp.delegate as? AppDelegate)?.updaterController.checkForUpdates(nil)

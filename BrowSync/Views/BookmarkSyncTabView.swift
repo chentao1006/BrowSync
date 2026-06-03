@@ -70,6 +70,21 @@ struct BookmarkSyncTabView: View {
             .padding()
 
             Form {
+                Section("参与同步的浏览器") {
+                    ForEach(appState.browserInfos.filter { $0.isInstalled }) { info in
+                        Toggle(info.displayName, isOn: Binding(
+                            get: { syncSettings.bookmarkParticipatingBrowsers.wrappedValue.contains(info.browser) },
+                            set: { isParticipating in
+                                if isParticipating {
+                                    syncSettings.wrappedValue.bookmarkParticipatingBrowsers.insert(info.browser)
+                                } else {
+                                    syncSettings.wrappedValue.bookmarkParticipatingBrowsers.remove(info.browser)
+                                }
+                            }
+                        ))
+                    }
+                }
+
                 Section("同步策略选择") {
                     Picker("默认策略", selection: syncSettings.bookmarkSyncStrategy) {
                         ForEach(BookmarkSyncStrategy.allCases) { strategy in
@@ -127,8 +142,9 @@ struct BookmarkSyncTabView: View {
                             .padding(.vertical, 4)
                         }
                     }
+                    
+                    Toggle("自动同步书签", isOn: syncSettings.bookmarkAutoSync)
                 }
-                
                 if (syncSettings.bookmarkSyncStrategy.wrappedValue == .twoWayMerge || 
                    (syncSettings.bookmarkSyncStrategy.wrappedValue == .oneWay && syncSettings.bookmarkSourceBrowser.wrappedValue == .safari)) 
                    && !appState.hasFullDiskAccess {

@@ -16,15 +16,23 @@ function cookieIdentity(cookie) {
   return `${cookie.domain}::${cookie.path || '/'}::${cookie.name}`;
 }
 
+let cachedCookieTimestamps = null;
+let saveCookieTimestampsTimer = null;
+
 async function getCookieTimestamps() {
+  if (cachedCookieTimestamps) return cachedCookieTimestamps;
   const result = await chrome.storage.local.get(COOKIE_TIMESTAMPS_KEY).catch(() => ({}));
-  return result[COOKIE_TIMESTAMPS_KEY] || {};
+  cachedCookieTimestamps = result[COOKIE_TIMESTAMPS_KEY] || {};
+  return cachedCookieTimestamps;
 }
 
 async function setCookieTimestamp(cookie, updatedAt) {
   const timestamps = await getCookieTimestamps();
   timestamps[cookieIdentity(cookie)] = updatedAt;
-  await chrome.storage.local.set({ [COOKIE_TIMESTAMPS_KEY]: timestamps }).catch(() => {});
+  if (saveCookieTimestampsTimer) clearTimeout(saveCookieTimestampsTimer);
+  saveCookieTimestampsTimer = setTimeout(() => {
+    chrome.storage.local.set({ [COOKIE_TIMESTAMPS_KEY]: cachedCookieTimestamps }).catch(() => {});
+  }, 2000);
 }
 
 // ─── Browser detection ────────────────────────────────────────────────────────
@@ -119,6 +127,7 @@ function updateBadge(state = null) {
   if (state === 'syncing') {
     chrome.action.setBadgeText({ text: 'SYNC' });
     chrome.action.setBadgeBackgroundColor({ color: '#3b82f6' });
+    chrome.action.setBadgeTextColor({ color: '#ffffff' });
     setTimeout(() => updateBadge(), 2000);
     return;
   }
@@ -126,9 +135,11 @@ function updateBadge(state = null) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     chrome.action.setBadgeText({ text: 'ON' }).catch(() => {});
     chrome.action.setBadgeBackgroundColor({ color: '#22c55e' }).catch(() => {});
+    chrome.action.setBadgeTextColor({ color: '#ffffff' }).catch(() => {});
   } else {
     chrome.action.setBadgeText({ text: 'OFF' }).catch(() => {});
     chrome.action.setBadgeBackgroundColor({ color: '#94a3b8' }).catch(() => {});
+    chrome.action.setBadgeTextColor({ color: '#ffffff' }).catch(() => {});
   }
 }
 
@@ -172,6 +183,36 @@ async function applySync(message) {
     case 'bookmarks':
       console.log(`[BrowSync] Applying ${(payload.bookmarks || []).length} bookmarks... isFullMirror: ${message.isFullMirror}`);
       await applyBookmarkSync(payload.bookmarks || [], message.isFullMirror);
+      break;
+    case 'bookmarks_removed':
+      if (chrome.bookmarks && payload.bookmark) {
+        const bm = payload.bookmark;
+        console.log(`[BrowSync] Removing bookmark title ${bm.title}`);
+        try {
+          await chrome.bookmarks.removeTree(bm.id);
+        } catch(e) {
+          if (bm.url) {
+            const results = await chrome.bookmarks.search({ url: bm.url });
+            for (const r of results) {
+               if (r.title === bm.title) {
+                 await chrome.bookmarks.remove(r.id).catch(()=>{});
+                 break;
+               }
+            }
+          } else {
+            const tree = await chrome.bookmarks.getTree();
+            let foundFolderId = null;
+            function searchFolder(nodes) {
+              for (const n of nodes) {
+                if (!n.url && n.title === bm.title) foundFolderId = n.id;
+                if (n.children && !foundFolderId) searchFolder(n.children);
+              }
+            }
+            searchFolder(tree);
+            if (foundFolderId) await chrome.bookmarks.removeTree(foundFolderId).catch(()=>{});
+          }
+        }
+      }
       break;
     case 'localStorage':
     case 'sessionStorage': {
@@ -379,7 +420,12 @@ async function handlePullRequest(category) {
 
 // ─── Bookmarks ───────────────────────────────────────────────────────────────
 
+let isApplyingSync = false;
+
 async function applyBookmarkSync(bookmarks, isFullMirror = false) {
+  if (isApplyingSync) return;
+  isApplyingSync = true;
+  try {
   if (!chrome.bookmarks) return;
 
   console.log(`[BrowSync] applyBookmarkSync: ${bookmarks.length} bookmarks, isFullMirror=${isFullMirror}`);
@@ -424,11 +470,14 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
 
   // Build a tree to process parents before children
   const byParent = new Map();
-  const roots = [];
+  const rootsBar = [];
+  const rootsOther = [];
 
   for (const bm of bookmarks) {
     if (!bm.parentId || bm.parentId === '1' || bm.parentId === '0') {
-      roots.push(bm);
+      rootsBar.push(bm);
+    } else if (bm.parentId === '2') {
+      rootsOther.push(bm);
     } else {
       if (!byParent.has(bm.parentId)) byParent.set(bm.parentId, []);
       byParent.get(bm.parentId).push(bm);
@@ -449,6 +498,12 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
       let localId;
       if (existingNode) {
         localId = existingNode.id;
+        if (existingNode.title !== bm.title || (!bm.isFolder && existingNode.url !== bm.url)) {
+          await chrome.bookmarks.update(localId, { title: bm.title, url: bm.isFolder ? undefined : bm.url }).catch(()=>{});
+        }
+        if (existingNode.parentId !== localParentId) {
+          await chrome.bookmarks.move(localId, { parentId: localParentId }).catch(()=>{});
+        }
       } else {
         const created = await chrome.bookmarks.create({
           parentId: localParentId,
@@ -466,7 +521,8 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
     }
   }
 
-  await processNodes(roots, '1');
+  await processNodes(rootsBar, '1');
+  await processNodes(rootsOther, '2');
 
   // STEP 2: Prune items not in incoming payload
   if (isFullMirror) {
@@ -497,17 +553,23 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
       }
     }
 
-    // Only prune inside id=1 (Bookmarks Bar) to be safe
-    const bar = freshTree[0]?.children?.find(c => c.id === '1');
-    if (bar?.children) {
-      await pruneTree(bar.children);
+    // Prune inside all safe system roots: id=1, id=2, id=3
+    const rootsToPrune = ['1', '2', '3'];
+    for (const rootId of rootsToPrune) {
+      const rootNode = freshTree[0]?.children?.find(c => c.id === rootId);
+      if (rootNode?.children) {
+        await pruneTree(rootNode.children);
+      }
     }
     console.log('[BrowSync] Pruning complete');
+  } } finally {
+    setTimeout(() => { isApplyingSync = false; }, 2000);
   }
 }
 
 if (chrome.bookmarks) {
   chrome.bookmarks.onCreated.addListener(async (id, bookmark) => {
+    if (isApplyingSync) return;
     send({
       type: 'sync',
       browser: DETECTED_BROWSER,
@@ -530,15 +592,44 @@ if (chrome.bookmarks) {
     });
   });
 
-  chrome.bookmarks.onRemoved.addListener((id) => {
+  chrome.bookmarks.onRemoved.addListener((id, removeInfo) => {
+    if (isApplyingSync) return;
     send({
       type: 'sync',
       browser: DETECTED_BROWSER,
       category: 'bookmarks_removed',
-      payload: { kind: 'bookmarks_removed', id },
+      payload: { 
+        kind: 'bookmarks_removed', 
+        bookmark: {
+          id,
+          title: removeInfo.node.title,
+          url: removeInfo.node.url || null,
+          parentId: removeInfo.parentId,
+          isFolder: !removeInfo.node.url,
+          sourceBrowser: DETECTED_BROWSER,
+          dateAdded: removeInfo.node.dateAdded || Date.now()
+        }
+      },
       messageId: crypto.randomUUID(),
       timestamp: Date.now(),
     });
+  });
+
+  let bookmarkSyncTimer = null;
+  function triggerFullBookmarkSync() {
+    if (isApplyingSync) return;
+    if (bookmarkSyncTimer) clearTimeout(bookmarkSyncTimer);
+    bookmarkSyncTimer = setTimeout(() => {
+      handlePullRequest('bookmarks');
+    }, 1000);
+  }
+
+  chrome.bookmarks.onChanged.addListener(() => {
+    triggerFullBookmarkSync();
+  });
+
+  chrome.bookmarks.onMoved.addListener(() => {
+    triggerFullBookmarkSync();
   });
 }
 
@@ -573,19 +664,24 @@ if (chrome.cookies) {
     } else {
       chrome.storage.local.remove(tKey).catch(() => { });
     }
-
-    send({
-      type: 'sync',
-      browser: DETECTED_BROWSER,
-      site: cookie.domain,
-      category: 'cookies',
-      payload: {
-        kind: 'cookies',
-        cookies: [payloadCookie]
-      },
-      messageId: crypto.randomUUID(),
-      timestamp: Date.now(),
-    });
+    cookieSyncQueue.set(cookieKey, payloadCookie);
+    if (cookieSyncTimer) clearTimeout(cookieSyncTimer);
+    cookieSyncTimer = setTimeout(() => {
+      const cookiesToSend = Array.from(cookieSyncQueue.values());
+      cookieSyncQueue.clear();
+      send({
+        type: 'sync',
+        browser: DETECTED_BROWSER,
+        site: '*',
+        category: 'cookies',
+        payload: {
+          kind: 'cookies',
+          cookies: cookiesToSend
+        },
+        messageId: crypto.randomUUID(),
+        timestamp: Date.now()
+      });
+    }, 500);
   });
 }
 

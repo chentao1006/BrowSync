@@ -91,6 +91,9 @@ struct StateSyncTabView: View {
                     }
                     .pickerStyle(.menu)
                     
+                    Toggle("实时自动同步", isOn: syncSettings.automaticSync)
+                        .padding(.vertical, 4)
+                    
                     HStack {
                         Text("网站列表")
                             .font(.headline)
@@ -149,10 +152,6 @@ struct StateSyncTabView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                }
-                
-                Section("自动化") {
-                    Toggle("自动同步开关 (定时触发)", isOn: syncSettings.automaticSync)
                 }
             }
             .formStyle(.grouped)

@@ -3,7 +3,6 @@ import SwiftUI
 struct RouterTabView: View {
     @EnvironmentObject var appState: AppState
     @State private var editingRule: RouterRule?
-    @State private var showingRuleEditor = false
     @State private var installedApps: [InstalledAppInfo] = []
 
     var body: some View {
@@ -44,7 +43,7 @@ struct RouterTabView: View {
                     HStack {
                         Image(systemName: "arrow.uturn.right.circle.fill")
                             .foregroundColor(.secondary)
-                        Text("默认规则")
+                        Text("默认浏览器")
                             .fontWeight(.medium)
                         Spacer()
                         
@@ -66,7 +65,6 @@ struct RouterTabView: View {
                     ForEach($appState.routerRules) { $rule in
                         RouterRuleRow(rule: $rule, installedApps: installedApps) {
                             editingRule = rule
-                            showingRuleEditor = true
                         } onDelete: {
                             appState.routerRules.removeAll { $0.id == rule.id }
                         }
@@ -85,7 +83,6 @@ struct RouterTabView: View {
                     Button(action: {
                         let newRule = RouterRule()
                         editingRule = newRule
-                        showingRuleEditor = true
                     }) {
                         Label("添加规则", systemImage: "plus")
                     }
@@ -97,22 +94,18 @@ struct RouterTabView: View {
             .disabled(!appState.isRouterEnabled)
             
         }
-        .sheet(isPresented: $showingRuleEditor) {
-            if let rule = editingRule {
-                RuleEditorView(rule: rule, initialInstalledApps: installedApps) { updatedRule in
-                    if let index = appState.routerRules.firstIndex(where: { $0.id == updatedRule.id }) {
-                        appState.routerRules[index] = updatedRule
-                    } else {
-                        appState.routerRules.append(updatedRule)
-                    }
-                    showingRuleEditor = false
-                    editingRule = nil
-                } onCancel: {
-                    showingRuleEditor = false
-                    editingRule = nil
+        .sheet(item: $editingRule) { rule in
+            RuleEditorView(rule: rule, initialInstalledApps: installedApps) { updatedRule in
+                if let index = appState.routerRules.firstIndex(where: { $0.id == updatedRule.id }) {
+                    appState.routerRules[index] = updatedRule
+                } else {
+                    appState.routerRules.append(updatedRule)
                 }
-                .environmentObject(appState)
+                editingRule = nil
+            } onCancel: {
+                editingRule = nil
             }
+            .environmentObject(appState)
         }
         .onAppear {
             appState.checkDefaultBrowser()

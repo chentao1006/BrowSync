@@ -18,6 +18,7 @@ private enum AppIconCache {
         }
 
         let icon = NSWorkspace.shared.icon(forFile: url.path)
+        icon.size = NSSize(width: 16, height: 16)
         icons[key] = icon
         return icon
     }
@@ -135,7 +136,7 @@ struct RuleEditorView: View {
                     TextField("规则名称", text: $rule.name)
                     
                     Picker("目标浏览器", selection: $rule.targetBrowserId) {
-                        Text("走默认规则").tag(String?.none)
+                        Text("默认浏览器").tag(String?.none)
                         Divider()
                         ForEach(appState.browserInfos.filter { $0.isInstalled }) { info in
                             Label {
@@ -281,8 +282,14 @@ struct ConditionRow: View {
                 if condition.field == .sourceApp {
                     // App picker
                     Picker("", selection: $condition.value) {
-                        Text("手动输入").tag("")
-                        Divider()
+                        if condition.value.isEmpty {
+                            Text("请选择 App").tag("")
+                            Divider()
+                        } else if !installedApps.contains(where: { $0.id == condition.value }) {
+                            Text(condition.value).tag(condition.value)
+                            Divider()
+                        }
+                        
                         ForEach(installedApps) { app in
                             Label {
                                 Text(app.name)
@@ -293,10 +300,6 @@ struct ConditionRow: View {
                         }
                     }
                     .labelsHidden()
-                    
-                    if !installedApps.contains(where: { $0.id == condition.value }) && !condition.value.isEmpty {
-                        TextField("Bundle ID", text: $condition.value)
-                    }
                 } else {
                     TextField("值", text: $condition.value)
                 }

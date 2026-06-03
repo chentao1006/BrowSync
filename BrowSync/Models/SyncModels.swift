@@ -203,6 +203,8 @@ struct SyncSettings: Codable, Equatable {
     var conflictStrategy: ConflictStrategy = .primaryWins
     var bookmarkSyncStrategy: BookmarkSyncStrategy = .twoWayMerge
     var bookmarkSourceBrowser: Browser = .safari
+    var bookmarkAutoSync: Bool = false
+    var bookmarkParticipatingBrowsers: Set<Browser> = Set(Browser.allCases)
     
     // Browser Data (Cookies & LocalStorage) Settings
     var browserDataSyncStrategy: BrowserDataSyncStrategy = .latestWins
@@ -215,7 +217,7 @@ struct SyncSettings: Codable, Equatable {
     var iCloudSync: Bool = false     // PRO
 
     private enum CodingKeys: String, CodingKey {
-        case conflictStrategy, bookmarkSyncStrategy, bookmarkSourceBrowser, browserDataSyncStrategy, stateSourceBrowser, websiteListPolicy, websiteSettings, enabledCategories, automaticSync, iCloudSync
+        case conflictStrategy, bookmarkSyncStrategy, bookmarkSourceBrowser, bookmarkAutoSync, bookmarkParticipatingBrowsers, browserDataSyncStrategy, stateSourceBrowser, websiteListPolicy, websiteSettings, enabledCategories, automaticSync, iCloudSync
     }
 
     init() {}
@@ -225,6 +227,8 @@ struct SyncSettings: Codable, Equatable {
         conflictStrategy = try container.decodeIfPresent(ConflictStrategy.self, forKey: .conflictStrategy) ?? .primaryWins
         bookmarkSyncStrategy = try container.decodeIfPresent(BookmarkSyncStrategy.self, forKey: .bookmarkSyncStrategy) ?? .twoWayMerge
         bookmarkSourceBrowser = try container.decodeIfPresent(Browser.self, forKey: .bookmarkSourceBrowser) ?? .safari
+        bookmarkAutoSync = try container.decodeIfPresent(Bool.self, forKey: .bookmarkAutoSync) ?? false
+        bookmarkParticipatingBrowsers = try container.decodeIfPresent(Set<Browser>.self, forKey: .bookmarkParticipatingBrowsers) ?? Set(Browser.allCases)
         browserDataSyncStrategy = try container.decodeIfPresent(BrowserDataSyncStrategy.self, forKey: .browserDataSyncStrategy) ?? .latestWins
         stateSourceBrowser = try container.decodeIfPresent(Browser.self, forKey: .stateSourceBrowser) ?? .safari
         websiteListPolicy = try container.decodeIfPresent(WebsiteListPolicy.self, forKey: .websiteListPolicy) ?? .allowList

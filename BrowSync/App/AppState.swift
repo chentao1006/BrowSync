@@ -48,7 +48,7 @@ final class AppState: ObservableObject {
     init() {
         // Wire up services
         syncService.daemon = daemon
-        syncService.settings = settingsService.syncSettings
+        syncService.settingsService = settingsService
         syncService.backupService = backupService
         
         isRouterEnabled = settingsService.routerSettings.isEnabled
@@ -118,8 +118,11 @@ final class AppState: ObservableObject {
             return
         }
 
+        let urlString = url.absoluteString
+        let sourceName = sourceAppBundleId ?? "unknown"
+
         guard isRouterEnabled else {
-            openInDefaultFallback(url: url)
+            openInDefaultFallback(url: url, sourceName: sourceName, reason: "Router disabled")
             return
         }
         
@@ -127,17 +130,21 @@ final class AppState: ObservableObject {
             if rule.evaluate(url: url, sourceAppBundleId: sourceAppBundleId) {
                 if let targetId = rule.targetBrowserId,
                    let targetAppURL = appURL(forBrowserId: targetId) {
+                    syncService.log("🔀 Routed '\(urlString)' (from \(sourceName)) ➡️ \(targetId) (Rule Matched: '\(rule.name)')")
                     NSWorkspace.shared.open([url], withApplicationAt: targetAppURL, configuration: NSWorkspace.OpenConfiguration())
+                    return
+                } else if rule.targetBrowserId == nil {
+                    openInDefaultFallback(url: url, sourceName: sourceName, reason: "Rule Matched: '\(rule.name)' (Action: Default Browser)")
                     return
                 }
             }
         }
         
         // Fallback
-        openInDefaultFallback(url: url)
+        openInDefaultFallback(url: url, sourceName: sourceName, reason: "No rule matched")
     }
     
-    private func openInDefaultFallback(url: URL) {
+    private func openInDefaultFallback(url: URL, sourceName: String, reason: String) {
         let fallbackInfo: BrowserInfo?
         if let fallbackId = fallbackBrowserId {
             fallbackInfo = browserInfos.first(where: { $0.id.rawValue == fallbackId })
@@ -149,6 +156,10 @@ final class AppState: ObservableObject {
             ?? fallbackBrowserId.flatMap { appURL(forBrowserId: $0) }
             ?? browserInfos.first(where: { $0.isDefault })?.appURL
             ?? Browser.safari.appURL
+            
+        let targetName = fallbackInfo?.id.rawValue ?? fallbackBrowserId ?? "Default Browser"
+        syncService.log("🔀 Routed '\(url.absoluteString)' (from \(sourceName)) ➡️ \(targetName) (\(reason))")
+        
         if let appURL = targetAppURL {
             NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration())
         }
@@ -273,14 +284,32 @@ extension AppState: DaemonServerDelegate {
         Task { @MainActor in
             let strategy = self.settingsService.syncSettings.bookmarkSyncStrategy
             let sourceBrowser = self.settingsService.syncSettings.bookmarkSourceBrowser
-            // Only respond if Safari is the source (or twoWayMerge)
-            guard strategy == .twoWayMerge || (strategy == .oneWay && sourceBrowser == .safari) else { return }
-            let safariSvc = SafariBookmarkService()
-            let safariBms = safariSvc.readBookmarks()
-            guard !safariBms.isEmpty else { return }
-            let bookmarks = safariBms.map { b in
-                Bookmark(id: b.id, title: b.title, url: b.url, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
+            
+            // Safari extension does not support the WebExtension bookmarks API (it uses native sync instead)
+            // so we should never push bookmarks to the Safari extension.
+            if clientId.contains("safari") { return }
+            
+            // Do not push bookmarks back to the browser that is the source of truth
+            if sourceBrowser == .chrome && clientId.contains("chrome") { return }
+            
+            var bookmarksToSend: [Bookmark]? = nil
+            
+            if sourceBrowser == .safari {
+                let safariSvc = SafariBookmarkService()
+                let safariBms = safariSvc.readBookmarks()
+                if !safariBms.isEmpty {
+                    bookmarksToSend = safariBms.map { b in
+                        Bookmark(id: b.id, title: b.title, url: b.url, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
+                    }
+                }
+            } else {
+                if let latestBackup = self.backupService.backups.first(where: { $0.sourceBrowser.starts(with: sourceBrowser.rawValue) }) {
+                    bookmarksToSend = self.backupService.getBookmarks(for: latestBackup.id)
+                }
             }
+            
+            guard let bookmarks = bookmarksToSend, !bookmarks.isEmpty else { return }
+            
             var msg = WSMessage(
                 type: .sync,
                 site: "*",
@@ -291,6 +320,8 @@ extension AppState: DaemonServerDelegate {
             )
             msg.isFullMirror = (strategy == .oneWay)
             // Only send to the requesting client
+            let sourceName = sourceBrowser == .safari ? "Safari" : "Chrome"
+            self.syncService.log("Answering pull request from [\(clientId)]: Pushed \(bookmarks.count) \(sourceName) bookmarks (isFullMirror: \(msg.isFullMirror ?? false))")
             server.send(msg, toClientId: clientId)
         }
     }

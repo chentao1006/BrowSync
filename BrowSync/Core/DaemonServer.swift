@@ -192,7 +192,8 @@ final class DaemonServer: ObservableObject {
             logger.warning("Failed to decode WebSocket message: \(error)")
             if let handle = try? FileHandle(forWritingTo: logFile) {
                 handle.seekToEndOfFile()
-                let errStr = "[DECODE ERROR] \(error)\n"
+                let rawString = String(data: data, encoding: .utf8) ?? "unknown"
+                let errStr = "[DECODE ERROR] \(error)\nRAW DATA: \(rawString)\n"
                 handle.write(errStr.data(using: .utf8)!)
                 try? handle.close()
             }
@@ -242,12 +243,35 @@ final class DaemonServer: ObservableObject {
             client.lastSeen = Date()
             
             // For bookmarks, always serve fresh state (not stale cache)
-            if message.category == "bookmarks" {
+            if message.category == nil || message.category == "bookmarks" {
                 delegate?.daemonServer(self, didReceivePullBookmarks: client.id)
-            } else {
+            }
+            
+            if message.category != "bookmarks" {
                 let payloads = GlobalStateStore.shared.pull(site: message.site, category: message.category)
                 for payloadData in payloads {
-                    sendData(payloadData, on: client.connection)
+                    // Strip tombstones before sending cached cookie state.
+                    // Tombstones in GlobalState are stale remnants from previous syncs.
+                    // Sending them here bypasses filterCookies/acceptLatestCookie entirely,
+                    // causing silent cookie deletions with no log. Only send live cookies.
+                    if let msg = try? JSONDecoder().decode(WSMessage.self, from: payloadData),
+                       msg.category == "cookies",
+                       case .cookies(let cookies) = msg.payload {
+                        let liveOnly = cookies.filter { $0.removed != true }
+                        if liveOnly.isEmpty { continue }
+                        if liveOnly.count < cookies.count {
+                            // Had tombstones — rebuild message without them
+                            var cleaned = msg
+                            cleaned.payload = .cookies(liveOnly)
+                            if let cleanData = try? JSONEncoder().encode(cleaned) {
+                                sendData(cleanData, on: client.connection)
+                            }
+                        } else {
+                            sendData(payloadData, on: client.connection)
+                        }
+                    } else {
+                        sendData(payloadData, on: client.connection)
+                    }
                 }
             }
 
@@ -315,10 +339,11 @@ final class DaemonServer: ObservableObject {
         })
     }
 
-    func broadcast(_ message: WSMessage, excluding excludedId: String? = nil) {
+    func broadcast(_ message: WSMessage, excluding excludedId: String? = nil, participatingBrowsers: Set<Browser>? = nil) {
         guard let data = try? JSONEncoder().encode(message) else { return }
         for (id, client) in clients {
             if id == excludedId { continue }
+            if let participating = participatingBrowsers, !participating.contains(client.browser) { continue }
             sendData(data, on: client.connection)
         }
     }
@@ -404,7 +429,12 @@ final class GlobalStateStore {
     func save(message: WSMessage) {
         queue.async {
             guard let category = message.category, let site = message.site else { return }
-            let key = "\(category)_\(site)"
+            var key = "\(category)_\(site)"
+            if category == "bookmarks_removed" {
+                if case .bookmarksRemoved(let bm) = message.payload {
+                    key = "\(category)_\(bm.id)"
+                }
+            }
             if let data = try? JSONEncoder().encode(message) {
                 self.stateCache[key] = data
                 self.persist()
@@ -431,8 +461,8 @@ final class GlobalStateStore {
     private func load() {
         if let data = try? Data(contentsOf: fileURL),
            let cache = try? JSONDecoder().decode([String: Data].self, from: data) {
-            // Drop any cached bookmarks — these are always served fresh from Safari
-            self.stateCache = cache.filter { !$0.key.hasPrefix("bookmarks_") }
+            // Drop any cached full bookmark trees, but KEEP bookmarks_removed tombstones
+            self.stateCache = cache.filter { !$0.key.hasPrefix("bookmarks_") || $0.key.hasPrefix("bookmarks_removed_") }
         }
     }
 }

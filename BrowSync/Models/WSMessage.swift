@@ -84,10 +84,11 @@ enum WSPayload: Codable {
     case sessionStorage([StorageItem])
     case cookies([SyncCookie])
     case history([HistoryEntry])
+    case bookmarksRemoved(Bookmark)
     case raw([String: AnyCodable])
 
     private enum CodingKeys: String, CodingKey {
-        case kind, bookmarks, tabs, localStorage, sessionStorage, cookies, history, raw
+        case kind, bookmarks, tabs, localStorage, sessionStorage, cookies, history, raw, id, bookmark
     }
 
     init(from decoder: Decoder) throws {
@@ -108,6 +109,13 @@ enum WSPayload: Codable {
             self = .cookies(try container.decode([SyncCookie].self, forKey: .cookies))
         case "history":
             self = .history(try container.decode([HistoryEntry].self, forKey: .history))
+        case "bookmarks_removed":
+            if let str = try? container.decode(String.self, forKey: .id) {
+                self = .bookmarksRemoved(Bookmark(id: str, title: "", url: nil, parentId: nil, isFolder: false, dateAdded: Date(), sourceBrowser: .safari))
+            } else {
+                let bm = try container.decode(Bookmark.self, forKey: .bookmark)
+                self = .bookmarksRemoved(bm)
+            }
         default:
             self = .raw(try container.decode([String: AnyCodable].self, forKey: .raw))
         }
@@ -137,6 +145,9 @@ enum WSPayload: Codable {
         case .history(let v):
             try container.encode("history", forKey: .kind)
             try container.encode(v, forKey: .history)
+        case .bookmarksRemoved(let bookmark):
+            try container.encode("bookmarks_removed", forKey: .kind)
+            try container.encode(bookmark, forKey: .bookmark)
         case .raw(let v):
             try container.encode("raw", forKey: .kind)
             try container.encode(v, forKey: .raw)

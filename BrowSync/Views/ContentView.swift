@@ -15,12 +15,6 @@ struct ContentView: View {
                 }
                 .tag(AppTab.browsers)
 
-            RouterTabView()
-                .tabItem {
-                    Label("分流", systemImage: "arrow.triangle.branch")
-                }
-                .tag(AppTab.router)
-
             StateSyncTabView()
                 .tabItem {
                     Label("状态同步", systemImage: "arrow.triangle.2.circlepath")
@@ -33,6 +27,12 @@ struct ContentView: View {
                     Label("书签同步", systemImage: "bookmark")
                 }
                 .tag(AppTab.bookmarkSync)
+
+            RouterTabView()
+                .tabItem {
+                    Label("分流", systemImage: "arrow.triangle.branch")
+                }
+                .tag(AppTab.router)
 
             GeneralView()
                 .tabItem {
@@ -114,6 +114,19 @@ struct AboutTabView: View {
                             Text("由 Sparkle 提供支持")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                        }
+                    }
+                    
+                    Button("检查更新") {
+                        (NSApp.delegate as? AppDelegate)?.updaterController.checkForUpdates(nil)
+                    }
+                }
+                
+                Section("诊断") {
+                    Button("查看日志") {
+                        if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+                            let logsUrl = appSupport.appendingPathComponent("BrowSync/logs")
+                            NSWorkspace.shared.open(logsUrl)
                         }
                     }
                 }

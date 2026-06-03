@@ -14,15 +14,37 @@ final class SyncService: ObservableObject {
     @Published var syncLog: [SyncLogEntry] = []
 
     var daemon: DaemonServer?
-    var settings: SyncSettings = SyncSettings()
+    var settingsService: SettingsService?
+    var settings: SyncSettings {
+        settingsService?.syncSettings ?? SyncSettings()
+    }
     var backupService: BackupService?
     private let safariBookmarks = SafariBookmarkService()
     private var latestCookieVersions: [String: Double] = [:]
+    private var latestCookieClients: [String: String] = [:]
+    // Tracks cookie keys where the current winner is a tombstone (deletion).
+    // When a live cookie beats a tombstone, the sender may have already had
+    // its cookie deleted by the tombstone broadcast, so we must send it back.
+    private var tombstoneWinnerKeys: Set<String> = []
+    
+    // Safari Bookmark Monitor
+    private var safariMonitorSource: DispatchSourceFileSystemObject?
+    private var safariMonitorFileDescriptor: Int32 = -1
+    private var lastSafariBookmarkSyncTime: Date = Date.distantPast
 
     init() {
+        SafariCleanup.cleanDirtyBookmarks()
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         dataDir = appSupport.appendingPathComponent("BrowSync")
         createDataDirectories()
+        startSafariBookmarkMonitor()
+    }
+    
+    deinit {
+        safariMonitorSource?.cancel()
+        if safariMonitorFileDescriptor != -1 {
+            close(safariMonitorFileDescriptor)
+        }
     }
 
     // MARK: - Data Directories
@@ -33,6 +55,55 @@ final class SyncService: ObservableObject {
             let url = dataDir.appendingPathComponent(dir)
             try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         }
+    }
+    
+    // MARK: - Safari Bookmark Monitor
+    
+    private func startSafariBookmarkMonitor() {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let url = home.appendingPathComponent("Library/Safari/Bookmarks.plist")
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        
+        safariMonitorFileDescriptor = open(url.path, O_EVTONLY)
+        guard safariMonitorFileDescriptor != -1 else { return }
+        
+        safariMonitorSource = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: safariMonitorFileDescriptor,
+            eventMask: [.write, .delete, .rename],
+            queue: .main
+        )
+        
+        safariMonitorSource?.setEventHandler { [weak self] in
+            guard let self = self else { return }
+            let now = Date()
+            // Debounce for 2 seconds to avoid multiple triggers on a single save
+            if now.timeIntervalSince(self.lastSafariBookmarkSyncTime) > 2.0 {
+                self.lastSafariBookmarkSyncTime = now
+                
+                if self.settings.bookmarkAutoSync || self.settings.automaticSync {
+                    self.log("Safari Bookmarks.plist changed! Triggering auto-sync...")
+                    Task {
+                        // Give Safari a moment to finish writing
+                        try? await Task.sleep(nanoseconds: 1_000_000_000)
+                        await self.syncCategory(.bookmarks)
+                    }
+                }
+            }
+            
+            // Re-arm monitor if file was deleted/replaced (e.g., atomic save)
+            let data = self.safariMonitorSource?.data
+            if data?.contains(.delete) == true || data?.contains(.rename) == true {
+                self.safariMonitorSource?.cancel()
+                if self.safariMonitorFileDescriptor != -1 { close(self.safariMonitorFileDescriptor) }
+                // Wait briefly for the new file to be created
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    self.startSafariBookmarkMonitor()
+                }
+            }
+        }
+        
+        safariMonitorSource?.resume()
+        log("Started Safari Bookmarks.plist monitor for real-time sync")
     }
 
     // MARK: - Sync Now
@@ -69,14 +140,41 @@ final class SyncService: ObservableObject {
 
         if category == .bookmarks {
             // Determine if we should push Safari to others
-            let shouldPushSafari = strategy == .twoWayMerge || (strategy == .oneWay && sourceBrowser == .safari)
+            let shouldPushSafari = (strategy == .twoWayMerge || (strategy == .oneWay && sourceBrowser == .safari)) && settings.bookmarkParticipatingBrowsers.contains(.safari)
             
             if shouldPushSafari {
                 let safariBms = safariBookmarks.readBookmarks()
                 if !safariBms.isEmpty {
-                    let bookmarks = safariBms.map { b in
-                        Bookmark(id: b.id, title: b.title, url: b.url, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
+                    // Check for deletions comparing to the last backup
+                    if let lastSafariBackup = backupService?.backups.first(where: { $0.sourceBrowser == "safari" }),
+                       let lastSafariBms = backupService?.getBookmarks(for: lastSafariBackup.id) {
+                        
+                        let currentIds = Set(safariBms.map { $0.id })
+                        let deletedBms = lastSafariBms.filter { !currentIds.contains($0.id) }
+                        
+                        if !deletedBms.isEmpty {
+                            log("Detected \(deletedBms.count) bookmark deletions in Safari, broadcasting removals...")
+                            for deletedBm in deletedBms {
+                                let msg = WSMessage(
+                                    type: .sync,
+                                    site: "*",
+                                    category: "bookmarks_removed",
+                                    payload: .bookmarksRemoved(deletedBm),
+                                    messageId: UUID().uuidString,
+                                    timestamp: Date().timeIntervalSince1970
+                                )
+                                daemon?.broadcast(msg, participatingBrowsers: settings.bookmarkParticipatingBrowsers)
+                                GlobalStateStore.shared.save(message: msg)
+                            }
+                        }
                     }
+
+                    let bookmarks = safariBms.map { b in
+                        Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
+                    }
+                    
+                    backupService?.createBackup(bookmarks: bookmarks, sourceBrowser: "safari")
+                    
                     var pushMsg = WSMessage(
                         type: .sync,
                         site: "*",
@@ -86,7 +184,7 @@ final class SyncService: ObservableObject {
                         timestamp: Date().timeIntervalSince1970
                     )
                     pushMsg.isFullMirror = (strategy == .oneWay)
-                    daemon?.broadcast(pushMsg)
+                    daemon?.broadcast(pushMsg, participatingBrowsers: settings.bookmarkParticipatingBrowsers)
                     log("Pushed \(bookmarks.count) Safari bookmarks to clients")
                 } else {
                     log("No Safari bookmarks found to sync")
@@ -104,7 +202,7 @@ final class SyncService: ObservableObject {
                     messageId: UUID().uuidString,
                     timestamp: Date().timeIntervalSince1970
                 )
-                daemon?.broadcast(requestMessage)
+                daemon?.broadcast(requestMessage, participatingBrowsers: settings.bookmarkParticipatingBrowsers)
             }
         } else {
             // For other categories, we just pull from everyone for now
@@ -127,7 +225,15 @@ final class SyncService: ObservableObject {
         
         var filteredMessage = message
         
-        if category == "bookmarks" {
+        if category == "bookmarks" || category == "bookmark_incremental" || category == "bookmarks_removed" || category == "bookmark_backup" {
+            let browserId = clientId.components(separatedBy: "-").first ?? clientId
+            if let browser = Browser(rawValue: browserId), !settings.bookmarkParticipatingBrowsers.contains(browser) {
+                log("Ignored bookmark data from [\(clientId)] because it is not participating in sync.")
+                return
+            }
+        }
+
+        if category == "bookmarks" || category == "bookmark_incremental" {
             let strategy = settings.bookmarkSyncStrategy
             let sourceBrowser = settings.bookmarkSourceBrowser
             if strategy == .oneWay && sourceBrowser == .safari {
@@ -137,7 +243,7 @@ final class SyncService: ObservableObject {
             if strategy == .oneWay {
                 filteredMessage.isFullMirror = true
             }
-            if case .bookmarks(let bms) = filteredMessage.payload {
+            if category == "bookmarks", case .bookmarks(let bms) = filteredMessage.payload {
                 backupService?.createBackup(bookmarks: bms, sourceBrowser: clientId)
             }
         }
@@ -152,10 +258,25 @@ final class SyncService: ObservableObject {
             return // Don't process further
         }
 
+        if category == "bookmarks_removed" {
+            if case .bookmarksRemoved(let bm) = filteredMessage.payload {
+                safariBookmarks.removeBookmark(id: bm.id, title: bm.title, url: bm.url ?? nil)
+                log("Removed bookmark '\(bm.title)' from Safari (triggered by [\(clientId)])")
+                let shouldSync = settings.bookmarkAutoSync || settings.automaticSync || isSyncing
+                if shouldSync {
+                    daemon?.broadcast(filteredMessage, excluding: clientId)
+                    GlobalStateStore.shared.save(message: filteredMessage)
+                }
+            }
+            return
+        }
+
         if category == "cookie_apply_result" {
             if case .raw(let raw) = filteredMessage.payload,
                let summary = raw["summary"]?.value as? String {
-                log("Cookie apply result from [\(clientId)]: \(summary)")
+                if !summary.hasSuffix("0 failed") {
+                    log("Cookie apply result from [\(clientId)]: \(summary)")
+                }
             }
             return
         }
@@ -167,28 +288,23 @@ final class SyncService: ObservableObject {
             switch payload {
             case .cookies(let cookies):
                 let filtered = filterCookies(cookies, clientId: clientId, policy: policy)
+                if filtered.isEmpty {
+                    return
+                }
                 filteredMessage.payload = .cookies(filtered)
                 logCookieDomains(filtered, clientId: clientId)
             case .localStorage(let items):
                 let filtered = filterStorageItems(items, clientId: clientId, policy: policy)
+                if filtered.isEmpty {
+                    return
+                }
                 filteredMessage.payload = .localStorage(filtered)
             case .sessionStorage(let items):
                 let filtered = filterStorageItems(items, clientId: clientId, policy: policy)
+                if filtered.isEmpty {
+                    return
+                }
                 filteredMessage.payload = .sessionStorage(filtered)
-            default: break
-            }
-            
-            // If everything was filtered out, we can drop the message
-            switch filteredMessage.payload {
-            case .cookies(let c) where c.isEmpty:
-                log("Dropped cookies from [\(clientId)]: filtered by website/source rules")
-                return
-            case .localStorage(let l) where l.isEmpty:
-                log("Dropped localStorage from [\(clientId)]: filtered by website/source rules")
-                return
-            case .sessionStorage(let s) where s.isEmpty:
-                log("Dropped sessionStorage from [\(clientId)]: filtered by website/source rules")
-                return
             default: break
             }
         }
@@ -211,14 +327,64 @@ final class SyncService: ObservableObject {
         if let payload = filteredMessage.payload {
             persist(payload: payload, category: category, from: clientId, isFullMirror: filteredMessage.isFullMirror ?? false)
             
-            if settings.automaticSync || isSyncing {
+            let isBookmarkCategory = (category == "bookmarks" || category == "bookmarks_removed" || category == "bookmark_backup")
+            let shouldSync = isBookmarkCategory ? (settings.bookmarkAutoSync || settings.automaticSync || isSyncing) : (settings.automaticSync || isSyncing)
+            
+            if shouldSync {
                 // Don't cache bookmarks in GlobalStateStore — they must always reflect
                 // the current state of the source browser, not a stale snapshot.
                 if category != "bookmarks" && category != "bookmark_backup" {
-                    GlobalStateStore.shared.save(message: filteredMessage)
+                    if filteredMessage.site == nil {
+                        switch filteredMessage.payload {
+                        case .cookies(let cookies):
+                            let byDomain = Dictionary(grouping: cookies, by: { $0.domain })
+                            for (domain, domainCookies) in byDomain {
+                                var msg = filteredMessage
+                                msg.site = domain
+                                msg.payload = .cookies(domainCookies)
+                                GlobalStateStore.shared.save(message: msg)
+                            }
+                        case .localStorage(let items):
+                            let byOrigin = Dictionary(grouping: items, by: { $0.origin })
+                            for (origin, originItems) in byOrigin {
+                                var msg = filteredMessage
+                                msg.site = origin
+                                msg.payload = .localStorage(originItems)
+                                GlobalStateStore.shared.save(message: msg)
+                            }
+                        case .sessionStorage(let items):
+                            let byOrigin = Dictionary(grouping: items, by: { $0.origin })
+                            for (origin, originItems) in byOrigin {
+                                var msg = filteredMessage
+                                msg.site = origin
+                                msg.payload = .sessionStorage(originItems)
+                                GlobalStateStore.shared.save(message: msg)
+                            }
+                        default: break
+                        }
+                    } else {
+                        GlobalStateStore.shared.save(message: filteredMessage)
+                    }
                 }
-                // Broadcast the filtered payload to other clients
-                daemon?.broadcast(filteredMessage, excluding: clientId)
+                
+                // Broadcast cookies to all clients.
+                // If any live cookie just beat a tombstone winner, the sender's cookie
+                // may have already been deleted by the tombstone broadcast — send it back
+                // to everyone (including the sender) so it gets restored.
+                if category == "cookies", case .cookies(let cookies) = filteredMessage.payload {
+                    let hasResurrection = cookies.contains { c in
+                        let removed = c.removed == true
+                        return !removed && tombstoneWinnerKeys.contains(cookieVersionKey(c))
+                    }
+                    if hasResurrection {
+                        log("Broadcasting cookies to ALL (including sender) — live cookie resurrects a previously deleted one")
+                        daemon?.broadcast(filteredMessage, excluding: nil)
+                    } else {
+                        daemon?.broadcast(filteredMessage, excluding: clientId)
+                    }
+                } else {
+                    daemon?.broadcast(filteredMessage, excluding: clientId)
+                }
             } else {
                 log("Automatic sync is disabled. Received data but did not broadcast.")
             }
@@ -270,6 +436,12 @@ final class SyncService: ObservableObject {
             if policy == .blockList && isListed { return false }
 
             let strategy = siteMatch?.strategy ?? settings.browserDataSyncStrategy
+            
+            if cookie.removed == true && strategy == .twoWayMerge {
+                log("Dropped tombstone for \(cookie.domain)\(cookie.path)::\(cookie.name) from [\(clientId)]: additive-only policy (two-way merge)")
+                return false
+            }
+
             switch strategy {
             case .primaryWins:
                 let source = siteMatch?.sourceBrowser ?? settings.stateSourceBrowser
@@ -283,21 +455,52 @@ final class SyncService: ObservableObject {
     }
 
     private func acceptLatestCookie(_ cookie: SyncCookie, clientId: String) -> Bool {
-        let updatedAt = cookie.updatedAt ?? Date().timeIntervalSince1970 * 1000
-
         let key = cookieVersionKey(cookie)
-        guard let current = latestCookieVersions[key] else {
-            latestCookieVersions[key] = updatedAt
-            return true
+        let incomingTime = cookie.updatedAt ?? 0
+        let isTombstone = cookie.removed == true
+        
+        if let lastTime = latestCookieVersions[key] {
+            let lastClient = latestCookieClients[key] ?? ""
+            
+            // Tombstones must be STRICTLY newer to win — never win via tie-breaker.
+            // On equal timestamps, a live cookie always beats a deletion.
+            let wins: Bool
+            if isTombstone {
+                wins = incomingTime > lastTime
+            } else {
+                wins = incomingTime > lastTime || (incomingTime == lastTime && clientId > lastClient)
+            }
+            
+            if wins {
+                latestCookieVersions[key] = incomingTime
+                latestCookieClients[key] = clientId
+                if isTombstone {
+                    tombstoneWinnerKeys.insert(key)
+                    log("🔴 DELETING \(cookie.domain)\(cookie.path)::\(cookie.name) (Tombstone from [\(clientId)] time \(incomingTime) strictly > last \(lastTime) from [\(lastClient)])")
+                } else {
+                    // Live cookie wins — if it was previously a tombstone winner, it's a resurrection
+                    tombstoneWinnerKeys.remove(key)
+                    log("🟢 ACCEPTING \(cookie.domain)\(cookie.path)::\(cookie.name) (Update from [\(clientId)] time \(incomingTime) > last \(lastTime) from [\(lastClient)])")
+                }
+                return true
+            }
+            
+            if isTombstone {
+                log("⚪️ DROPPING Tombstone for \(cookie.domain)\(cookie.path)::\(cookie.name) from [\(clientId)] (time \(incomingTime) NOT > last \(lastTime) from [\(lastClient)], live cookie wins)")
+            } else {
+                log("⚪️ DROPPING Update for \(cookie.domain)\(cookie.path)::\(cookie.name) from [\(clientId)] (time \(incomingTime) <= last \(lastTime) from [\(lastClient)])")
+            }
+            return false
         }
-
-        if updatedAt > current {
-            latestCookieVersions[key] = updatedAt
-            return true
+        
+        // First time we see this key
+        latestCookieVersions[key] = incomingTime
+        latestCookieClients[key] = clientId
+        if isTombstone {
+            tombstoneWinnerKeys.insert(key)
+            log("🔴 DELETING \(cookie.domain)\(cookie.path)::\(cookie.name) (Tombstone from [\(clientId)] accepted as first seen. Time: \(incomingTime))")
         }
-
-        log("Dropped cookie \(cookie.domain)\(cookie.path)::\(cookie.name) from [\(clientId)]: older than latest known cookie")
-        return false
+        return true
     }
 
     private func logCookieDomains(_ cookies: [SyncCookie], clientId: String) {
@@ -327,7 +530,9 @@ final class SyncService: ObservableObject {
     }
 
     private func cookieVersionKey(_ cookie: SyncCookie) -> String {
-        let domain = cookie.domain.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        var domain = cookie.domain.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        // Normalize: strip leading dot so ".ct106.cc" and "ct106.cc" share the same key
+        if domain.hasPrefix(".") { domain = String(domain.dropFirst()) }
         let path = cookie.path.isEmpty ? "/" : cookie.path
         return "\(domain)::\(path)::\(cookie.name)"
     }
@@ -338,9 +543,11 @@ final class SyncService: ObservableObject {
         switch payload {
         case .bookmarks(let bookmarks):
             let targetDir = dataDir.appendingPathComponent("bookmarks")
-            save(bookmarks, to: targetDir.appendingPathComponent("\(clientId).json"))
+            if category == "bookmarks" {
+                save(bookmarks, to: targetDir.appendingPathComponent("\(clientId).json"))
+            }
             // Also write natively into Safari if the source is a Chromium browser
-            if !clientId.lowercased().contains("safari") {
+            if !clientId.lowercased().contains("safari") && settings.bookmarkParticipatingBrowsers.contains(.safari) {
                 let syncBookmarks = bookmarks.compactMap { b -> SyncBookmark? in
                     let urlStr: String?
                     if let urlOpt = b.url { urlStr = urlOpt } else { urlStr = nil }
