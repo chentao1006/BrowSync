@@ -133,7 +133,7 @@ function updateBadge(state = null) {
   }
   
   if (ws && ws.readyState === WebSocket.OPEN) {
-    chrome.action.setBadgeText({ text: 'ON' }).catch(() => {});
+    chrome.action.setBadgeText({ text: '' }).catch(() => {});
     chrome.action.setBadgeBackgroundColor({ color: '#22c55e' }).catch(() => {});
     chrome.action.setBadgeTextColor({ color: '#ffffff' }).catch(() => {});
   } else {

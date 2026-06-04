@@ -4,6 +4,7 @@ struct RouterTabView: View {
     @EnvironmentObject var appState: AppState
     @State private var editingRule: RouterRule?
     @State private var installedApps: [InstalledAppInfo] = []
+    @State private var ruleToDelete: RouterRule?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,8 +20,6 @@ struct RouterTabView: View {
             .padding()
             .background(Color(nsColor: .windowBackgroundColor))
             
-            Divider()
-
             // Default Browser Banner
             if !appState.isDefaultBrowser {
                 HStack {
@@ -66,11 +65,13 @@ struct RouterTabView: View {
                         RouterRuleRow(rule: $rule, installedApps: installedApps) {
                             editingRule = rule
                         } onDelete: {
-                            appState.routerRules.removeAll { $0.id == rule.id }
+                            ruleToDelete = rule
                         }
                     }
                     .onDelete { indexSet in
-                        appState.routerRules.remove(atOffsets: indexSet)
+                        if let firstIndex = indexSet.first {
+                            ruleToDelete = appState.routerRules[firstIndex]
+                        }
                     }
                     .onMove { indices, newOffset in
                         appState.routerRules.move(fromOffsets: indices, toOffset: newOffset)
@@ -107,6 +108,17 @@ struct RouterTabView: View {
             }
             .environmentObject(appState)
         }
+        .alert("确定要删除此分流规则吗？", isPresented: Binding(
+            get: { ruleToDelete != nil },
+            set: { if !$0 { ruleToDelete = nil } }
+        ), presenting: ruleToDelete) { rule in
+            Button("删除", role: .destructive) {
+                appState.routerRules.removeAll { $0.id == rule.id }
+            }
+            Button("取消", role: .cancel) {}
+        } message: { rule in
+            Text("删除分流规则 \"\(rule.name)\" 后将无法恢复。")
+        }
         .onAppear {
             appState.checkDefaultBrowser()
             loadInstalledApps()
@@ -132,49 +144,63 @@ struct RouterRuleRow: View {
     var installedApps: [InstalledAppInfo]
     var onEdit: () -> Void
     var onDelete: () -> Void
+    @State private var isHovering = false
     
     var body: some View {
         HStack {
             Toggle("", isOn: $rule.isEnabled)
                 .labelsHidden()
             
-            VStack(alignment: .leading) {
-                Text(rule.name)
-                    .font(.headline)
-                conditionSummary
-            }
-            
-            Spacer()
-            
-            if let targetId = rule.targetBrowserId {
-                let targetInfo = appState.browserInfos.first(where: { $0.id.rawValue == targetId })
-                HStack(spacing: 6) {
-                    AppIconImage(appURL: targetInfo?.appURL, size: 16)
-                    Text(targetInfo?.displayName ?? targetId)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-            } else {
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.uturn.right.circle")
-                        .foregroundStyle(.secondary)
-                    Text("默认")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-            }
-            
             Button(action: onEdit) {
-                Image(systemName: "pencil")
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(rule.name)
+                            .font(.headline)
+                        conditionSummary
+                    }
+                    
+                    Spacer()
+                    
+                    if let targetId = rule.targetBrowserId {
+                        let targetInfo = appState.browserInfos.first(where: { $0.id.rawValue == targetId })
+                        HStack(spacing: 6) {
+                            AppIconImage(appURL: targetInfo?.appURL, size: 16)
+                            Text(targetInfo?.displayName ?? targetId)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.uturn.right.circle")
+                                .foregroundStyle(.secondary)
+                            Text("默认")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+                .padding(.horizontal, 8)
+                .background(isHovering ? Color.accentColor.opacity(0.1) : Color.clear)
+                .cornerRadius(6)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.leading, 8)
+            .onHover { hovering in
+                isHovering = hovering
+                if hovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
 
             Button(role: .destructive, action: onDelete) {
                 Image(systemName: "trash")
                     .foregroundColor(.red)
             }
             .buttonStyle(.plain)
+            .padding(.leading, 8)
         }
         .padding(.vertical, 4)
     }

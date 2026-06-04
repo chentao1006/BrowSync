@@ -71,17 +71,36 @@ struct BookmarkSyncTabView: View {
 
             Form {
                 Section("参与同步的浏览器") {
-                    ForEach(appState.browserInfos.filter { $0.isInstalled }) { info in
-                        Toggle(info.displayName, isOn: Binding(
-                            get: { syncSettings.bookmarkParticipatingBrowsers.wrappedValue.contains(info.browser) },
-                            set: { isParticipating in
-                                if isParticipating {
-                                    syncSettings.wrappedValue.bookmarkParticipatingBrowsers.insert(info.browser)
-                                } else {
-                                    syncSettings.wrappedValue.bookmarkParticipatingBrowsers.remove(info.browser)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(appState.browserInfos.filter { $0.isInstalled }) { info in
+                                Toggle(isOn: Binding(
+                                    get: { syncSettings.bookmarkParticipatingBrowsers.wrappedValue.contains(info.browser) },
+                                    set: { isParticipating in
+                                        if isParticipating {
+                                            syncSettings.wrappedValue.bookmarkParticipatingBrowsers.insert(info.browser)
+                                        } else {
+                                            syncSettings.wrappedValue.bookmarkParticipatingBrowsers.remove(info.browser)
+                                        }
+                                    }
+                                )) {
+                                    HStack(spacing: 6) {
+                                        if let url = info.appURL {
+                                            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                                                .resizable()
+                                                .frame(width: 16, height: 16)
+                                        } else {
+                                            Image(systemName: info.id.sfSymbol)
+                                                .frame(width: 16, height: 16)
+                                        }
+                                        Text(info.displayName)
+                                    }
                                 }
+                                .toggleStyle(.checkbox)
                             }
-                        ))
+                        }
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 4)
                     }
                 }
 

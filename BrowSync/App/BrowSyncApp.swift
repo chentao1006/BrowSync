@@ -28,7 +28,7 @@ struct BrowSyncApp: App {
         }
 
         // Menu Bar Extra (macOS 13+)
-        MenuBarExtra("BrowSync", systemImage: "arrow.triangle.2.circlepath.circle.fill") {
+        MenuBarExtra("BrowSync", image: "MenuBarIcon") {
             MenuBarView()
                 .environmentObject(appState)
         }

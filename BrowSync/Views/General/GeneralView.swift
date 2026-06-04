@@ -24,8 +24,6 @@ struct GeneralView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
 
-            Divider()
-
             Form {
                 // App behavior
                 Section("应用行为") {

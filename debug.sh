@@ -62,6 +62,9 @@ cp "${PROJECT_ROOT}/ChromiumExtension/background/service-worker.js" "${PROJECT_R
 cp "${PROJECT_ROOT}/ChromiumExtension/content/content-script.js" "${PROJECT_ROOT}/BrowSyncExtension/Resources/content.js"
 cp -a "${PROJECT_ROOT}/ChromiumExtension/icons" "${PROJECT_ROOT}/BrowSyncExtension/Resources/"
 
+# Fix icon path for Safari Extension (Xcode flattens the icons folder)
+sed -i '' 's|\.\./icons/icon48\.png|icon48.png|g' "${PROJECT_ROOT}/BrowSyncExtension/Resources/popup.html"
+
 echo "Building Debug app..."
 xcodebuild \
     -project "${PROJECT_ROOT}/${PROJECT_NAME}.xcodeproj" \

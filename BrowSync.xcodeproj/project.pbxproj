@@ -22,16 +22,20 @@
 		451459BBDB92A248C9B5A124 /* content.js in Resources */ = {isa = PBXBuildFile; fileRef = C92E6B86E06DBA3FAF458AA8 /* content.js */; };
 		4567138CD68F9FAC79645C22 /* popup.html in Resources */ = {isa = PBXBuildFile; fileRef = 2D55AFE8190981BCBBAD8141 /* popup.html */; };
 		50B07349BAD8F3A740432E15 /* StateSyncTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A871D9385C69C6022679A1A6 /* StateSyncTabView.swift */; };
+		5867FAF63BB675C1A80BB333 /* icon128.png in Resources */ = {isa = PBXBuildFile; fileRef = B2A05B028DAF25A6087D0C8A /* icon128.png */; };
+		62B0BA980E248A7E0832216B /* icon48.png in Resources */ = {isa = PBXBuildFile; fileRef = 3F1B45325089C047D97D2748 /* icon48.png */; };
 		6483E01050E3491D679A4C6A /* BookmarkSyncTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD017512DDEC9AE8140DEF5A /* BookmarkSyncTabView.swift */; };
 		707821BB2B42D121080578F5 /* DaemonServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3528BFE980A1D1244B97800E /* DaemonServer.swift */; };
 		89B2FBA2DA46EBD47142C310 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA75D3B7E887B29E30DDBDE /* NotificationService.swift */; };
 		8A59C788940EE276FEF49438 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2332B7DC4ABFCC9469A81DA4 /* ContentView.swift */; };
+		8A6D255C5DEC2BB106A3CC30 /* icon16.png in Resources */ = {isa = PBXBuildFile; fileRef = 1C9A4FF3AEDC9984175F2890 /* icon16.png */; };
 		96128DEC3156F0AB79B87436 /* popup.js in Resources */ = {isa = PBXBuildFile; fileRef = 9057E94AC94248B5CE65CF31 /* popup.js */; };
 		A2FE9A8C0FC5C40F58163D5C /* WSMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1108A1B4B7AA8CF05488F9C /* WSMessage.swift */; };
 		B2F785D247654F6B9656917F /* SyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82D553C4CA2861D50758366B /* SyncView.swift */; };
 		B3CA3D25584BA151347395DA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5800150E203500FC40165A3D /* Assets.xcassets */; };
 		B73BEA26F240001A92A704D8 /* SettingsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93D2A20D8B97836960D5A19A /* SettingsService.swift */; };
 		BB67DA47A77A3BF2BCCF408C /* background.js in Resources */ = {isa = PBXBuildFile; fileRef = 9F1C6061070A3577FA35F5EF /* background.js */; };
+		BFE57D536478C567B7922537 /* BrowSync-Promo-1280x800.png in Resources */ = {isa = PBXBuildFile; fileRef = C4B27D5A9D28D813C2D50EC6 /* BrowSync-Promo-1280x800.png */; };
 		C30EE96DFF76B037BDEF411A /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFF4219B6E285A9B3E623F49 /* AppState.swift */; };
 		C7046B24359CF5FB86A8E512 /* Browser.swift in Sources */ = {isa = PBXBuildFile; fileRef = C137716E2FEA5232D824F358 /* Browser.swift */; };
 		DBBE43C12EC0AAF9A23B738F /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06AFD458EE98ACF03EC87C22 /* SafariWebExtensionHandler.swift */; };
@@ -70,11 +74,13 @@
 		06AFD458EE98ACF03EC87C22 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
 		10F52E8BB62D4BA5E32CD492 /* RouterTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouterTabView.swift; sourceTree = "<group>"; };
 		11E0FCE05A6FAB3580A7C607 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		1C9A4FF3AEDC9984175F2890 /* icon16.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = icon16.png; sourceTree = "<group>"; };
 		2332B7DC4ABFCC9469A81DA4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		2AF71F0DA64453CD967B49F2 /* BrowserScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserScanner.swift; sourceTree = "<group>"; };
 		2D55AFE8190981BCBBAD8141 /* popup.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = popup.html; sourceTree = "<group>"; };
 		3528BFE980A1D1244B97800E /* DaemonServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DaemonServer.swift; sourceTree = "<group>"; };
 		3DC990238C2CD5EC343B5DF5 /* SafariBookmarkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariBookmarkService.swift; sourceTree = "<group>"; };
+		3F1B45325089C047D97D2748 /* icon48.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = icon48.png; sourceTree = "<group>"; };
 		3FA75D3B7E887B29E30DDBDE /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		46F4DE424609A3662449C730 /* BrowsersTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowsersTabView.swift; sourceTree = "<group>"; };
 		4A471324A48AEDB45FF4BA73 /* SyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncModels.swift; sourceTree = "<group>"; };
@@ -89,10 +95,12 @@
 		9F1C6061070A3577FA35F5EF /* background.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = background.js; sourceTree = "<group>"; };
 		A871D9385C69C6022679A1A6 /* StateSyncTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateSyncTabView.swift; sourceTree = "<group>"; };
 		B1108A1B4B7AA8CF05488F9C /* WSMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WSMessage.swift; sourceTree = "<group>"; };
+		B2A05B028DAF25A6087D0C8A /* icon128.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = icon128.png; sourceTree = "<group>"; };
 		B4F4144B8AE085C797A52208 /* BackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupService.swift; sourceTree = "<group>"; };
 		B56E2AFB07CC6CA3A5582028 /* RuleEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuleEditorView.swift; sourceTree = "<group>"; };
 		BFF4219B6E285A9B3E623F49 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		C137716E2FEA5232D824F358 /* Browser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Browser.swift; sourceTree = "<group>"; };
+		C4B27D5A9D28D813C2D50EC6 /* BrowSync-Promo-1280x800.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "BrowSync-Promo-1280x800.png"; sourceTree = "<group>"; };
 		C6BFEB07402A67F5BB319D14 /* BrowSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowSyncApp.swift; sourceTree = "<group>"; };
 		C92E6B86E06DBA3FAF458AA8 /* content.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = content.js; sourceTree = "<group>"; };
 		D8BE9255117735690255AB52 /* BrowSyncExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BrowSyncExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -113,6 +121,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		2D7420E5C590710BF437D49C /* Marketing */ = {
+			isa = PBXGroup;
+			children = (
+				C4B27D5A9D28D813C2D50EC6 /* BrowSync-Promo-1280x800.png */,
+			);
+			path = Marketing;
+			sourceTree = "<group>";
+		};
 		3D8006824170BA7F5F815CE2 /* _locales */ = {
 			isa = PBXGroup;
 			children = (
@@ -159,6 +175,7 @@
 			children = (
 				5800150E203500FC40165A3D /* Assets.xcassets */,
 				2F278BFDA3B2DF653CD4E4A2 /* Localizable.strings */,
+				2D7420E5C590710BF437D49C /* Marketing */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -230,6 +247,9 @@
 		CF6CDC61CE9F7B7227B3F35D /* icons */ = {
 			isa = PBXGroup;
 			children = (
+				1C9A4FF3AEDC9984175F2890 /* icon16.png */,
+				3F1B45325089C047D97D2748 /* icon48.png */,
+				B2A05B028DAF25A6087D0C8A /* icon128.png */,
 			);
 			path = icons;
 			sourceTree = "<group>";
@@ -357,6 +377,9 @@
 			files = (
 				BB67DA47A77A3BF2BCCF408C /* background.js in Resources */,
 				451459BBDB92A248C9B5A124 /* content.js in Resources */,
+				5867FAF63BB675C1A80BB333 /* icon128.png in Resources */,
+				8A6D255C5DEC2BB106A3CC30 /* icon16.png in Resources */,
+				62B0BA980E248A7E0832216B /* icon48.png in Resources */,
 				02A3CFA0BCE0065AD4A05EBA /* manifest.json in Resources */,
 				4567138CD68F9FAC79645C22 /* popup.html in Resources */,
 				96128DEC3156F0AB79B87436 /* popup.js in Resources */,
@@ -368,6 +391,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B3CA3D25584BA151347395DA /* Assets.xcassets in Resources */,
+				BFE57D536478C567B7922537 /* BrowSync-Promo-1280x800.png in Resources */,
 				0A63D7EDCF55B55E811CB8EE /* Localizable.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

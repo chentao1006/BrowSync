@@ -231,6 +231,7 @@ struct ConditionRow: View {
     @Binding var condition: RuleCondition
     var installedApps: [InstalledAppInfo]
     var onRemove: () -> Void
+    @State private var showingDeleteConfirmation = false
     
     var body: some View {
         HStack {
@@ -301,15 +302,22 @@ struct ConditionRow: View {
                     }
                     .labelsHidden()
                 } else {
-                    TextField("值", text: $condition.value)
+                    TextField("", text: $condition.value)
+                        .labelsHidden()
                 }
             }
             
-            Button(action: onRemove) {
+            Spacer(minLength: 8)
+            
+            Button(action: { showingDeleteConfirmation = true }) {
                 Image(systemName: "minus.circle.fill")
                     .foregroundColor(.red)
             }
             .buttonStyle(.plain)
+            .alert("确定要删除此条件吗？", isPresented: $showingDeleteConfirmation) {
+                Button("删除", role: .destructive, action: onRemove)
+                Button("取消", role: .cancel) {}
+            }
         }
         .padding(.vertical, 2)
     }

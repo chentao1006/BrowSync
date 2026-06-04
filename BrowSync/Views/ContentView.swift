@@ -5,46 +5,52 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
-    @State private var selectedTab: AppTab = .browsers
+    @State private var selectedTab: AppTab? = .browsers
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            BrowsersTabView()
-                .tabItem {
+        NavigationSplitView {
+            List(selection: $selectedTab) {
+                NavigationLink(value: AppTab.browsers) {
                     Label("浏览器", systemImage: "safari")
                 }
-                .tag(AppTab.browsers)
-
-            StateSyncTabView()
-                .tabItem {
+                NavigationLink(value: AppTab.stateSync) {
                     Label("状态同步", systemImage: "arrow.triangle.2.circlepath")
                 }
-                .tag(AppTab.stateSync)
-
-            BookmarkSyncTabView()
-                .environmentObject(appState.backupService)
-                .tabItem {
+                NavigationLink(value: AppTab.bookmarkSync) {
                     Label("书签同步", systemImage: "bookmark")
                 }
-                .tag(AppTab.bookmarkSync)
-
-            RouterTabView()
-                .tabItem {
+                NavigationLink(value: AppTab.router) {
                     Label("分流", systemImage: "arrow.triangle.branch")
                 }
-                .tag(AppTab.router)
-
-            GeneralView()
-                .tabItem {
+                NavigationLink(value: AppTab.general) {
                     Label("通用", systemImage: "gearshape")
                 }
-                .tag(AppTab.general)
-                
-            AboutTabView()
-                .tabItem {
+                NavigationLink(value: AppTab.about) {
                     Label("关于", systemImage: "info.circle")
                 }
-                .tag(AppTab.about)
+            }
+            .navigationTitle("BrowSync")
+        } detail: {
+            if let selectedTab {
+                switch selectedTab {
+                case .browsers:
+                    BrowsersTabView()
+                case .stateSync:
+                    StateSyncTabView()
+                case .bookmarkSync:
+                    BookmarkSyncTabView()
+                        .environmentObject(appState.backupService)
+                case .router:
+                    RouterTabView()
+                case .general:
+                    GeneralView()
+                case .about:
+                    AboutTabView()
+                }
+            } else {
+                Text("请选择项目")
+                    .foregroundStyle(.secondary)
+            }
         }
         .task {
             await appState.onAppear()
@@ -78,8 +84,6 @@ struct AboutTabView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
-
-            Divider()
 
             Form {
                 Section {
@@ -127,6 +131,15 @@ struct AboutTabView: View {
                         if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
                             let logsUrl = appSupport.appendingPathComponent("BrowSync/logs")
                             NSWorkspace.shared.open(logsUrl)
+                        }
+                    }
+                }
+                
+                Section("链接") {
+                    Link(destination: URL(string: "https://github.com/chentao1006/browsync")!) {
+                        HStack {
+                            Image(systemName: "link")
+                            Text("在 GitHub 上查看源码")
                         }
                     }
                 }

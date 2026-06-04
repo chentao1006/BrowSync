@@ -7,6 +7,7 @@ struct StateSyncTabView: View {
     @EnvironmentObject var appState: AppState
     @State private var isSyncing = false
     @State private var showSuccess = false
+    @State private var siteToDelete: WebsiteSyncSetting?
     
     private var syncSettings: Binding<SyncSettings> {
         Binding(
@@ -67,6 +68,63 @@ struct StateSyncTabView: View {
             .padding()
 
             Form {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("部分网站可能无法成功同步状态", systemImage: "info.circle")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                        
+                        Group {
+                            Text("原因：").fontWeight(.bold) +
+                            Text("许多网站使用浏览器指纹或与设备绑定的安全 Token 进行验证。由于浏览器安全限制，扩展无法提取这些数据，且这些 Token 在不同浏览器环境可能被判定为无效。")
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                            
+                        Group {
+                            Text("方案：").fontWeight(.bold) +
+                            Text("对于无法通过同步保持登录的网站，建议您在各浏览器中分别手动登录，或将该网站加入下方列表并关闭其状态同步。")
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                Section("参与同步的浏览器") {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 16) {
+                            ForEach(appState.browserInfos.filter { $0.isInstalled }) { info in
+                                Toggle(isOn: Binding(
+                                    get: { syncSettings.stateParticipatingBrowsers.wrappedValue.contains(info.browser) },
+                                    set: { isParticipating in
+                                        if isParticipating {
+                                            syncSettings.wrappedValue.stateParticipatingBrowsers.insert(info.browser)
+                                        } else {
+                                            syncSettings.wrappedValue.stateParticipatingBrowsers.remove(info.browser)
+                                        }
+                                    }
+                                )) {
+                                    HStack(spacing: 6) {
+                                        if let url = info.appURL {
+                                            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                                                .resizable()
+                                                .frame(width: 16, height: 16)
+                                        } else {
+                                            Image(systemName: info.id.sfSymbol)
+                                                .frame(width: 16, height: 16)
+                                        }
+                                        Text(info.displayName)
+                                    }
+                                }
+                                .toggleStyle(.checkbox)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 4)
+                    }
+                }
+
                 Section("网站选项") {
                     Picker("默认策略", selection: syncSettings.browserDataSyncStrategy) {
                         ForEach(BrowserDataSyncStrategy.allCases) { strategy in
@@ -144,7 +202,7 @@ struct StateSyncTabView: View {
                             }
 
                             Button(role: .destructive) {
-                                syncSettings.websiteSettings.wrappedValue.removeAll(where: { $0.id == $site.wrappedValue.id })
+                                siteToDelete = $site.wrappedValue
                             } label: {
                                 Image(systemName: "trash")
                                     .foregroundStyle(.red)
@@ -156,6 +214,17 @@ struct StateSyncTabView: View {
             }
             .formStyle(.grouped)
             .disabled(!syncSettings.enabledCategories.wrappedValue.contains(.browserData))
+            .alert("确定要删除此规则吗？", isPresented: Binding(
+                get: { siteToDelete != nil },
+                set: { if !$0 { siteToDelete = nil } }
+            ), presenting: siteToDelete) { site in
+                Button("删除", role: .destructive) {
+                    syncSettings.websiteSettings.wrappedValue.removeAll(where: { $0.id == site.id })
+                }
+                Button("取消", role: .cancel) {}
+            } message: { site in
+                Text("删除网站 \"\(site.domain)\" 的独立规则后将恢复使用全局策略。")
+            }
         }
     }
 }

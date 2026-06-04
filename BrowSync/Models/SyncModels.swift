@@ -209,6 +209,7 @@ struct SyncSettings: Codable, Equatable {
     // Browser Data (Cookies & LocalStorage) Settings
     var browserDataSyncStrategy: BrowserDataSyncStrategy = .latestWins
     var stateSourceBrowser: Browser = .safari
+    var stateParticipatingBrowsers: Set<Browser> = Set(Browser.allCases)
     var websiteListPolicy: WebsiteListPolicy = .allowList
     var websiteSettings: [WebsiteSyncSetting] = []
     
@@ -217,7 +218,7 @@ struct SyncSettings: Codable, Equatable {
     var iCloudSync: Bool = false     // PRO
 
     private enum CodingKeys: String, CodingKey {
-        case conflictStrategy, bookmarkSyncStrategy, bookmarkSourceBrowser, bookmarkAutoSync, bookmarkParticipatingBrowsers, browserDataSyncStrategy, stateSourceBrowser, websiteListPolicy, websiteSettings, enabledCategories, automaticSync, iCloudSync
+        case conflictStrategy, bookmarkSyncStrategy, bookmarkSourceBrowser, bookmarkAutoSync, bookmarkParticipatingBrowsers, browserDataSyncStrategy, stateSourceBrowser, stateParticipatingBrowsers, websiteListPolicy, websiteSettings, enabledCategories, automaticSync, iCloudSync
     }
 
     init() {}
@@ -231,6 +232,7 @@ struct SyncSettings: Codable, Equatable {
         bookmarkParticipatingBrowsers = try container.decodeIfPresent(Set<Browser>.self, forKey: .bookmarkParticipatingBrowsers) ?? Set(Browser.allCases)
         browserDataSyncStrategy = try container.decodeIfPresent(BrowserDataSyncStrategy.self, forKey: .browserDataSyncStrategy) ?? .latestWins
         stateSourceBrowser = try container.decodeIfPresent(Browser.self, forKey: .stateSourceBrowser) ?? .safari
+        stateParticipatingBrowsers = try container.decodeIfPresent(Set<Browser>.self, forKey: .stateParticipatingBrowsers) ?? Set(Browser.allCases)
         websiteListPolicy = try container.decodeIfPresent(WebsiteListPolicy.self, forKey: .websiteListPolicy) ?? .allowList
         websiteSettings = try container.decodeIfPresent([WebsiteSyncSetting].self, forKey: .websiteSettings) ?? []
         enabledCategories = try container.decodeIfPresent(Set<SyncCategory>.self, forKey: .enabledCategories) ?? Set(SyncCategory.allCases.filter { $0.defaultEnabled })
