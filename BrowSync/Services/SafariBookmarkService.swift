@@ -149,7 +149,8 @@ final class SafariBookmarkService {
                     if let children = node["Children"] as? [[String: Any]] { scanExistingURLs(nodes: children) }
                 }
             }
-            scanExistingURLs(nodes: nodeChildren)
+            // Scan global children to prevent duplicating root bookmarks into BookmarksMenu
+            scanExistingURLs(nodes: children)
 
             let topLevelBookmarks = bookmarks.filter {
                 guard !rootChromeIds.contains($0.id) else { return false }
@@ -224,6 +225,19 @@ final class SafariBookmarkService {
             if let menuIdx = children.firstIndex(where: { ($0["Title"] as? String) == "BookmarksMenu" }),
                let menuChildren = children[menuIdx]["Children"] as? [[String: Any]] {
                 traverse(nodes: menuChildren, parentId: nil, rootChromeId: "2")
+            }
+            
+            // Process any root-level bookmarks that are not system folders
+            let systemTitles = Set(["BookmarksBar", "BookmarksMenu", "History", "com.apple.ReadingList"])
+            let rootItems = children.filter { child in
+                if let title = child["Title"] as? String, systemTitles.contains(title) { return false }
+                if let isReadingList = child["ReadingListNonSync"] as? Bool, isReadingList { return false }
+                // Check if it's a proxy or something we shouldn't sync
+                if let type = child["WebBookmarkType"] as? String, type != "WebBookmarkTypeList" && type != "WebBookmarkTypeLeaf" { return false }
+                return true
+            }
+            if !rootItems.isEmpty {
+                traverse(nodes: rootItems, parentId: nil, rootChromeId: "2")
             }
             
             return result

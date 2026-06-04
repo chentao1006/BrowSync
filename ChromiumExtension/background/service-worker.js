@@ -361,12 +361,18 @@ async function handlePullRequest(category) {
       const flat = [];
       function traverse(nodes) {
         for (const node of nodes) {
-          if (node.id !== '0') { // Skip root
+          if (!systemRoots.has(node.id)) { // Skip root and system folders
+            let normalizedParentId = node.parentId;
+            if (node.parentId === localBarId) normalizedParentId = '1';
+            else if (node.parentId === localOtherId) normalizedParentId = '2';
+            else if (node.parentId === localMobileId) normalizedParentId = '3';
+            else if (node.parentId === '0') normalizedParentId = '1';
+
             flat.push({ 
               id: node.id, 
               title: node.title, 
               url: node.url, 
-              parentId: node.parentId,
+              parentId: normalizedParentId,
               isFolder: !node.url, 
               dateAdded: node.dateAdded, 
               sourceBrowser: DETECTED_BROWSER 
@@ -420,6 +426,35 @@ async function handlePullRequest(category) {
 
 // ─── Bookmarks ───────────────────────────────────────────────────────────────
 
+let localBarId = '1';
+let localOtherId = '2';
+let localMobileId = '3';
+let systemRoots = new Set(['0', '1', '2', '3']);
+
+if (chrome.bookmarks) {
+  chrome.bookmarks.getTree().then(tree => {
+    send({
+      type: 'sync',
+      browser: DETECTED_BROWSER,
+      category: 'DEBUG_TREE',
+      payload: tree[0],
+      messageId: 'debug-tree',
+      timestamp: Date.now()
+    });
+  });
+}
+
+
+if (chrome.bookmarks) {
+  chrome.bookmarks.getTree().then(tree => {
+    const localRoots = tree[0]?.children || [];
+    localBarId = localRoots[0]?.id || '1';
+    localOtherId = localRoots[1]?.id || '2';
+    localMobileId = localRoots[2]?.id || '3';
+    systemRoots = new Set(['0', localBarId, localOtherId, localMobileId]);
+  }).catch(()=>{});
+}
+
 let isApplyingSync = false;
 
 async function applyBookmarkSync(bookmarks, isFullMirror = false) {
@@ -430,13 +465,21 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
 
   console.log(`[BrowSync] applyBookmarkSync: ${bookmarks.length} bookmarks, isFullMirror=${isFullMirror}`);
 
+  // Ensure system roots are up to date
+  const localTree = await chrome.bookmarks.getTree();
+  const localRoots = localTree[0]?.children || [];
+  localBarId = localRoots[0]?.id || '1';
+  localOtherId = localRoots[1]?.id || '2';
+  localMobileId = localRoots[2]?.id || '3';
+  systemRoots = new Set(['0', localBarId, localOtherId, localMobileId]);
+
   // STEP 1: If full mirror, snapshot current Chrome state and send back as backup
   if (isFullMirror) {
     const preTree = await chrome.bookmarks.getTree();
     const snapshot = [];
     function flatForBackup(nodes) {
       for (const node of nodes) {
-        if (node.id !== '0') {
+        if (node.id !== '0' && node.id !== '1' && node.id !== '2' && node.id !== '3') {
           snapshot.push({
             id: node.id,
             title: node.title || '',
@@ -464,23 +507,34 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
   }
 
   const idMap = new Map(); // incoming id -> local chrome id
-  idMap.set('1', '1'); // Map root to Bookmarks Bar
-  idMap.set(null, '1');
-  idMap.set(undefined, '1');
+  idMap.set('1', localBarId);
+  idMap.set('2', localOtherId);
+  idMap.set('3', localMobileId);
+  idMap.set('0', '0');
+  idMap.set(null, localBarId);
+  idMap.set(undefined, localBarId);
+  idMap.set(localBarId, localBarId);
+  idMap.set(localOtherId, localOtherId);
+  idMap.set(localMobileId, localMobileId);
 
   // Build a tree to process parents before children
   const byParent = new Map();
   const rootsBar = [];
   const rootsOther = [];
 
+  const ignoreIds = new Set(['0', '1', '2', '3', localBarId, localOtherId, localMobileId]);
+
   for (const bm of bookmarks) {
-    if (!bm.parentId || bm.parentId === '1' || bm.parentId === '0') {
+    if (ignoreIds.has(bm.id)) continue; // Defensively ignore system folders
+    
+    let effectiveParent = bm.parentId;
+    if (!effectiveParent || effectiveParent === '1' || effectiveParent === '0' || effectiveParent === localBarId) {
       rootsBar.push(bm);
-    } else if (bm.parentId === '2') {
+    } else if (effectiveParent === '2' || effectiveParent === localOtherId) {
       rootsOther.push(bm);
     } else {
-      if (!byParent.has(bm.parentId)) byParent.set(bm.parentId, []);
-      byParent.get(bm.parentId).push(bm);
+      if (!byParent.has(effectiveParent)) byParent.set(effectiveParent, []);
+      byParent.get(effectiveParent).push(bm);
     }
   }
 
@@ -521,8 +575,8 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
     }
   }
 
-  await processNodes(rootsBar, '1');
-  await processNodes(rootsOther, '2');
+  await processNodes(rootsBar, localBarId);
+  await processNodes(rootsOther, localOtherId);
 
   // STEP 2: Prune items not in incoming payload
   if (isFullMirror) {
@@ -570,6 +624,12 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
 if (chrome.bookmarks) {
   chrome.bookmarks.onCreated.addListener(async (id, bookmark) => {
     if (isApplyingSync) return;
+    
+    let normalizedParentId = bookmark.parentId;
+    if (normalizedParentId === localBarId) normalizedParentId = '1';
+    else if (normalizedParentId === localOtherId) normalizedParentId = '2';
+    else if (normalizedParentId === localMobileId) normalizedParentId = '3';
+
     send({
       type: 'sync',
       browser: DETECTED_BROWSER,
@@ -581,7 +641,7 @@ if (chrome.bookmarks) {
           id, 
           title: bookmark.title, 
           url: bookmark.url, 
-          parentId: bookmark.parentId,
+          parentId: normalizedParentId,
           isFolder: !bookmark.url, 
           dateAdded: Date.now(), 
           sourceBrowser: DETECTED_BROWSER 
@@ -594,6 +654,14 @@ if (chrome.bookmarks) {
 
   chrome.bookmarks.onRemoved.addListener((id, removeInfo) => {
     if (isApplyingSync) return;
+    
+    let normalizedParentId = removeInfo.parentId;
+    if (normalizedParentId === localBarId) normalizedParentId = '1';
+    else if (normalizedParentId === localOtherId) normalizedParentId = '2';
+    else if (normalizedParentId === localMobileId) normalizedParentId = '3';
+    
+    const node = removeInfo.node || {};
+
     send({
       type: 'sync',
       browser: DETECTED_BROWSER,
@@ -602,12 +670,12 @@ if (chrome.bookmarks) {
         kind: 'bookmarks_removed', 
         bookmark: {
           id,
-          title: removeInfo.node.title,
-          url: removeInfo.node.url || null,
-          parentId: removeInfo.parentId,
-          isFolder: !removeInfo.node.url,
+          title: node.title || 'Unknown',
+          url: node.url || null,
+          parentId: normalizedParentId,
+          isFolder: !node.url,
           sourceBrowser: DETECTED_BROWSER,
-          dateAdded: removeInfo.node.dateAdded || Date.now()
+          dateAdded: node.dateAdded || Date.now()
         }
       },
       messageId: crypto.randomUUID(),
