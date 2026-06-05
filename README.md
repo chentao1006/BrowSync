@@ -41,9 +41,8 @@
 git clone https://github.com/chentao1006/browsync.git
 cd browsync
 
-# 2. Run the setup script
-chmod +x setup.sh
-./setup.sh
+# 2. Generate Xcode project using XcodeGen
+xcodegen generate
 
 # 3. Open the generated project
 open BrowSync.xcodeproj
@@ -116,7 +115,11 @@ BrowSync/
 │
 ├── project.yml                 # XcodeGen configuration
 ├── BrowSync.entitlements       # App entitlements (Sandbox: NO)
-└── setup.sh                    # One-command project setup
+├── package.sh                  # Script to package the app
+├── release.sh                  # Script to automate releases
+├── test.sh                     # Script to run tests
+├── index.html                  # Landing page
+└── privacy.html                # Privacy policy
 ```
 
 ### WebSocket Protocol
@@ -147,7 +150,7 @@ BrowSync stores its data locally in your Application Support folder:
 ├── sites/          # Per-site sync state
 ├── bookmarks/      # Synced bookmark snapshots
 ├── history/        # History (when enabled)
-├── logs/           # sync.log
+├── logs/           # sync-YYYY-MM-DD.log
 └── settings.json   # All app settings
 ```
 

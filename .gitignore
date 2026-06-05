@@ -34,10 +34,6 @@ Sparkle_tmp/
 *.txt
 build_log.txt
 
-# Local Setup Scripts
-setup.sh
-*test*
-
 # Credentials & Sensitive info
 ExportOptions.plist
 .env

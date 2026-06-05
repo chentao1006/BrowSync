@@ -41,9 +41,8 @@
 git clone https://github.com/chentao1006/browsync.git
 cd browsync
 
-# 2. 运行配置脚本
-chmod +x setup.sh
-./setup.sh
+# 2. 使用 XcodeGen 生成 Xcode 项目
+xcodegen generate
 
 # 3. 打开生成的项目
 open BrowSync.xcodeproj
@@ -116,7 +115,11 @@ BrowSync/
 │
 ├── project.yml                 # XcodeGen 配置
 ├── BrowSync.entitlements       # 应用权限 (不使用沙盒)
-└── setup.sh                    # 一键环境配置脚本
+├── package.sh                  # 打包脚本
+├── release.sh                  # 发布脚本
+├── test.sh                     # 测试脚本
+├── index.html                  # 官网主页
+└── privacy.html                # 隐私政策
 ```
 
 ### WebSocket 协议
@@ -147,7 +150,7 @@ BrowSync 将其数据本地存储在您的 Application Support 文件夹中：
 ├── sites/          # 各站点的同步状态
 ├── bookmarks/      # 同步的书签快照
 ├── history/        # 历史记录 (启用时)
-├── logs/           # sync.log (同步日志)
+├── logs/           # sync-YYYY-MM-DD.log (同步日志)
 └── settings.json   # 所有应用设置
 ```
 

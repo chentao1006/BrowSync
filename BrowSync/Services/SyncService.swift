@@ -589,7 +589,10 @@ final class SyncService: ObservableObject {
 
         // Persist log line
         let logDir = dataDir.appendingPathComponent("logs")
-        let logFile = logDir.appendingPathComponent("sync.log")
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateString = dateFormatter.string(from: entry.date)
+        let logFile = logDir.appendingPathComponent("sync-\(dateString).log")
         let line = "[\(ISO8601DateFormatter().string(from: entry.date))] \(message)\n"
         if let data = line.data(using: .utf8) {
             if FileManager.default.fileExists(atPath: logFile.path) {

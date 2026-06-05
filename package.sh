@@ -94,6 +94,16 @@ ln -s /Applications "${TMP_DMG_DIR}/Applications"
 hdiutil create -volname "${PROJECT_NAME}" -srcfolder "${TMP_DMG_DIR}" -ov -format UDZO "${DMG_PATH}"
 rm -rf "${TMP_DMG_DIR}"
 
+# Extract the code signing identity used for the app
+SIGN_IDENTITY=$(codesign -dvv "${EXPORTED_APP}" 2>&1 | grep "^Authority=Developer ID Application:" | head -n 1 | cut -d '=' -f 2)
+
+if [ -n "$SIGN_IDENTITY" ]; then
+    echo "🔐 Signing DMG with identity: $SIGN_IDENTITY"
+    codesign --sign "$SIGN_IDENTITY" --timestamp "${DMG_PATH}"
+else
+    echo "⚠️ Could not determine Developer ID identity from the app. Skipping DMG signing."
+fi
+
 if [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ]; then
     echo "🔐 Submitting for notarization..."
     xcrun notarytool submit "${DMG_PATH}" \

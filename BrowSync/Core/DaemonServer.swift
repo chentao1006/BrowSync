@@ -184,7 +184,10 @@ final class DaemonServer: ObservableObject {
     }
 
     private func processMessageData(_ data: Data, from connection: NWConnection) {
-        let logFile = URL(fileURLWithPath: NSHomeDirectory() + "/Library/Application Support/BrowSync/logs/sync.log")
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateString = dateFormatter.string(from: Date())
+        let logFile = URL(fileURLWithPath: NSHomeDirectory() + "/Library/Application Support/BrowSync/logs/sync-\(dateString).log")
         do {
             let message = try JSONDecoder().decode(WSMessage.self, from: data)
             routeMessage(message, from: connection)
