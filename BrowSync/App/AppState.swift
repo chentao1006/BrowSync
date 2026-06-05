@@ -29,6 +29,10 @@ final class AppState: ObservableObject {
     @Published var activeDomainSyncEnabled: Bool = true
     @Published var activeDomainStrategy: String = "Merge"
 
+    // Tab Sharing state
+    @Published var remoteTabsCache: [Browser: [BrowserTab]] = [:]
+
+
     // Router state
     @Published var isRouterEnabled: Bool = true {
         didSet {
@@ -379,6 +383,15 @@ extension AppState: DaemonServerDelegate {
                 changed = true
             }
             
+            if let tabSharing = raw["tabSharing"]?.value as? Bool {
+                if tabSharing {
+                    self.settingsService.syncSettings.tabSharingParticipatingBrowsers.insert(browser)
+                } else {
+                    self.settingsService.syncSettings.tabSharingParticipatingBrowsers.remove(browser)
+                }
+                changed = true
+            }
+            
             if let routerDefault = raw["routerDefault"]?.value as? Bool {
                 if routerDefault {
                     self.fallbackBrowserId = browser.rawValue
@@ -386,6 +399,46 @@ extension AppState: DaemonServerDelegate {
                 changed = true
             }
             
+            if let siteSync = raw["toggleSiteSync"]?.value as? [String: Any],
+               let domain = siteSync["domain"] as? String,
+               let value = siteSync["value"] as? Bool {
+                let policy = self.settingsService.syncSettings.websiteListPolicy
+                let shouldBeInList = (policy == .allowList && value) || (policy == .blockList && !value)
+                
+                if shouldBeInList {
+                    if !self.settingsService.syncSettings.websiteSettings.contains(where: { $0.domain == domain }) {
+                        self.settingsService.syncSettings.websiteSettings.append(WebsiteSyncSetting(domain: domain, strategy: nil))
+                    }
+                } else {
+                    self.settingsService.syncSettings.websiteSettings.removeAll(where: { $0.domain == domain })
+                }
+                changed = true
+            }
+            
+            if let siteStrat = raw["updateSiteStrategy"]?.value as? [String: Any],
+               let domain = siteStrat["domain"] as? String {
+                let strategyStr = siteStrat["strategy"] as? String
+                let strat = strategyStr.flatMap { BrowserDataSyncStrategy(rawValue: $0) }
+                if let idx = self.settingsService.syncSettings.websiteSettings.firstIndex(where: { $0.domain == domain }) {
+                    self.settingsService.syncSettings.websiteSettings[idx].strategy = strat
+                } else {
+                    self.settingsService.syncSettings.websiteSettings.append(WebsiteSyncSetting(domain: domain, strategy: strat))
+                }
+                changed = true
+            }
+
+            if let siteBrowser = raw["updateSiteSourceBrowser"]?.value as? [String: Any],
+               let domain = siteBrowser["domain"] as? String {
+                let browserStr = siteBrowser["browser"] as? String
+                let browser = browserStr.flatMap { Browser(rawValue: $0) }
+                if let idx = self.settingsService.syncSettings.websiteSettings.firstIndex(where: { $0.domain == domain }) {
+                    self.settingsService.syncSettings.websiteSettings[idx].sourceBrowser = browser
+                } else {
+                    self.settingsService.syncSettings.websiteSettings.append(WebsiteSyncSetting(domain: domain, strategy: nil, sourceBrowser: browser))
+                }
+                changed = true
+            }
+
             if changed {
                 self.settingsService.save()
                 self.broadcastSettings()
@@ -396,21 +449,36 @@ extension AppState: DaemonServerDelegate {
     func broadcastSettings(to client: ConnectedClient? = nil) {
         let isStateSync = settingsService.syncSettings.stateParticipatingBrowsers
         let isBookmarkSync = settingsService.syncSettings.bookmarkParticipatingBrowsers
+        let isTabSharing = settingsService.syncSettings.tabSharingParticipatingBrowsers
         let routerDefault = fallbackBrowserId
-        
         var payload: [String: AnyCodable] = [
-            "routerDefault": AnyCodable(routerDefault ?? "")
+            "routerDefault": AnyCodable(routerDefault ?? ""),
+            "tabSharingEnabled": AnyCodable(settingsService.syncSettings.tabSharingEnabled)
         ]
         var stateMap: [String: AnyCodable] = [:]
         for b in Browser.allCases {
             stateMap[b.rawValue] = AnyCodable(isStateSync.contains(b))
         }
+        
+        let installedBrowsers = browserInfos.filter { $0.isInstalled }.map { $0.browser.rawValue }
+        payload["installedBrowsers"] = AnyCodable(installedBrowsers)
         var bookmarkMap: [String: AnyCodable] = [:]
         for b in Browser.allCases {
             bookmarkMap[b.rawValue] = AnyCodable(isBookmarkSync.contains(b))
         }
+        var tabSharingMap: [String: AnyCodable] = [:]
+        for b in Browser.allCases {
+            tabSharingMap[b.rawValue] = AnyCodable(isTabSharing.contains(b))
+        }
         payload["stateParticipatingBrowsers"] = AnyCodable(stateMap)
         payload["bookmarkParticipatingBrowsers"] = AnyCodable(bookmarkMap)
+        payload["tabSharingParticipatingBrowsers"] = AnyCodable(tabSharingMap)
+        
+        if let data = try? JSONEncoder().encode(settingsService.syncSettings.websiteSettings),
+           let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            payload["websiteSettings"] = AnyCodable(array)
+        }
+        payload["websiteListPolicy"] = AnyCodable(settingsService.syncSettings.websiteListPolicy.rawValue)
 
         let msg = WSMessage(
             type: .settings,

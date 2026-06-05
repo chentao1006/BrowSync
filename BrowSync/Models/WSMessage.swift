@@ -162,7 +162,21 @@ enum WSPayload: Codable {
 struct AnyCodable: Codable {
     let value: Any
 
-    init(_ value: Any) { self.value = value }
+    init(_ value: Any) {
+        if let codable = value as? AnyCodable {
+            self.value = codable.value
+        } else if let v = value as? [AnyCodable] {
+            self.value = v
+        } else if let v = value as? [String: AnyCodable] {
+            self.value = v
+        } else if let v = value as? [Any] {
+            self.value = v.map { AnyCodable($0) }
+        } else if let v = value as? [String: Any] {
+            self.value = v.mapValues { AnyCodable($0) }
+        } else {
+            self.value = value
+        }
+    }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()

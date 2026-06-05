@@ -340,3 +340,11 @@
 "Turn off Bookmark Sync" = "关闭书签同步";
 "Turn on State Sync" = "打开状态同步";
 "Turn off State Sync" = "关闭状态同步";
+
+/* Tab Sharing */
+"Tab Sharing" = "标签页共享";
+"Enable Tab Sharing" = "启用标签页共享";
+"Participating Browsers" = "参与的浏览器";
+"Select browsers to share their active tabs. Shared tabs will appear in the popup of other extensions." = "选择共享当前标签页的浏览器。共享的标签页将出现在其他浏览器的扩展中。";
+"Overview" = "概览";
+"Cached Remote Tabs:" = "缓存的远程标签页数量：";

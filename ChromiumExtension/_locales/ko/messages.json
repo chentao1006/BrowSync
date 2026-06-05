@@ -43,5 +43,44 @@
   },
   "btnMoreSettings": {
     "message": "추가 설정"
+  },
+  "remoteTabs": {
+    "message": "원격 탭"
+  },
+  "btnRefresh": {
+    "message": "새로고침"
+  },
+  "currentWebsite": {
+    "message": "현재 웹사이트"
+  },
+  "btnSyncSiteNow": {
+    "message": "지금 동기화"
+  },
+  "syncStateForSite": {
+    "message": "상태 동기화"
+  },
+  "syncStrategy": {
+    "message": "전략"
+  },
+  "strategyDefault": {
+    "message": "기본 정책"
+  },
+  "strategyPrimaryWins": {
+    "message": "기본 브라우저 우선"
+  },
+  "strategyLatestWins": {
+    "message": "최신 우선"
+  },
+  "strategyMerge": {
+    "message": "양방향 병합"
+  },
+  "sourceBrowser": {
+    "message": "소스 브라우저"
+  },
+  "browserDefault": {
+    "message": "기본 브라우저"
+  },
+  "settingTabSharing": {
+    "message": "탭 공유"
   }
 }

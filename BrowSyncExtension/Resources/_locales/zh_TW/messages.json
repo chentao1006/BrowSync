@@ -43,5 +43,44 @@
   },
   "btnMoreSettings": {
     "message": "更多設定"
+  },
+  "remoteTabs": {
+    "message": "遠端分頁"
+  },
+  "btnRefresh": {
+    "message": "重新整理"
+  },
+  "currentWebsite": {
+    "message": "目前網站"
+  },
+  "btnSyncSiteNow": {
+    "message": "立即同步"
+  },
+  "syncStateForSite": {
+    "message": "同步狀態"
+  },
+  "syncStrategy": {
+    "message": "策略"
+  },
+  "strategyDefault": {
+    "message": "預設策略"
+  },
+  "strategyPrimaryWins": {
+    "message": "主瀏覽器優先"
+  },
+  "strategyLatestWins": {
+    "message": "最新優先"
+  },
+  "strategyMerge": {
+    "message": "雙向合併"
+  },
+  "sourceBrowser": {
+    "message": "來源瀏覽器"
+  },
+  "browserDefault": {
+    "message": "預設瀏覽器"
+  },
+  "settingTabSharing": {
+    "message": "標籤頁共享"
   }
 }

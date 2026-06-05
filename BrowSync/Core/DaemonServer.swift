@@ -255,6 +255,24 @@ final class DaemonServer: ObservableObject {
                 delegate?.daemonServer(self, didReceivePullBookmarks: client.id)
             }
             
+            if message.category == "tabSharing" {
+                // Broadcast a sync pull request to all other participating browsers
+                let requestMessage = WSMessage(
+                    type: .sync,
+                    category: "tabSharing",
+                    payload: nil,
+                    messageId: UUID().uuidString,
+                    timestamp: Date().timeIntervalSince1970
+                )
+                broadcast(requestMessage, excluding: client.id)
+                return
+            }
+            
+            if message.category == "browserData" && message.site != nil {
+                let requestMessage = WSMessage.pull(site: message.site, category: "browserData")
+                broadcast(requestMessage, excluding: client.id)
+            }
+            
             if message.category != "bookmarks" {
                 let payloads = GlobalStateStore.shared.pull(site: message.site, category: message.category)
                 for payloadData in payloads {

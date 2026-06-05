@@ -175,11 +175,19 @@ async function handleIncoming(message) {
         chrome.storage.local.get('appSettings').then(({ appSettings }) => {
           let settings = appSettings || {};
           if (raw.routerDefault !== undefined) settings.routerDefault = raw.routerDefault;
+          if (raw.tabSharingEnabled !== undefined) settings.tabSharingEnabled = raw.tabSharingEnabled;
           if (raw.stateParticipatingBrowsers) settings.stateParticipatingBrowsers = raw.stateParticipatingBrowsers;
           if (raw.bookmarkParticipatingBrowsers) settings.bookmarkParticipatingBrowsers = raw.bookmarkParticipatingBrowsers;
+          if (raw.tabSharingParticipatingBrowsers) settings.tabSharingParticipatingBrowsers = raw.tabSharingParticipatingBrowsers;
+          if (raw.websiteListPolicy !== undefined) settings.websiteListPolicy = raw.websiteListPolicy;
+          if (raw.websiteSettings !== undefined) settings.websiteSettings = raw.websiteSettings;
+          if (raw.installedBrowsers !== undefined) settings.installedBrowsers = raw.installedBrowsers;
           chrome.storage.local.set({ appSettings: settings });
         });
       }
+      break;
+    case 'pull':
+      await handlePullRequest(message.category, message.site);
       break;
     case 'ack':
       // Acknowledged
@@ -258,14 +266,28 @@ async function applySync(message) {
     case 'cookies':
       await applyCookieSync(payload.cookies || []);
       break;
+    case 'tabSharing':
+      // Store remote tabs in local storage for popup.js to read
+      if (payload.kind === 'tabs') {
+        const tabs = payload.tabs || [];
+        const browserId = message.browser;
+        if (browserId && browserId !== DETECTED_BROWSER) {
+           chrome.storage.local.get('remoteTabs').then(data => {
+             const remoteTabs = data.remoteTabs || {};
+             remoteTabs[browserId] = tabs;
+             chrome.storage.local.set({ remoteTabs });
+           });
+        }
+      }
+      break;
   }
 }
 
-async function sendCookiesSnapshot() {
-  console.log('[BrowSync] Processing full cookie pull request...');
+async function sendCookiesSnapshot(site) {
+  console.log(`[BrowSync] Processing full cookie pull request for site: ${site || 'all'}`);
   if (!chrome.cookies) return;
   const timestamps = await getCookieTimestamps();
-  const cookies = await chrome.cookies.getAll({});
+  const cookies = await chrome.cookies.getAll(site ? { domain: site } : {});
   const mapped = cookies.map(c => ({
     name: c.name, value: c.value, domain: c.domain, path: c.path,
     expirationDate: c.expirationDate, secure: c.secure, httpOnly: c.httpOnly, hostOnly: c.hostOnly, sameSite: c.sameSite,
@@ -304,7 +326,7 @@ async function sendCookiesSnapshot() {
   }
 }
 
-async function sendStorageSnapshot(storageType) {
+async function sendStorageSnapshot(storageType, site) {
   if (!chrome.scripting || !chrome.tabs) return;
   const tabs = await chrome.tabs.query({});
   const allItemsMap = new Map(); // Use Map to deduplicate by key+origin
@@ -312,6 +334,7 @@ async function sendStorageSnapshot(storageType) {
   // 1. Get from currently open tabs
   for (const tab of tabs) {
     if (!tab.id || !tab.url || tab.url.startsWith('chrome') || tab.url.startsWith('about') || tab.url.startsWith('safari-extension')) continue;
+    if (site && new URL(tab.url).hostname !== site && !new URL(tab.url).hostname.endsWith('.' + site)) continue;
     try {
       const results = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
@@ -334,26 +357,28 @@ async function sendStorageSnapshot(storageType) {
     } catch (_) { }
   }
 
-  // 2. Get from passive backups and tombstones in storage.local
-  const allStorage = await chrome.storage.local.get(null);
-  for (const [key, value] of Object.entries(allStorage)) {
-    if (key.startsWith(`backup_${storageType}_`) && Array.isArray(value)) {
-      value.forEach(item => {
+  // 2. Also inject items from our local tombstone cache to ensure deletions propagate
+  const cacheData = await chrome.storage.local.get(null);
+  for (const [key, value] of Object.entries(cacheData)) {
+    if (key.startsWith(`tombstone_${storageType}_`)) {
+      // It's a deletion tombstone
+      const item = { key: value.key, value: null, origin: value.origin, _isBackup: true };
+      if (site && !item.origin.includes(site)) continue;
+      const mapKey = `${item.origin}::${item.key}`;
+      if (!allItemsMap.has(mapKey)) {
+        allItemsMap.set(mapKey, item);
+      }
+    } else if (key.startsWith(`sync_${storageType}_`)) {
+      // It's a live cached item
+      const items = Array.isArray(value) ? value : [];
+      for (const item of items) {
+        if (site && !item.origin.includes(site)) continue;
         const mapKey = `${item.origin}::${item.key}`;
-        // Add backup only if not in live tabs
-        if (!allItemsMap.has(mapKey)) {
-          allItemsMap.set(mapKey, { ...item, _isBackup: true });
+        item._isBackup = true;
+        // If not in live tabs, OR if the current item is just a passive backup, the tombstone overrides it
+        if (!allItemsMap.has(mapKey) || allItemsMap.get(mapKey)._isBackup) {
+          allItemsMap.set(mapKey, item);
         }
-      });
-    }
-  }
-
-  for (const [key, value] of Object.entries(allStorage)) {
-    if (key.startsWith(`tombstone_${storageType}_`) && value) {
-      const mapKey = `${value.origin}::${value.key}`;
-      // If not in live tabs, OR if the current item is just a passive backup, the tombstone overrides it
-      if (!allItemsMap.has(mapKey) || allItemsMap.get(mapKey)._isBackup) {
-        allItemsMap.set(mapKey, value);
       }
     }
   }
@@ -370,8 +395,8 @@ async function sendStorageSnapshot(storageType) {
   }
 }
 
-async function handlePullRequest(category) {
-  console.log('[BrowSync] Received pull request for:', category);
+async function handlePullRequest(category, site) {
+  console.log('[BrowSync] Received pull request for:', category, site);
   switch (category) {
     case 'bookmarks': {
       if (!chrome.bookmarks) return;
@@ -409,26 +434,29 @@ async function handlePullRequest(category) {
       break;
     }
     case 'browserData': {
-      await sendCookiesSnapshot();
-      await sendStorageSnapshot('localStorage');
-      await sendStorageSnapshot('sessionStorage');
+      await sendCookiesSnapshot(site);
+      await sendStorageSnapshot('localStorage', site);
+      await sendStorageSnapshot('sessionStorage', site);
       break;
     }
     case 'cookies': {
-      await sendCookiesSnapshot();
+      await sendCookiesSnapshot(site);
       break;
     }
-    case 'browserState': {
+    case 'browserState':
+    case 'tabSharing': {
       if (!chrome.tabs) return;
       const tabs = await chrome.tabs.query({});
-      console.log(`[BrowSync] Sending ${tabs.length} tabs...`);
-      const mapped = tabs.map(tab => ({
+      // Filter out incognito tabs for privacy if it's tab sharing
+      const filteredTabs = category === 'tabSharing' ? tabs.filter(t => !t.incognito) : tabs;
+      console.log(`[BrowSync] Sending ${filteredTabs.length} tabs for ${category}...`);
+      const mapped = filteredTabs.map(tab => ({
         id: String(tab.id), url: tab.url, title: tab.title || '', isActive: tab.active,
         windowId: String(tab.windowId), index: tab.index, favIconURL: tab.favIconUrl,
         sourceBrowser: DETECTED_BROWSER, capturedAt: Date.now()
       }));
       send({
-        type: 'sync', browser: DETECTED_BROWSER, category: 'browserState',
+        type: 'sync', browser: DETECTED_BROWSER, category: category,
         payload: { kind: 'tabs', tabs: mapped },
         messageId: crypto.randomUUID(), timestamp: Date.now()
       });
@@ -915,10 +943,61 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
+  if (message.type === 'UPDATE_SITE_SETTING') {
+    send({
+      type: 'settings', browser: DETECTED_BROWSER,
+      payload: { kind: 'raw', raw: { toggleSiteSync: { domain: message.domain, value: message.value } } },
+      messageId: crypto.randomUUID(), timestamp: Date.now()
+    });
+    sendResponse({ ok: true });
+    return true;
+  }
+  
+  if (message.type === 'UPDATE_SITE_STRATEGY') {
+    send({
+      type: 'settings', browser: DETECTED_BROWSER,
+      payload: { kind: 'raw', raw: { updateSiteStrategy: { domain: message.domain, strategy: message.strategy } } },
+      messageId: crypto.randomUUID(), timestamp: Date.now()
+    });
+    sendResponse({ ok: true });
+    return true;
+  }
+  
+  if (message.type === 'UPDATE_SITE_SOURCE_BROWSER') {
+    send({
+      type: 'settings', browser: DETECTED_BROWSER,
+      payload: { kind: 'raw', raw: { updateSiteSourceBrowser: { domain: message.domain, browser: message.browser } } },
+      messageId: crypto.randomUUID(), timestamp: Date.now()
+    });
+    sendResponse({ ok: true });
+    return true;
+  }
+  
+  if (message.type === 'PULL_SITE_DATA') {
+    send({
+      type: 'pull', browser: DETECTED_BROWSER, category: 'browserData', site: message.domain,
+      messageId: crypto.randomUUID(), timestamp: Date.now()
+    });
+    sendResponse({ ok: true });
+    return true;
+  }
+  
   if (message.type === 'OPEN_SETTINGS') {
     send({
       type: 'open_settings',
       browser: DETECTED_BROWSER,
+      messageId: crypto.randomUUID(),
+      timestamp: Date.now()
+    });
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (message.type === 'PULL_TAB_SHARING') {
+    send({
+      type: 'pull',
+      browser: DETECTED_BROWSER,
+      category: 'tabSharing',
       messageId: crypto.randomUUID(),
       timestamp: Date.now()
     });

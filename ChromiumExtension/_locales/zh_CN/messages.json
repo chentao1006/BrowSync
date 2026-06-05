@@ -43,5 +43,44 @@
   },
   "btnMoreSettings": {
     "message": "更多设置"
+  },
+  "remoteTabs": {
+    "message": "远程标签页"
+  },
+  "btnRefresh": {
+    "message": "刷新"
+  },
+  "currentWebsite": {
+    "message": "当前网站"
+  },
+  "btnSyncSiteNow": {
+    "message": "立即同步"
+  },
+  "syncStateForSite": {
+    "message": "同步状态"
+  },
+  "syncStrategy": {
+    "message": "策略"
+  },
+  "strategyDefault": {
+    "message": "默认策略"
+  },
+  "strategyPrimaryWins": {
+    "message": "主浏览器优先"
+  },
+  "strategyLatestWins": {
+    "message": "最新优先"
+  },
+  "strategyMerge": {
+    "message": "双向合并"
+  },
+  "sourceBrowser": {
+    "message": "来源浏览器"
+  },
+  "browserDefault": {
+    "message": "默认浏览器"
+  },
+  "settingTabSharing": {
+    "message": "标签页共享"
   }
 }

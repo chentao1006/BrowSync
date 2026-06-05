@@ -76,6 +76,7 @@ enum SyncCategory: String, CaseIterable, Codable, Identifiable {
     case browserData    // cookies + localStorage + sessionStorage
     case localStorage   // localStorage only (separate pull)
     case history
+    case tabSharing     // realtime tab sharing
 
     var id: String { rawValue }
 
@@ -86,6 +87,7 @@ enum SyncCategory: String, CaseIterable, Codable, Identifiable {
         case .browserData: return "Browser Data"
         case .localStorage: return "Local Storage"
         case .history: return "History"
+        case .tabSharing: return "Tab Sharing"
         }
     }
 
@@ -96,6 +98,7 @@ enum SyncCategory: String, CaseIterable, Codable, Identifiable {
         case .browserData: return "externaldrive"
         case .localStorage: return "internaldrive"
         case .history: return "clock"
+        case .tabSharing: return "square.and.arrow.up.on.square"
         }
     }
 
@@ -111,12 +114,14 @@ enum SyncCategory: String, CaseIterable, Codable, Identifiable {
             return "localStorage data for each site"
         case .history:
             return "URLs, titles, visit times and counts"
+        case .tabSharing:
+            return "Share open tabs between browsers"
         }
     }
 
     /// History is off by default per spec
     var defaultEnabled: Bool {
-        self != .history
+        self != .history && self != .tabSharing
     }
 }
 
@@ -213,12 +218,16 @@ struct SyncSettings: Codable, Equatable {
     var websiteListPolicy: WebsiteListPolicy = .allowList
     var websiteSettings: [WebsiteSyncSetting] = []
     
+    // Tab Sharing Settings
+    var tabSharingParticipatingBrowsers: Set<Browser> = []
+    var tabSharingEnabled: Bool = false
+    
     var enabledCategories: Set<SyncCategory> = []
     var automaticSync: Bool = false  // PRO
     var iCloudSync: Bool = false     // PRO
 
     private enum CodingKeys: String, CodingKey {
-        case conflictStrategy, bookmarkSyncStrategy, bookmarkSourceBrowser, bookmarkAutoSync, bookmarkParticipatingBrowsers, browserDataSyncStrategy, stateSourceBrowser, stateParticipatingBrowsers, websiteListPolicy, websiteSettings, enabledCategories, automaticSync, iCloudSync
+        case conflictStrategy, bookmarkSyncStrategy, bookmarkSourceBrowser, bookmarkAutoSync, bookmarkParticipatingBrowsers, browserDataSyncStrategy, stateSourceBrowser, stateParticipatingBrowsers, websiteListPolicy, websiteSettings, tabSharingParticipatingBrowsers, tabSharingEnabled, enabledCategories, automaticSync, iCloudSync
     }
 
     init() {}
@@ -235,6 +244,8 @@ struct SyncSettings: Codable, Equatable {
         stateParticipatingBrowsers = try container.decodeIfPresent(Set<Browser>.self, forKey: .stateParticipatingBrowsers) ?? []
         websiteListPolicy = try container.decodeIfPresent(WebsiteListPolicy.self, forKey: .websiteListPolicy) ?? .allowList
         websiteSettings = try container.decodeIfPresent([WebsiteSyncSetting].self, forKey: .websiteSettings) ?? []
+        tabSharingParticipatingBrowsers = try container.decodeIfPresent(Set<Browser>.self, forKey: .tabSharingParticipatingBrowsers) ?? []
+        tabSharingEnabled = try container.decodeIfPresent(Bool.self, forKey: .tabSharingEnabled) ?? false
         enabledCategories = try container.decodeIfPresent(Set<SyncCategory>.self, forKey: .enabledCategories) ?? []
         automaticSync = try container.decodeIfPresent(Bool.self, forKey: .automaticSync) ?? false
         iCloudSync = try container.decodeIfPresent(Bool.self, forKey: .iCloudSync) ?? false

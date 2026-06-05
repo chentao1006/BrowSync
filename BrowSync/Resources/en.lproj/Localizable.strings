@@ -315,3 +315,11 @@
 "Turn off Bookmark Sync" = "Turn off Bookmark Sync";
 "Turn on State Sync" = "Turn on State Sync";
 "Turn off State Sync" = "Turn off State Sync";
+
+/* Tab Sharing */
+"Tab Sharing" = "Tab Sharing";
+"Enable Tab Sharing" = "Enable Tab Sharing";
+"Participating Browsers" = "Participating Browsers";
+"Select browsers to share their active tabs. Shared tabs will appear in the popup of other extensions." = "Select browsers to share their active tabs. Shared tabs will appear in the popup of other extensions.";
+"Overview" = "Overview";
+"Cached Remote Tabs:" = "Cached Remote Tabs:";

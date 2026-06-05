@@ -225,11 +225,14 @@ final class SyncService: ObservableObject {
         
         var filteredMessage = message
         
-        if category == "bookmarks" || category == "bookmark_incremental" || category == "bookmarks_removed" || category == "bookmark_backup" {
+        if category == "bookmarks" || category == "bookmark_incremental" || category == "bookmarks_removed" || category == "bookmark_backup" || category == "tabSharing" {
             let browserId = clientId.components(separatedBy: "-").first ?? clientId
-            if let browser = Browser(rawValue: browserId), !settings.bookmarkParticipatingBrowsers.contains(browser) {
-                log("Ignored bookmark data from [\(clientId)] because it is not participating in sync.")
-                return
+            if let browser = Browser(rawValue: browserId) {
+                let participating = category == "tabSharing" ? settings.tabSharingParticipatingBrowsers : settings.bookmarkParticipatingBrowsers
+                if !participating.contains(browser) {
+                    log("Ignored \(category) data from [\(clientId)] because it is not participating in sync.")
+                    return
+                }
             }
         }
 
@@ -327,6 +330,13 @@ final class SyncService: ObservableObject {
         if let payload = filteredMessage.payload {
             persist(payload: payload, category: category, from: clientId, isFullMirror: filteredMessage.isFullMirror ?? false)
             
+            if category == "tabSharing", case .tabs(let tabs) = payload {
+                let browserId = clientId.components(separatedBy: "-").first ?? clientId
+                if let browser = Browser(rawValue: browserId) {
+                    AppState.shared.remoteTabsCache[browser] = tabs
+                }
+            }
+            
             let isBookmarkCategory = (category == "bookmarks" || category == "bookmarks_removed" || category == "bookmark_backup")
             let shouldSync = isBookmarkCategory ? (settings.bookmarkAutoSync || settings.automaticSync || isSyncing) : (settings.automaticSync || isSyncing)
             
@@ -385,6 +395,9 @@ final class SyncService: ObservableObject {
                 } else {
                     daemon?.broadcast(filteredMessage, excluding: clientId)
                 }
+            } else if category == "tabSharing" {
+                // For tab sharing, we always broadcast to others immediately, without checking auto-sync rules
+                daemon?.broadcast(filteredMessage, excluding: clientId)
             } else {
                 log("Automatic sync is disabled. Received data but did not broadcast.")
             }

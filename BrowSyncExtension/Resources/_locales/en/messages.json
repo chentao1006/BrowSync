@@ -43,5 +43,44 @@
   },
   "btnMoreSettings": {
     "message": "More Settings"
+  },
+  "remoteTabs": {
+    "message": "Remote Tabs"
+  },
+  "btnRefresh": {
+    "message": "Refresh"
+  },
+  "currentWebsite": {
+    "message": "Current Website"
+  },
+  "btnSyncSiteNow": {
+    "message": "Sync Now"
+  },
+  "syncStateForSite": {
+    "message": "Sync State"
+  },
+  "syncStrategy": {
+    "message": "Strategy"
+  },
+  "strategyDefault": {
+    "message": "Default Policy"
+  },
+  "strategyPrimaryWins": {
+    "message": "Primary Wins"
+  },
+  "strategyLatestWins": {
+    "message": "Latest Wins"
+  },
+  "strategyMerge": {
+    "message": "Two-way Merge"
+  },
+  "sourceBrowser": {
+    "message": "Source Browser"
+  },
+  "browserDefault": {
+    "message": "Default Browser"
+  },
+  "settingTabSharing": {
+    "message": "Tab Sharing"
   }
 }

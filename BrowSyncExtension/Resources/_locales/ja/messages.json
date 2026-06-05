@@ -43,5 +43,44 @@
   },
   "btnMoreSettings": {
     "message": "詳細設定"
+  },
+  "remoteTabs": {
+    "message": "リモートタブ"
+  },
+  "btnRefresh": {
+    "message": "更新"
+  },
+  "currentWebsite": {
+    "message": "現在のウェブサイト"
+  },
+  "btnSyncSiteNow": {
+    "message": "今すぐ同期"
+  },
+  "syncStateForSite": {
+    "message": "状態を同期"
+  },
+  "syncStrategy": {
+    "message": "戦略"
+  },
+  "strategyDefault": {
+    "message": "デフォルトポリシー"
+  },
+  "strategyPrimaryWins": {
+    "message": "メインブラウザ優先"
+  },
+  "strategyLatestWins": {
+    "message": "最新優先"
+  },
+  "strategyMerge": {
+    "message": "双方向マージ"
+  },
+  "sourceBrowser": {
+    "message": "ソースブラウザ"
+  },
+  "browserDefault": {
+    "message": "デフォルトブラウザ"
+  },
+  "settingTabSharing": {
+    "message": "タブ共有"
   }
 }

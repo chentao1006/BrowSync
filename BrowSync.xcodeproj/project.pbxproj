@@ -41,6 +41,7 @@
 		C7046B24359CF5FB86A8E512 /* Browser.swift in Sources */ = {isa = PBXBuildFile; fileRef = C137716E2FEA5232D824F358 /* Browser.swift */; };
 		DBBE43C12EC0AAF9A23B738F /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06AFD458EE98ACF03EC87C22 /* SafariWebExtensionHandler.swift */; };
 		E1CD59F47876A3FB53D94328 /* SyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A471324A48AEDB45FF4BA73 /* SyncModels.swift */; };
+		F18EAA6DAF0C0B0A4358E3FB /* TabSharingTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97ACC9858254F5F021C00B89 /* TabSharingTabView.swift */; };
 		F2EB1E0274B9ADAF8C9B9620 /* BrowSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6BFEB07402A67F5BB319D14 /* BrowSyncApp.swift */; };
 		F305BEDD3C3CF4EAB82BB3BA /* BrowsersTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46F4DE424609A3662449C730 /* BrowsersTabView.swift */; };
 		FF2C4FE56E23B34872FBCDAF /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91206874B5D1B45C9D05A911 /* AppConfig.swift */; };
@@ -98,6 +99,7 @@
 		91206874B5D1B45C9D05A911 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		93D2A20D8B97836960D5A19A /* SettingsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsService.swift; sourceTree = "<group>"; };
 		941D195193674655AB6224B9 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/Localizable.strings; sourceTree = "<group>"; };
+		97ACC9858254F5F021C00B89 /* TabSharingTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSharingTabView.swift; sourceTree = "<group>"; };
 		9F1C6061070A3577FA35F5EF /* background.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = background.js; sourceTree = "<group>"; };
 		A871D9385C69C6022679A1A6 /* StateSyncTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateSyncTabView.swift; sourceTree = "<group>"; };
 		AFA7ED2885F5600F25B63D2D /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
@@ -221,6 +223,7 @@
 				10F52E8BB62D4BA5E32CD492 /* RouterTabView.swift */,
 				B56E2AFB07CC6CA3A5582028 /* RuleEditorView.swift */,
 				A871D9385C69C6022679A1A6 /* StateSyncTabView.swift */,
+				97ACC9858254F5F021C00B89 /* TabSharingTabView.swift */,
 				9913E770E0229C8BBD6B0801 /* General */,
 				B06AED21A0807AB944B12FCA /* Sync */,
 			);
@@ -425,6 +428,7 @@
 				E1CD59F47876A3FB53D94328 /* SyncModels.swift in Sources */,
 				2BE142A7116F307B8526606A /* SyncService.swift in Sources */,
 				B2F785D247654F6B9656917F /* SyncView.swift in Sources */,
+				F18EAA6DAF0C0B0A4358E3FB /* TabSharingTabView.swift in Sources */,
 				A2FE9A8C0FC5C40F58163D5C /* WSMessage.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

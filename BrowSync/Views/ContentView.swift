@@ -23,6 +23,9 @@ struct ContentView: View {
                 NavigationLink(value: AppTab.stateSync) {
                     Label(String(localized: "State Sync", bundle: langBundle.bundle), systemImage: "arrow.triangle.2.circlepath")
                 }
+                NavigationLink(value: AppTab.tabSharing) {
+                    Label(String(localized: "Tab Sharing", bundle: langBundle.bundle), systemImage: "square.and.arrow.up.on.square")
+                }
                 NavigationLink(value: AppTab.general) {
                     Label(String(localized: "General", bundle: langBundle.bundle), systemImage: "gearshape")
                 }
@@ -41,6 +44,8 @@ struct ContentView: View {
                 case .bookmarkSync:
                     BookmarkSyncTabView()
                         .environmentObject(appState.backupService)
+                case .tabSharing:
+                    TabSharingTabView()
                 case .router:
                     RouterTabView()
                 case .general:
@@ -58,7 +63,7 @@ struct ContentView: View {
 }
 
 enum AppTab: Hashable {
-    case browsers, router, stateSync, bookmarkSync, general, about
+    case browsers, router, stateSync, bookmarkSync, tabSharing, general, about
 }
 
 // MARK: - About Tab View

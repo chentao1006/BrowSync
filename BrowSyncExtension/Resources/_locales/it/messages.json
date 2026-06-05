@@ -42,6 +42,45 @@
     "message": "Default Browser"
   },
   "btnMoreSettings": {
-    "message": "More Settings"
+    "message": "Più impostazioni"
+  },
+  "remoteTabs": {
+    "message": "Schede Remote"
+  },
+  "btnRefresh": {
+    "message": "Aggiorna"
+  },
+  "currentWebsite": {
+    "message": "Sito Web Attuale"
+  },
+  "btnSyncSiteNow": {
+    "message": "Sincronizza ora"
+  },
+  "syncStateForSite": {
+    "message": "Sincronizza stato"
+  },
+  "syncStrategy": {
+    "message": "Strategia"
+  },
+  "strategyDefault": {
+    "message": "Criterio predefinito"
+  },
+  "strategyPrimaryWins": {
+    "message": "Priorità browser principale"
+  },
+  "strategyLatestWins": {
+    "message": "Il più recente"
+  },
+  "strategyMerge": {
+    "message": "Unione bidirezionale"
+  },
+  "sourceBrowser": {
+    "message": "Browser di origine"
+  },
+  "browserDefault": {
+    "message": "Browser predefinito"
+  },
+  "settingTabSharing": {
+    "message": "Condivisione schede"
   }
 }
