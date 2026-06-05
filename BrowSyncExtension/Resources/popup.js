@@ -55,8 +55,10 @@ async function loadSettings() {
   if (toggleTabSharing) toggleTabSharing.checked = appSettings.tabSharingParticipatingBrowsers?.[browserId] === true;
   
   const tabSharingSection = document.getElementById('tabSharingSection');
-  if (tabSharingSection) {
-    tabSharingSection.style.display = isTabSharingEnabled ? 'block' : 'none';
+  if (tabSharingSection && !isTabSharingEnabled) {
+    // Only force-hide when tab sharing is disabled.
+    // When enabled, renderRemoteTabs() controls visibility based on actual content.
+    tabSharingSection.style.display = 'none';
   }
   
   if (btnSetRouterDefault && textIsRouterDefault) {
@@ -90,9 +92,14 @@ async function loadSettings() {
 
   if (siteSyncSection) {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs.length > 0 && tabs[0].url && !tabs[0].url.startsWith('chrome') && !tabs[0].url.startsWith('about') && !tabs[0].url.startsWith('safari-extension')) {
+      const url = tabs.length > 0 ? tabs[0].url : null;
+      if (url && /^https?:/i.test(url)) {
         try {
-          let activeHostname = getBaseDomain(new URL(tabs[0].url).hostname);
+          let activeHostname = getBaseDomain(new URL(url).hostname);
+          if (!activeHostname) {
+            siteSyncSection.style.display = 'none';
+            return;
+          }
           
           siteSyncSection.style.display = 'block';
           if (siteDomainName) siteDomainName.textContent = activeHostname;
@@ -270,18 +277,22 @@ const btnRefreshTabs = document.getElementById('btnRefreshTabs');
 const remoteTabsList = document.getElementById('remoteTabsList');
 
 async function renderRemoteTabs() {
+  const tabSharingSection = document.getElementById('tabSharingSection');
   const { remoteTabs } = await chrome.storage.local.get('remoteTabs');
-  if (!remoteTabsList || !remoteTabs) return;
+  if (!remoteTabsList) return;
 
   remoteTabsList.innerHTML = '';
-  
-  const browsers = Object.keys(remoteTabs);
-  if (browsers.length === 0) {
-    remoteTabsList.innerHTML = `<div style="font-size: 12px; opacity: 0.6; padding: 8px 0;">No remote tabs found.</div>`;
+
+  const hasAnyTab = remoteTabs && Object.values(remoteTabs).some(tabs => tabs && tabs.length > 0);
+
+  if (!hasAnyTab) {
+    if (tabSharingSection) tabSharingSection.style.display = 'none';
     return;
   }
 
-  for (const browser of browsers) {
+  if (tabSharingSection) tabSharingSection.style.display = 'block';
+
+  for (const browser of Object.keys(remoteTabs)) {
     const tabs = remoteTabs[browser];
     if (!tabs || tabs.length === 0) continue;
 
