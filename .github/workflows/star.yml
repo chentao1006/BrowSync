@@ -1,0 +1,15 @@
+name: Star Notify
+
+on:
+  watch:
+    types: [started]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send to Telegram API
+        run: |
+          curl -X POST "https://api.ct106.cc/telegram" \
+          -H "Content-Type: application/json" \
+          -d "⭐ ${{ github.event.repository.name }} Stars：${{ github.event.repository.stargazers_count }}"
