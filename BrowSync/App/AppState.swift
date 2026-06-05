@@ -291,6 +291,20 @@ extension AppState: DaemonServerDelegate {
         Task { @MainActor in
             if !server.isConnected(browser: browser) {
                 self.updateConnectionStatus(for: browser, connected: false)
+                
+                // Clear the cache for this browser
+                self.remoteTabsCache.removeValue(forKey: browser)
+                
+                // Broadcast an empty tab list to inform other extensions that this browser is offline
+                let msg = WSMessage(
+                    type: .sync,
+                    browser: browser.rawValue,
+                    category: "tabSharing",
+                    payload: .tabs([]),
+                    messageId: UUID().uuidString,
+                    timestamp: Date().timeIntervalSince1970
+                )
+                server.broadcast(msg)
             }
         }
     }
