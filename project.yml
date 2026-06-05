@@ -51,6 +51,7 @@ targets:
         SUFeedURL: https://browsync.ct106.com/appcast.xml
         SUPublicEDKey: T9d+4vUpmrkAXNcwSOu7/MzSO6tIKr8JbVhYe4j0jaE=
         SUEnableAutomaticChecks: true
+        LSUIElement: true
 
     sources:
       - path: BrowSync
@@ -103,7 +104,15 @@ targets:
 
     sources:
       - BrowSyncExtension/SafariWebExtensionHandler.swift
-      - BrowSyncExtension/Resources
+      - BrowSyncExtension/Resources/manifest.json
+      - BrowSyncExtension/Resources/background.js
+      - BrowSyncExtension/Resources/content.js
+      - BrowSyncExtension/Resources/popup.html
+      - BrowSyncExtension/Resources/popup.js
+      - path: BrowSyncExtension/Resources/icons
+        type: folder
+      - path: BrowSyncExtension/Resources/_locales
+        type: folder
 
 
     settings:

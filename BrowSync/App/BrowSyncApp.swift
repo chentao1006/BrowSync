@@ -8,41 +8,43 @@ import Sparkle
 @main
 struct BrowSyncApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var appState = AppState()
+    @StateObject private var appState = AppState.shared
     @StateObject private var langBundle = LanguageBundle(language: .system)
 
     var body: some Scene {
-        Window("BrowSync", id: "SettingsWindow") {
+        // Menu Bar Extra (macOS 13+)
+        MenuBarExtra {
+            MenuBarView()
+                .environmentObject(appState)
+                .environmentObject(langBundle)
+                .environment(\.locale, currentLocale)
+        } label: {
+            MenuBarLabelView()
+                .environmentObject(appState)
+        }
+        .menuBarExtraStyle(.menu)
+
+        WindowGroup("BrowSync", id: "SettingsWindow") {
             ContentView()
                 .environmentObject(appState)
                 .environmentObject(langBundle)
                 .environment(\.locale, currentLocale)
                 .frame(width: 750, height: 600)
                 .onAppear {
-                    appDelegate.appState = appState
                     appDelegate.settingsWindowDidAppear()
-                    // Sync langBundle with saved language on first appear
                     langBundle.apply(language: appState.settingsService.general.language)
                 }
                 .onChange(of: appState.settingsService.general.language) { _, newLang in
                     langBundle.apply(language: newLang)
                 }
         }
+        .handlesExternalEvents(matching: ["browsync"])
         .windowResizability(.contentSize)
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .newItem) {}
         }
-
-        // Menu Bar Extra (macOS 13+)
-        MenuBarExtra("BrowSync", image: "MenuBarIcon") {
-            MenuBarView()
-                .environmentObject(appState)
-                .environmentObject(langBundle)
-                .environment(\.locale, currentLocale)
-        }
-        .menuBarExtraStyle(.menu)
     }
 
     private var currentLocale: Locale {
@@ -59,7 +61,7 @@ struct BrowSyncApp: App {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    var appState: AppState?
+    var appState: AppState { AppState.shared }
     let updaterController: SPUStandardUpdaterController
     private var shouldShowSettingsWindow = false
     private var pendingURLRequests: [(url: URL, sourceAppBundleId: String?)] = []
@@ -71,8 +73,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // Register for Apple Events to handle HTTP/HTTPS URLs BEFORE applicationDidFinishLaunching
+        // Otherwise the initial URL that launched the app will be dropped
+        NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)), forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
+
         if SettingsService().general.hideWindowOnStartup {
             hideDockIcon()
+            NSApp.hide(nil) // Hide the entire app immediately to prevent the main window from flashing
         }
     }
 
@@ -80,8 +87,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Create data directories
         createAppDirectories()
         
-        // Register for Apple Events to handle HTTP/HTTPS URLs
-        NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)), forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
+        Task {
+            await appState.onAppear()
+        }
+        
         NotificationCenter.default.addObserver(self, selector: #selector(windowWillClose(_:)), name: NSWindow.willCloseNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(settingsWindowDidBecomeKey(_:)), name: NSWindow.didBecomeKeyNotification, object: nil)
         
@@ -96,11 +105,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settingsService = SettingsService()
         if settingsService.general.hideWindowOnStartup {
             hideDockIcon()
-            DispatchQueue.main.async {
-                NSApp.windows.first?.close()
-            }
         } else {
             showDockIcon()
+            if !hasVisibleSettingsWindow() {
+                if let url = URL(string: "browsync://open") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
         }
     }
 
@@ -126,15 +137,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showDockIcon() {
-        if NSApp.activationPolicy() != .regular {
-            NSApp.setActivationPolicy(.regular)
-        }
+        // Disabled to prevent SwiftUI MenuBarExtra freezing bug on macOS
     }
 
     func hideDockIcon() {
-        if NSApp.activationPolicy() != .accessory {
-            NSApp.setActivationPolicy(.accessory)
-        }
+        // Disabled to prevent SwiftUI MenuBarExtra freezing bug on macOS
     }
 
     @objc private func windowWillClose(_ notification: Notification) {
@@ -183,16 +190,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func processURL(_ url: URL, sourceAppBundleId: String?) {
-        if let appState {
-            appState.handleIncomingURL(url, sourceAppBundleId: sourceAppBundleId)
-        } else {
-            pendingURLRequests.append((url: url, sourceAppBundleId: sourceAppBundleId))
-        }
+        appState.handleIncomingURL(url, sourceAppBundleId: sourceAppBundleId)
         hideDockIconIfNoVisibleMainWindow()
     }
 
     private func flushPendingURLRequests() {
-        guard let appState, !pendingURLRequests.isEmpty else { return }
+        guard !pendingURLRequests.isEmpty else { return }
         let requests = pendingURLRequests
         pendingURLRequests.removeAll()
 
@@ -282,6 +285,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false // Keep running as menu bar app
     }
 
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        return !SettingsService().general.hideWindowOnStartup
+    }
+
     private func createAppDirectories() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dirs = [
@@ -294,6 +301,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let url = appSupport.appendingPathComponent(dir)
             try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         }
+    }
+}
+
+struct MenuBarLabelView: View {
+    @Environment(\.openWindow) private var openWindow
+    @EnvironmentObject var appState: AppState
+
+    var body: some View {
+        Image("MenuBarIcon")
+            .onAppear {
+                appState.openWindowAction = { id in
+                    openWindow(id: id)
+                }
+            }
     }
 }
 

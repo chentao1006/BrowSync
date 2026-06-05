@@ -1,0 +1,29 @@
+{
+  "extName": {
+    "message": "BrowSync"
+  },
+  "extDescription": {
+    "message": "macOS 기기 간에 브라우저 상태를 동기화합니다."
+  },
+  "appSubtitle": {
+    "message": "동기화"
+  },
+  "statusConnecting": {
+    "message": "연결 중..."
+  },
+  "statusConnected": {
+    "message": "BrowSync에 연결됨"
+  },
+  "statusSyncing": {
+    "message": "동기화 중..."
+  },
+  "statusDisconnected": {
+    "message": "연결 끊김"
+  },
+  "btnVisitWebsite": {
+    "message": "공식 웹사이트 방문"
+  },
+  "btnOpenApp": {
+    "message": "앱 열기"
+  }
+}

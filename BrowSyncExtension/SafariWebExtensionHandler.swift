@@ -16,7 +16,9 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
         if message?["action"] as? String == "openApp" {
             let appURL = Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            NSWorkspace.shared.openApplication(at: appURL, configuration: NSWorkspace.OpenConfiguration())
+            if let url = URL(string: "browsync://open") {
+                NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
+            }
         }
 
         // Echo back an ack (the JS background does not rely on native handler for WS communication)

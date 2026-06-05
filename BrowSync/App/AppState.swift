@@ -7,6 +7,7 @@ import Combine
 
 @MainActor
 final class AppState: ObservableObject {
+    static let shared = AppState()
     // Services
     let daemon = DaemonServer()
     let scanner = BrowserScanner()
@@ -16,6 +17,8 @@ final class AppState: ObservableObject {
     let backupService = BackupService()
 
     private var cancellables = Set<AnyCancellable>()
+    
+    var openWindowAction: ((String) -> Void)?
 
     // Published state
     @Published var browserInfos: [BrowserInfo] = Browser.allCases.map { .placeholder(for: $0) }
@@ -123,6 +126,9 @@ final class AppState: ObservableObject {
     
     func handleIncomingURL(_ url: URL, sourceAppBundleId: String?) {
         if url.scheme == "browsync" {
+            if url.host == "open" {
+                openWindowAction?("SettingsWindow")
+            }
             // App is already brought to front by macOS, nothing else to do
             return
         }

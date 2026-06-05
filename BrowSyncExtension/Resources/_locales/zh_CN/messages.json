@@ -1,0 +1,29 @@
+{
+  "extName": {
+    "message": "BrowSync 同览"
+  },
+  "extDescription": {
+    "message": "在 macOS 设备之间同步浏览器状态。"
+  },
+  "appSubtitle": {
+    "message": "同览"
+  },
+  "statusConnecting": {
+    "message": "连接中..."
+  },
+  "statusConnected": {
+    "message": "已连接 BrowSync"
+  },
+  "statusSyncing": {
+    "message": "同步中..."
+  },
+  "statusDisconnected": {
+    "message": "已断开连接"
+  },
+  "btnVisitWebsite": {
+    "message": "访问官网"
+  },
+  "btnOpenApp": {
+    "message": "打开核心应用"
+  }
+}

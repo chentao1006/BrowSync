@@ -1,0 +1,29 @@
+{
+  "extName": {
+    "message": "BrowSync"
+  },
+  "extDescription": {
+    "message": "macOSデバイス間でブラウザの状態を同期します。"
+  },
+  "appSubtitle": {
+    "message": "同期"
+  },
+  "statusConnecting": {
+    "message": "接続中..."
+  },
+  "statusConnected": {
+    "message": "BrowSyncに接続済み"
+  },
+  "statusSyncing": {
+    "message": "同期中..."
+  },
+  "statusDisconnected": {
+    "message": "切断されました"
+  },
+  "btnVisitWebsite": {
+    "message": "公式サイトへ"
+  },
+  "btnOpenApp": {
+    "message": "アプリを開く"
+  }
+}

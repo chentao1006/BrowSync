@@ -1,0 +1,29 @@
+{
+  "extName": {
+    "message": "BrowSync"
+  },
+  "extDescription": {
+    "message": "Sincronizza lo stato del tuo browser sui dispositivi macOS."
+  },
+  "appSubtitle": {
+    "message": "Sync"
+  },
+  "statusConnecting": {
+    "message": "Connessione in corso..."
+  },
+  "statusConnected": {
+    "message": "Connesso a BrowSync"
+  },
+  "statusSyncing": {
+    "message": "Sincronizzazione..."
+  },
+  "statusDisconnected": {
+    "message": "Disconnesso"
+  },
+  "btnVisitWebsite": {
+    "message": "Visita il sito ufficiale"
+  },
+  "btnOpenApp": {
+    "message": "Apri l'app"
+  }
+}

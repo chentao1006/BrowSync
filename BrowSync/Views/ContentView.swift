@@ -53,9 +53,6 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .task {
-            await appState.onAppear()
-        }
         // Note: locale is set by BrowSyncApp via .environment(\.locale) — do NOT add another one here
     }
 }

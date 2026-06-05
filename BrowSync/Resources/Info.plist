@@ -4,17 +4,6 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
-	<key>CFBundleLocalizations</key>
-	<array>
-		<string>en</string>
-		<string>zh-Hans</string>
-		<string>ja</string>
-		<string>ko</string>
-		<string>de</string>
-		<string>fr</string>
-		<string>it</string>
-		<string>es</string>
-	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -56,11 +45,15 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>LSUIElement</key>
+	<true/>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>NSUserActivityTypeBrowsingWeb</string>
 	</array>
 	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>LSUIElement</key>
 	<true/>
 	<key>SUFeedURL</key>
 	<string>https://browsync.ct106.com/appcast.xml</string>

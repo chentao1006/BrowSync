@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "BrowSync",
+  "name": "__MSG_extName__",
   "version": "1.0.0",
-  "description": "Multi-browser sync powered by BrowSync",
+  "description": "__MSG_extDescription__",
+  "default_locale": "en",
   "background": {
     "scripts": [
       "background.js"
@@ -28,23 +29,24 @@
     "scripting",
     "notifications",
     "alarms",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "<all_urls>"
   ],
   "icons": {
-    "16": "icon16.png",
-    "48": "icon48.png",
-    "128": "icon128.png"
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "BrowSync",
+    "default_title": "__MSG_extName__",
     "default_icon": {
-      "16": "icon16.png",
-      "48": "icon48.png",
-      "128": "icon128.png"
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
     }
   },
   "browser_specific_settings": {
