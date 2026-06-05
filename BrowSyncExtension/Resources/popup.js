@@ -250,6 +250,11 @@ if (btnSyncSiteNow) {
     if (domain) {
       btnSyncSiteNow.style.opacity = '0.5';
       chrome.runtime.sendMessage({ type: 'PULL_SITE_DATA', domain: domain }, () => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs[0]) {
+            chrome.tabs.reload(tabs[0].id);
+          }
+        });
         setTimeout(() => { btnSyncSiteNow.style.opacity = '1'; }, 1000);
       });
     }
@@ -280,14 +285,6 @@ async function renderRemoteTabs() {
     const tabs = remoteTabs[browser];
     if (!tabs || tabs.length === 0) continue;
 
-    const group = document.createElement('div');
-    group.className = 'remote-browser-group';
-    
-    const title = document.createElement('div');
-    title.className = 'remote-browser-title';
-    title.textContent = browser;
-    group.appendChild(title);
-
     for (const tab of tabs) {
       const item = document.createElement('a');
       item.className = 'remote-tab-item';
@@ -300,7 +297,7 @@ async function renderRemoteTabs() {
 
       const icon = document.createElement('img');
       icon.className = 'remote-tab-icon';
-      icon.src = tab.favIconURL || '../icons/icon16.png';
+      icon.src = `../icons/${browser.toLowerCase()}.png`;
       icon.onerror = () => { icon.src = '../icons/icon16.png'; };
 
       const tabTitle = document.createElement('div');
@@ -309,10 +306,8 @@ async function renderRemoteTabs() {
 
       item.appendChild(icon);
       item.appendChild(tabTitle);
-      group.appendChild(item);
+      remoteTabsList.appendChild(item);
     }
-    
-    remoteTabsList.appendChild(group);
   }
 }
 

@@ -146,6 +146,27 @@ struct AboutTabView: View {
                     }
                 }
                 
+                Section(String(localized: "Analytics", bundle: langBundle.bundle)) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Toggle(String(localized: "Send Anonymous Usage Statistics", bundle: langBundle.bundle), isOn: settings.analyticsEnabled)
+                                .onChange(of: settings.analyticsEnabled.wrappedValue) { _, newValue in
+                                    if newValue {
+                                        AnalyticsManager.shared.trackEvent("Analytics Enabled")
+                                    } else {
+                                        // Once disabled, it won't send anymore
+                                        AnalyticsManager.shared.trackEvent("Analytics Disabled")
+                                    }
+                                    appState.settingsService.general.analyticsOptInPrompted = true
+                                    appState.settingsService.save()
+                                }
+                            Text(String(localized: "Help us improve BrowSync by sending anonymous usage data.", bundle: langBundle.bundle))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                
                 Section(String(localized: "Links", bundle: langBundle.bundle)) {
                     Link(destination: URL(string: "https://github.com/chentao1006/browsync")!) {
                         HStack {

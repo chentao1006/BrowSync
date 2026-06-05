@@ -311,3 +311,13 @@
 "Turn off Bookmark Sync" = "북마크 동기화 끄기";
 "Turn on State Sync" = "상태 동기화 켜기";
 "Turn off State Sync" = "상태 동기화 끄기";
+
+
+/* Analytics */
+"Analytics" = "분석";
+"Help Improve BrowSync" = "BrowSync 개선에 참여하기";
+"Would you like to send anonymous usage statistics to help us improve BrowSync? You can change this later in the About tab." = "BrowSync를 개선하는 데 도움이 되도록 익명 사용 통계를 보내시겠습니까? 나중에 정보 탭에서 변경할 수 있습니다.";
+"Yes, share anonymously" = "예, 익명으로 공유합니다";
+"No, thanks" = "아니요, 괜찮습니다";
+"Send Anonymous Usage Statistics" = "익명 사용 통계 보내기";
+"Help us improve BrowSync by sending anonymous usage data." = "익명 사용 데이터를 전송하여 BrowSync 개선을 도와주세요.";

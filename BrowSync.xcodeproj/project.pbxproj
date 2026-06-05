@@ -26,12 +26,14 @@
 		707821BB2B42D121080578F5 /* DaemonServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3528BFE980A1D1244B97800E /* DaemonServer.swift */; };
 		7DE05CB0C0717AE68DF19152 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 5385B997A76CEA70148BB576 /* InfoPlist.strings */; };
 		802AEFECBBCA59346FF958FB /* icons in Resources */ = {isa = PBXBuildFile; fileRef = 5DE281CEF76E46A6A199A351 /* icons */; };
+		843D134034448134FDF38A8B /* AnalyticsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877F489CC3C5152086D3B088 /* AnalyticsManager.swift */; };
 		89B2FBA2DA46EBD47142C310 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA75D3B7E887B29E30DDBDE /* NotificationService.swift */; };
 		8A59C788940EE276FEF49438 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2332B7DC4ABFCC9469A81DA4 /* ContentView.swift */; };
 		8B8829DDE271271237CF8E82 /* _locales in Resources */ = {isa = PBXBuildFile; fileRef = B5B81522FABEA38722F4B7BF /* _locales */; };
 		8DFBC220F863CB4B7D9E8740 /* LanguageBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE5BEE879CB61212F2D3F082 /* LanguageBundle.swift */; };
 		96128DEC3156F0AB79B87436 /* popup.js in Resources */ = {isa = PBXBuildFile; fileRef = 9057E94AC94248B5CE65CF31 /* popup.js */; };
 		A2FE9A8C0FC5C40F58163D5C /* WSMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1108A1B4B7AA8CF05488F9C /* WSMessage.swift */; };
+		A3575734508D3D0F3326CF47 /* Aptabase in Frameworks */ = {isa = PBXBuildFile; productRef = AE143AD59F66BFD216353310 /* Aptabase */; };
 		B2F785D247654F6B9656917F /* SyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82D553C4CA2861D50758366B /* SyncView.swift */; };
 		B3CA3D25584BA151347395DA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5800150E203500FC40165A3D /* Assets.xcassets */; };
 		B73BEA26F240001A92A704D8 /* SettingsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93D2A20D8B97836960D5A19A /* SettingsService.swift */; };
@@ -95,6 +97,7 @@
 		780E0CD4A6E3352284F4F212 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/Localizable.strings; sourceTree = "<group>"; };
 		82D553C4CA2861D50758366B /* SyncView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncView.swift; sourceTree = "<group>"; };
 		8449AE30421FC5A59FC77934 /* GeneralView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralView.swift; sourceTree = "<group>"; };
+		877F489CC3C5152086D3B088 /* AnalyticsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsManager.swift; sourceTree = "<group>"; };
 		9057E94AC94248B5CE65CF31 /* popup.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = popup.js; sourceTree = "<group>"; };
 		91206874B5D1B45C9D05A911 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		93D2A20D8B97836960D5A19A /* SettingsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsService.swift; sourceTree = "<group>"; };
@@ -126,6 +129,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				3CA927BE680755151AFD2D5C /* Sparkle in Frameworks */,
+				A3575734508D3D0F3326CF47 /* Aptabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -271,6 +275,7 @@
 		F54EF8D3DC5874F7F31DF43E /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				877F489CC3C5152086D3B088 /* AnalyticsManager.swift */,
 				B4F4144B8AE085C797A52208 /* BackupService.swift */,
 				BE5BEE879CB61212F2D3F082 /* LanguageBundle.swift */,
 				3FA75D3B7E887B29E30DDBDE /* NotificationService.swift */,
@@ -319,6 +324,7 @@
 			name = BrowSync;
 			packageProductDependencies = (
 				B6D44F4007EDC4B1F445B0CA /* Sparkle */,
+				AE143AD59F66BFD216353310 /* Aptabase */,
 			);
 			productName = BrowSync;
 			productReference = 705139BD1CAEFD064FC5E472 /* BrowSync.app */;
@@ -360,6 +366,7 @@
 			mainGroup = CDFD277E2BFDC5553C9BE04F;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				5DDB7C56C7A888AFF5D86ACD /* XCRemoteSwiftPackageReference "aptabase-swift" */,
 				C3156D4C68323EEA4C24D3E9 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -406,6 +413,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				843D134034448134FDF38A8B /* AnalyticsManager.swift in Sources */,
 				FF2C4FE56E23B34872FBCDAF /* AppConfig.swift in Sources */,
 				C30EE96DFF76B037BDEF411A /* AppState.swift in Sources */,
 				13C5A394060BB3FAA4E0F25B /* BackupService.swift in Sources */,
@@ -719,6 +727,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		5DDB7C56C7A888AFF5D86ACD /* XCRemoteSwiftPackageReference "aptabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/aptabase/aptabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.3.0;
+			};
+		};
 		C3156D4C68323EEA4C24D3E9 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/sparkle-project/Sparkle";
@@ -730,6 +746,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		AE143AD59F66BFD216353310 /* Aptabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5DDB7C56C7A888AFF5D86ACD /* XCRemoteSwiftPackageReference "aptabase-swift" */;
+			productName = Aptabase;
+		};
 		B6D44F4007EDC4B1F445B0CA /* Sparkle */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C3156D4C68323EEA4C24D3E9 /* XCRemoteSwiftPackageReference "Sparkle" */;

@@ -1,51 +1,64 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <meta charset="utf-8">
   <meta name="color-scheme" content="light dark">
   <title>BrowSync</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
     :root {
       color-scheme: light dark;
       --bg-color: #f5f5f7;
       --text-color: #1d1d1f;
     }
+
     @media (prefers-color-scheme: dark) {
       :root {
         --bg-color: #1a1a2e;
         --text-color: #e8e8f0;
       }
     }
+
     body {
       width: 280px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: var(--bg-color);
       color: var(--text-color);
     }
+
     @supports (color: light-dark(white, black)) {
       body {
         background: light-dark(#f5f5f7, #1a1a2e);
         color: light-dark(#1d1d1f, #e8e8f0);
       }
     }
+
     .header {
       padding: 16px;
       background: var(--bg-color);
       border-bottom: 1px solid rgba(128, 128, 128, 0.2);
     }
+
     @supports (color: light-dark(white, black)) {
       .header {
         background: light-dark(linear-gradient(135deg, #e0e0e0 0%, #ffffff 100%), linear-gradient(135deg, #16213e 0%, #0f3460 100%));
-        border-bottom: 1px solid light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.1));
+        border-bottom: 1px solid light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.1));
       }
     }
+
     .header-top {
       display: flex;
       align-items: center;
       gap: 10px;
       margin-bottom: 6px;
     }
+
     .logo {
       width: 32px;
       height: 32px;
@@ -53,20 +66,24 @@
       align-items: center;
       justify-content: center;
     }
+
     .app-name {
       font-size: 16px;
       font-weight: 700;
     }
+
     .app-subtitle {
       font-size: 11px;
       opacity: 0.6;
     }
+
     .status-row {
       display: flex;
       align-items: center;
       gap: 6px;
       font-size: 12px;
     }
+
     .status-dot {
       width: 8px;
       height: 8px;
@@ -75,27 +92,41 @@
       flex-shrink: 0;
       transition: background 0.3s;
     }
+
     .status-dot.connected {
       background: #4ade80;
       box-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
     }
+
     .status-dot.working {
       background: #f5a623;
       box-shadow: 0 0 8px rgba(245, 166, 35, 0.5);
       animation: pulse 1.5s infinite;
     }
+
     @keyframes pulse {
-      0% { opacity: 1; }
-      50% { opacity: 0.5; }
-      100% { opacity: 1; }
+      0% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.5;
+      }
+
+      100% {
+        opacity: 1;
+      }
     }
+
     .status-text {
       opacity: 0.8;
     }
+
     .section {
       padding: 16px;
       border-bottom: 1px solid rgba(128, 128, 128, 0.2);
     }
+
     .section-title {
       font-size: 11px;
       font-weight: 600;
@@ -104,26 +135,39 @@
       letter-spacing: 0.5px;
       margin-bottom: 8px;
     }
+
+    .domain-container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
     .domain-name {
       font-size: 13px;
       opacity: 0.9;
-      margin-bottom: 4px;
       word-break: break-all;
     }
+
     .strategy-info {
       font-size: 13px;
       font-weight: 600;
       color: #007aff;
     }
+
     @supports (color: light-dark(white, black)) {
-      .strategy-info { color: light-dark(#0056b3, #4facfe); }
+      .strategy-info {
+        color: light-dark(#0056b3, #4facfe);
+      }
     }
+
     .settings-section {
       padding: 16px;
       display: flex;
       flex-direction: column;
       gap: 12px;
     }
+
     .toggle-row {
       display: flex;
       justify-content: space-between;
@@ -132,9 +176,11 @@
       font-weight: 500;
       cursor: pointer;
     }
+
     .toggle-row input {
       display: none;
     }
+
     .slider {
       position: relative;
       width: 36px;
@@ -143,9 +189,13 @@
       border-radius: 20px;
       transition: .4s;
     }
+
     @supports (color: light-dark(white, black)) {
-      .slider { background-color: light-dark(#e5e5ea, #39393d); }
+      .slider {
+        background-color: light-dark(#e5e5ea, #39393d);
+      }
     }
+
     .slider:before {
       position: absolute;
       content: "";
@@ -156,18 +206,22 @@
       background-color: white;
       border-radius: 50%;
       transition: .4s;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
     }
-    input:checked + .slider {
+
+    input:checked+.slider {
       background-color: #34c759;
     }
-    input:disabled + .slider {
+
+    input:disabled+.slider {
       opacity: 0.5;
       cursor: not-allowed;
     }
-    input:checked + .slider:before {
+
+    input:checked+.slider:before {
       transform: translateX(16px);
     }
+
     .action-btn {
       background: #007aff;
       color: white;
@@ -179,19 +233,27 @@
       cursor: pointer;
       transition: opacity 0.2s;
     }
+
     .action-btn:hover {
       opacity: 0.8;
     }
+
     .status-text-success {
       font-size: 12px;
       color: #34c759;
       font-weight: 600;
     }
+
     @supports (color: light-dark(white, black)) {
-      .action-btn { background: light-dark(#007aff, #0a84ff); }
-      .status-text-success { color: light-dark(#34c759, #30d158); }
+      .action-btn {
+        background: light-dark(#007aff, #0a84ff);
+      }
+
+      .status-text-success {
+        color: light-dark(#34c759, #30d158);
+      }
     }
-    
+
     .btn-more {
       width: 100%;
       background: rgba(120, 120, 128, 0.12);
@@ -205,22 +267,25 @@
       cursor: pointer;
       transition: background 0.2s;
     }
+
     .btn-more:hover {
       background: rgba(120, 120, 128, 0.2);
     }
+
     .remote-browser-group {
       margin-bottom: 12px;
     }
+
     .remote-browser-title {
       font-size: 11px;
       font-weight: 600;
-      opacity: 0.6;
       text-transform: capitalize;
       margin-bottom: 6px;
       display: flex;
       align-items: center;
       gap: 6px;
     }
+
     .remote-tab-item {
       display: flex;
       align-items: center;
@@ -232,14 +297,17 @@
       text-decoration: none;
       color: inherit;
     }
+
     .remote-tab-item:hover {
       background: rgba(128, 128, 128, 0.1);
     }
+
     .remote-tab-icon {
       width: 16px;
       height: 16px;
       flex-shrink: 0;
     }
+
     .remote-tab-title {
       font-size: 13px;
       white-space: nowrap;
@@ -247,6 +315,7 @@
       text-overflow: ellipsis;
       flex-grow: 1;
     }
+
     .refresh-btn {
       background: none;
       border: none;
@@ -254,15 +323,20 @@
       cursor: pointer;
       font-size: 11px;
     }
+
     @supports (color: light-dark(white, black)) {
-      .refresh-btn { color: light-dark(#007aff, #0a84ff); }
+      .refresh-btn {
+        color: light-dark(#007aff, #0a84ff);
+      }
     }
   </style>
 </head>
+
 <body>
   <div class="header">
     <div class="header-top">
-      <div class="logo"><img src="../icons/icon48.png" width="32" height="32" alt="logo" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));"></div>
+      <div class="logo"><img src="../icons/icon48.png" width="32" height="32" alt="logo"
+          style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));"></div>
       <div>
         <div class="app-name" data-i18n="extName">BrowSync</div>
         <div class="app-subtitle" id="appSubtitle"></div>
@@ -276,11 +350,12 @@
 
   <div id="siteSyncSection" class="section" style="display:none; padding:16px;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-      <div style="display: flex; flex-direction: column; overflow: hidden; margin-right: 8px;">
-        <div class="section-title" style="margin-bottom:2px;" data-i18n="currentWebsite">Current Website</div>
-        <div class="domain-name" id="siteDomainName">...</div>
+      <div style="display: flex; align-items: baseline; overflow: hidden; margin-right: 8px; flex-wrap: wrap;">
+        <div class="section-title" style="margin-bottom:0; margin-right: 8px;" data-i18n="currentWebsite">Current Website</div>
+        <div class="domain-name" id="siteDomainName" style="font-weight: 700; font-size: 14px;">...</div>
       </div>
-      <button id="btnSyncSiteNow" class="action-btn" data-i18n="btnSyncSiteNow" style="flex-shrink: 0;">Sync Now</button>
+      <button id="btnSyncSiteNow" class="action-btn" data-i18n="btnSyncSiteNow" style="flex-shrink: 0;">Sync
+        Now</button>
     </div>
     <label class="toggle-row" style="margin-bottom: 12px;">
       <span data-i18n="syncStateForSite">Sync State</span>
@@ -289,16 +364,19 @@
     </label>
     <div id="siteStrategyRow" style="display: flex; justify-content: space-between; align-items: center;">
       <span style="font-size: 13px; font-weight: 500;" data-i18n="syncStrategy">Strategy</span>
-      <select id="selectSiteStrategy" style="font-size: 12px; padding: 2px 4px; border-radius: 4px; background: var(--bg-color); color: var(--text-color); border: 1px solid rgba(128,128,128,0.3);">
+      <select id="selectSiteStrategy"
+        style="font-size: 12px; padding: 2px 4px; border-radius: 4px; background: var(--bg-color); color: var(--text-color); border: 1px solid rgba(128,128,128,0.3);">
         <option value="default" data-i18n="strategyDefault">Default Policy</option>
         <option value="primary_wins" data-i18n="strategyPrimaryWins">Primary Wins</option>
         <option value="latest_wins" data-i18n="strategyLatestWins">Latest Wins</option>
         <option value="two_way_merge" data-i18n="strategyMerge">Two-way Merge</option>
       </select>
     </div>
-    <div id="siteSourceBrowserRow" style="display: none; justify-content: space-between; align-items: center; margin-top: 8px;">
+    <div id="siteSourceBrowserRow"
+      style="display: none; justify-content: space-between; align-items: center; margin-top: 8px;">
       <span style="font-size: 13px; font-weight: 500;" data-i18n="sourceBrowser">Source Browser</span>
-      <select id="selectSiteSourceBrowser" style="font-size: 12px; padding: 2px 4px; border-radius: 4px; background: var(--bg-color); color: var(--text-color); border: 1px solid rgba(128,128,128,0.3);">
+      <select id="selectSiteSourceBrowser"
+        style="font-size: 12px; padding: 2px 4px; border-radius: 4px; background: var(--bg-color); color: var(--text-color); border: 1px solid rgba(128,128,128,0.3);">
       </select>
     </div>
   </div>
@@ -315,7 +393,8 @@
     <div class="toggle-row" id="routerDefaultContainer">
       <span data-i18n="settingRouterDefault">Router Default</span>
       <button id="btnSetRouterDefault" class="action-btn" data-i18n="btnSetDefault">Set as Default</button>
-      <span id="textIsRouterDefault" class="status-text-success" style="display:none;">✅ <span data-i18n="textIsDefault">Default Browser</span></span>
+      <span id="textIsRouterDefault" class="status-text-success" style="display:none;">✅ <span
+          data-i18n="textIsDefault">Default Browser</span></span>
     </div>
     <label class="toggle-row">
       <span data-i18n="settingBookmarkSync">Bookmark Sync</span>
@@ -323,19 +402,20 @@
       <span class="slider"></span>
     </label>
     <label class="toggle-row">
-      <span data-i18n="settingTabSharing">Tab Sharing</span>
-      <input type="checkbox" id="toggleTabSharing">
-      <span class="slider"></span>
-    </label>
-    <label class="toggle-row">
       <span data-i18n="settingStateSync">State Sync</span>
       <input type="checkbox" id="toggleStateSync">
       <span class="slider"></span>
     </label>
-    
+    <label class="toggle-row">
+      <span data-i18n="settingTabSharing">Tab Sharing</span>
+      <input type="checkbox" id="toggleTabSharing">
+      <span class="slider"></span>
+    </label>
+
     <button id="btnMoreSettings" class="btn-more" data-i18n="btnMoreSettings">More Settings</button>
   </div>
 
   <script src="popup.js"></script>
 </body>
+
 </html>

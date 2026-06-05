@@ -309,3 +309,13 @@
 "Turn off Bookmark Sync" = "Lesezeichen-Synchronisierung deaktivieren";
 "Turn on State Sync" = "Status-Synchronisierung aktivieren";
 "Turn off State Sync" = "Status-Synchronisierung deaktivieren";
+
+
+/* Analytics */
+"Analytics" = "Analyse";
+"Help Improve BrowSync" = "Helfen Sie, BrowSync zu verbessern";
+"Would you like to send anonymous usage statistics to help us improve BrowSync? You can change this later in the About tab." = "Möchten Sie anonyme Nutzungsstatistiken senden, um uns bei der Verbesserung von BrowSync zu helfen? Sie können dies später im Info-Tab ändern.";
+"Yes, share anonymously" = "Ja, anonym teilen";
+"No, thanks" = "Nein, danke";
+"Send Anonymous Usage Statistics" = "Anonyme Nutzungsstatistiken senden";
+"Help us improve BrowSync by sending anonymous usage data." = "Helfen Sie uns, BrowSync zu verbessern, indem Sie anonyme Nutzungsdaten senden.";

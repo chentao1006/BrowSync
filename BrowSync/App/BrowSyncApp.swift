@@ -116,6 +116,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        
+        // Analytics
+        AnalyticsManager.shared.initialize()
+        
+        if settingsService.general.firstLaunchDate == nil {
+            settingsService.general.firstLaunchDate = Date()
+            settingsService.save()
+        }
+        
+        let firstLaunch = settingsService.general.firstLaunchDate ?? Date()
+        let timeSinceLaunch = Date().timeIntervalSince(firstLaunch)
+        
+        if !settingsService.general.analyticsOptInPrompted {
+            let delay = max(0, 600 - timeSinceLaunch)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                self.promptForAnalyticsOptIn()
+            }
+        }
+    }
+    
+    private func promptForAnalyticsOptIn() {
+        // Double check in case it was toggled
+        let settingsService = SettingsService()
+        guard !settingsService.general.analyticsOptInPrompted else { return }
+        
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Help Improve BrowSync", bundle: LanguageBundle.systemBundle)
+        alert.informativeText = String(localized: "Would you like to send anonymous usage statistics to help us improve BrowSync? You can change this later in the About tab.", bundle: LanguageBundle.systemBundle)
+        alert.addButton(withTitle: String(localized: "Yes, share anonymously", bundle: LanguageBundle.systemBundle))
+        alert.addButton(withTitle: String(localized: "No, thanks", bundle: LanguageBundle.systemBundle))
+        
+        NSApp.activate(ignoringOtherApps: true)
+        
+        // If there's a window, show as sheet, else show as modal
+        if let window = NSApp.keyWindow ?? NSApp.windows.first(where: { $0.isVisible }) {
+            alert.beginSheetModal(for: window) { response in
+                settingsService.general.analyticsEnabled = (response == .alertFirstButtonReturn)
+                settingsService.general.analyticsOptInPrompted = true
+                settingsService.save()
+                if settingsService.general.analyticsEnabled {
+                    AnalyticsManager.shared.trackEvent("Analytics Enabled")
+                }
+            }
+        } else {
+            let response = alert.runModal()
+            settingsService.general.analyticsEnabled = (response == .alertFirstButtonReturn)
+            settingsService.general.analyticsOptInPrompted = true
+            settingsService.save()
+            if settingsService.general.analyticsEnabled {
+                AnalyticsManager.shared.trackEvent("Analytics Enabled")
+            }
+        }
     }
 
     func settingsWindowDidAppear() {
@@ -341,12 +393,15 @@ struct MenuBarView: View {
         
         Menu(String(localized: "Sync Now", bundle: langBundle.bundle)) {
             Button(String(localized: "Sync All", bundle: langBundle.bundle)) {
+                AnalyticsManager.shared.trackEvent("Menu Action", props: ["action": "Sync All"])
                 Task { await appState.syncAll() }
             }
             Button(String(localized: "Sync Bookmarks", bundle: langBundle.bundle)) {
+                AnalyticsManager.shared.trackEvent("Menu Action", props: ["action": "Sync Bookmarks"])
                 Task { await appState.sync(categories: [.bookmarks]) }
             }
             Button(String(localized: "Sync State", bundle: langBundle.bundle)) {
+                AnalyticsManager.shared.trackEvent("Menu Action", props: ["action": "Sync State"])
                 Task { await appState.sync(categories: [.browserState, .browserData, .localStorage, .history]) }
             }
         }
@@ -357,6 +412,7 @@ struct MenuBarView: View {
         ForEach(appState.browserInfos.filter { $0.isInstalled }) { info in
             Menu {
                 Button(String(localized: "Open \(info.displayName)", bundle: langBundle.bundle)) {
+                    AnalyticsManager.shared.trackEvent("Menu Action", props: ["action": "Open Browser", "browser": info.id.rawValue])
                     if let appURL = info.appURL {
                         NSWorkspace.shared.open(appURL)
                     }

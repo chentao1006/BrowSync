@@ -348,3 +348,12 @@
 "Select browsers to share their active tabs. Shared tabs will appear in the popup of other extensions." = "选择共享当前标签页的浏览器。共享的标签页将出现在其他浏览器的扩展中。";
 "Overview" = "概览";
 "Cached Remote Tabs:" = "缓存的远程标签页数量：";
+
+/* Analytics */
+"Analytics" = "分析";
+"Help Improve BrowSync" = "帮助改进 BrowSync";
+"Would you like to send anonymous usage statistics to help us improve BrowSync? You can change this later in the About tab." = "您愿意发送匿名使用统计数据以帮助我们改进 BrowSync 吗？您稍后可以在“关于”选项卡中更改此设置。";
+"Yes, share anonymously" = "是的，匿名分享";
+"No, thanks" = "不，谢谢";
+"Send Anonymous Usage Statistics" = "发送匿名使用统计数据";
+"Help us improve BrowSync by sending anonymous usage data." = "通过发送匿名使用数据帮助我们改进 BrowSync。";

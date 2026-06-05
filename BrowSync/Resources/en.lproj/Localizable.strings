@@ -323,3 +323,12 @@
 "Select browsers to share their active tabs. Shared tabs will appear in the popup of other extensions." = "Select browsers to share their active tabs. Shared tabs will appear in the popup of other extensions.";
 "Overview" = "Overview";
 "Cached Remote Tabs:" = "Cached Remote Tabs:";
+
+/* Analytics */
+"Analytics" = "Analytics";
+"Help Improve BrowSync" = "Help Improve BrowSync";
+"Would you like to send anonymous usage statistics to help us improve BrowSync? You can change this later in the About tab." = "Would you like to send anonymous usage statistics to help us improve BrowSync? You can change this later in the About tab.";
+"Yes, share anonymously" = "Yes, share anonymously";
+"No, thanks" = "No, thanks";
+"Send Anonymous Usage Statistics" = "Send Anonymous Usage Statistics";
+"Help us improve BrowSync by sending anonymous usage data." = "Help us improve BrowSync by sending anonymous usage data.";

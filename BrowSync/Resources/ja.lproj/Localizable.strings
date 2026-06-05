@@ -311,3 +311,13 @@
 "Turn off Bookmark Sync" = "ブックマーク同期をオフにする";
 "Turn on State Sync" = "状態同期をオンにする";
 "Turn off State Sync" = "状態同期をオフにする";
+
+
+/* Analytics */
+"Analytics" = "アナリティクス";
+"Help Improve BrowSync" = "BrowSyncの改善にご協力ください";
+"Would you like to send anonymous usage statistics to help us improve BrowSync? You can change this later in the About tab." = "BrowSyncを改善するために、匿名の使用統計データを送信しますか？この設定は後で「概要」タブから変更できます。";
+"Yes, share anonymously" = "はい、匿名で共有します";
+"No, thanks" = "いいえ、結構です";
+"Send Anonymous Usage Statistics" = "匿名の使用統計データを送信する";
+"Help us improve BrowSync by sending anonymous usage data." = "匿名の使用データを送信して、BrowSyncの改善にご協力ください。";

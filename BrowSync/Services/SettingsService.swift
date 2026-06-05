@@ -21,8 +21,13 @@ struct GeneralSettings: Codable, Equatable {
     // Auto update (Sparkle placeholder)
     var autoUpdate: Bool = true
     
+    // Analytics
+    var analyticsEnabled: Bool = false
+    var analyticsOptInPrompted: Bool = false
+    var firstLaunchDate: Date? = nil
+    
     private enum CodingKeys: String, CodingKey {
-        case launchAtLogin, hideWindowOnStartup, menuBarMode, theme, language, notifySyncComplete, notifyBrowserConnected, autoUpdate
+        case launchAtLogin, hideWindowOnStartup, menuBarMode, theme, language, notifySyncComplete, notifyBrowserConnected, autoUpdate, analyticsEnabled, analyticsOptInPrompted, firstLaunchDate
     }
 
     init() {}
@@ -37,6 +42,9 @@ struct GeneralSettings: Codable, Equatable {
         notifySyncComplete = try container.decodeIfPresent(Bool.self, forKey: .notifySyncComplete) ?? true
         notifyBrowserConnected = try container.decodeIfPresent(Bool.self, forKey: .notifyBrowserConnected) ?? true
         autoUpdate = try container.decodeIfPresent(Bool.self, forKey: .autoUpdate) ?? true
+        analyticsEnabled = try container.decodeIfPresent(Bool.self, forKey: .analyticsEnabled) ?? false
+        analyticsOptInPrompted = try container.decodeIfPresent(Bool.self, forKey: .analyticsOptInPrompted) ?? false
+        firstLaunchDate = try container.decodeIfPresent(Date.self, forKey: .firstLaunchDate)
     }
 }
 
