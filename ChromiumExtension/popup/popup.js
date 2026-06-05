@@ -275,18 +275,22 @@ const btnRefreshTabs = document.getElementById('btnRefreshTabs');
 const remoteTabsList = document.getElementById('remoteTabsList');
 
 async function renderRemoteTabs() {
+  const tabSharingSection = document.getElementById('tabSharingSection');
   const { remoteTabs } = await chrome.storage.local.get('remoteTabs');
-  if (!remoteTabsList || !remoteTabs) return;
+  if (!remoteTabsList) return;
 
   remoteTabsList.innerHTML = '';
-  
-  const browsers = Object.keys(remoteTabs);
-  if (browsers.length === 0) {
-    remoteTabsList.innerHTML = `<div style="font-size: 12px; opacity: 0.6; padding: 8px 0;">No remote tabs found.</div>`;
+
+  const hasAnyTab = remoteTabs && Object.values(remoteTabs).some(tabs => tabs && tabs.length > 0);
+
+  if (!hasAnyTab) {
+    if (tabSharingSection) tabSharingSection.style.display = 'none';
     return;
   }
 
-  for (const browser of browsers) {
+  if (tabSharingSection) tabSharingSection.style.display = 'block';
+
+  for (const browser of Object.keys(remoteTabs)) {
     const tabs = remoteTabs[browser];
     if (!tabs || tabs.length === 0) continue;
 
