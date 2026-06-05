@@ -61,6 +61,8 @@ struct BrowSyncApp: App {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    static private(set) var shared: AppDelegate!
+    
     var appState: AppState { AppState.shared }
     let updaterController: SPUStandardUpdaterController
     private var shouldShowSettingsWindow = false
@@ -70,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     override init() {
         updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
         super.init()
+        AppDelegate.shared = self
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -375,7 +378,8 @@ struct MenuBarView: View {
         // Actions Section
 
         Button(String(localized: "Check for Updates...", bundle: langBundle.bundle)) {
-            (NSApp.delegate as? AppDelegate)?.updaterController.checkForUpdates(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            AppDelegate.shared.updaterController.checkForUpdates(nil)
         }
 
         Divider()
