@@ -806,14 +806,19 @@ async function applyCookieSync(cookies) {
   if (!chrome.cookies) return;
   for (const cookie of cookies) {
     const baseDomain = cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain;
-    const url = `https://${baseDomain}${cookie.path}`;
+    const urlsToTry = (baseDomain === 'localhost' || baseDomain.startsWith('127.0.0.'))
+      ? [`http://${baseDomain}${cookie.path}`, `https://${baseDomain}${cookie.path}`]
+      : [`https://${baseDomain}${cookie.path}`];
+      
     const cookieKey = cookieIdentity(cookie);
     const updatedAt = cookie.updatedAt || Date.now();
     applyingCookies.add(cookieKey);
 
     if (cookie.removed) {
       try {
-        await chrome.cookies.remove({ url, name: cookie.name });
+        for (const testUrl of urlsToTry) {
+          await chrome.cookies.remove({ url: testUrl, name: cookie.name }).catch(() => {});
+        }
         successCount++;
         await setCookieTimestamp(cookie, updatedAt);
         const tKey = `tombstone_cookies_${cookieIdentity(cookie)}`;
@@ -830,7 +835,6 @@ async function applyCookieSync(cookies) {
     }
 
     const base = {
-      url,
       name: cookie.name,
       value: cookie.value,
       path: cookie.path,
@@ -845,6 +849,13 @@ async function applyCookieSync(cookies) {
     const cleanDomain = cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain;
     const baseOpts = { ...base, secure: cookie.secure };
     if (baseOpts.sameSite === 'no_restriction') baseOpts.secure = true;
+    
+    // Workarounds for Safari 18.0+ bugs and strict localhost cookie policies
+    if (cleanDomain === 'localhost' || cleanDomain.startsWith('127.0.0.')) {
+      delete baseOpts.expirationDate; // Safari 18.0+ fails if expirationDate is set
+      baseOpts.secure = false;        // Safari rejects secure cookies on http://localhost
+      delete baseOpts.sameSite;       // sameSite often requires secure, creating a conflict
+    }
 
     let strategies;
     if (cookie.hostOnly === true) {
@@ -879,11 +890,14 @@ async function applyCookieSync(cookies) {
 
     let ok = false;
     let appliedCookie = null;
-    for (const opts of strategies) {
-      try {
-        const result = await chrome.cookies.set(opts);
-        if (result) { ok = true; appliedCookie = result; break; }
-      } catch (_) { }
+    for (const testUrl of urlsToTry) {
+      if (ok) break;
+      for (const opts of strategies) {
+        try {
+          const result = await chrome.cookies.set({ ...opts, url: testUrl });
+          if (result) { ok = true; appliedCookie = result; break; }
+        } catch (_) { }
+      }
     }
     if (ok) {
       successCount++;

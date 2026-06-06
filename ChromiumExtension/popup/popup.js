@@ -306,6 +306,7 @@ async function renderRemoteTabs() {
       item.className = 'remote-tab-item';
       item.href = tab.url;
       item.target = '_blank';
+      item.title = tab.url;
       item.addEventListener('click', (e) => {
         e.preventDefault();
         chrome.tabs.create({ url: tab.url });
