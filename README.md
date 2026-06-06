@@ -16,15 +16,16 @@ brew install --cask chentao1006/tap/browsync
 
 ## 🚀 Key Features
 
-- **Intelligent URL Routing**: Register BrowSync as your default macOS browser. Its powerful rule engine automatically directs links to your preferred browser based on domain, URL patterns, query strings, source application, time of day, or Focus mode.
-- **Cross-Browser Synchronization**: Seamlessly sync Cookies, LocalStorage, sessionStorage, Tab states, and Bookmarks across Safari and Chromium-based browsers (Chrome, Arc, Edge, Brave).
+- **Intelligent URL Routing**: Register BrowSync as your default macOS browser. Its powerful rule engine automatically directs links to your preferred browser based on domain, URL patterns, query strings, source application, or time of day.
+- **Cross-Browser Data Sync**: Seamlessly sync Cookies, LocalStorage, sessionStorage, and Bookmarks across Safari and Chromium-based browsers (Chrome, Arc, Edge, Brave).
+- **Real-time Tab Sharing**: View and share active tabs across all browsers in real-time. Automatically filters out incognito tabs and non-HTTP(S) local pages to protect privacy, and intelligently deduplicates URLs across different browsers for a clean UI.
 - **Flexible Sync Strategies**: Choose the synchronization logic that fits your workflow:
   - *Unidirectional (Master-slave)*
   - *Last-Write-Wins* (based on access time)
   - *Bidirectional Merging*
-- **Granular Control**: Manage sync scope with whitelist/blacklist rules. Apply per-site policy overrides for ultimate customization.
+- **Granular Site Control**: Manage sync scope with whitelist/blacklist rules. Apply per-site policy overrides for ultimate customization.
 - **Local & Secure**: All communication happens entirely on your machine via a local WebSocket daemon (`ws://127.0.0.1:62333`). No external servers are involved.
-- **Native macOS Experience**: Built with SwiftUI. Supports Dark/Light themes, Menu Bar integration, Focus Mode, and Launch at Login.
+- **Native macOS Experience**: Built with SwiftUI. Supports Dark/Light themes, Menu Bar integration, and Launch at Login.
 
 ## 🛠 Installation & Setup
 
@@ -80,7 +81,7 @@ For Chrome, Arc, Edge, or Brave:
 2. Enable **Developer Mode** (top-right toggle)
 3. Click **Load Unpacked**
 4. Select the `ChromiumExtension/` folder
-5. The BrowSync extension icon will appear in the toolbar. Safari users can enable the extension directly in Safari Settings.
+5. The BrowSync extension icon will appear in the toolbar. Safari users can enable the native extension directly in Safari Settings.
 
 ## 🔍 Architecture & Protocol
 
@@ -104,7 +105,7 @@ Safari Extension           Chrome / Arc / Edge / Brave Extension
 BrowSync/
 ├── BrowSync/                   # macOS App (Swift/SwiftUI)
 │   ├── App/                    # Entry point, AppState
-│   ├── Views/                  # 5-tab UI
+│   ├── Views/                  # Multi-tab UI (Browsers, Rules, Sync)
 │   ├── Core/                   # DaemonServer, BrowserScanner, BrowserLauncher
 │   ├── Models/                 # Data models (Browser, Rule, SyncModels, WSMessage)
 │   ├── Services/               # RulesEngine, SyncService, SettingsService
@@ -114,7 +115,7 @@ BrowSync/
 │   ├── SafariWebExtensionHandler.swift
 │   └── Resources/
 │       ├── manifest.json
-│       ├── background.js       # WebSocket client, bookmark/cookie/tab sync
+│       ├── background.js       # WebSocket client, bookmark/cookie/tab sharing
 │       ├── content.js          # localStorage/sessionStorage proxy
 │       ├── popup.html
 │       └── popup.js
@@ -185,20 +186,17 @@ BrowSync stores its data locally in your Application Support folder:
 | Browser detection & extension status | ✅ |
 | WebSocket Daemon | ✅ |
 | URL routing rules & Default browser handling | ✅ |
-| Bookmark sync | ✅ |
-| localStorage & sessionStorage sync | ✅ |
-| Cookie sync | ✅ |
-| Tab state sync | ✅ |
-| Safari & Chromium Extensions | ✅ |
-| Focus Mode (data + UI) | ✅ |
+| Bookmark real-time sync | ✅ |
+| localStorage & sessionStorage cross-browser sync | ✅ |
+| Cookie cross-browser sync | ✅ |
+| Real-time Tab Sharing (w/ deduplication & privacy filter) | ✅ |
+| Granular site sync control | ✅ |
+| Safari & Chromium MV3 Extensions | ✅ |
 | Dark/Light/System theme & EN/zh-Hans localization | ✅ |
-| Automatic Sync & iCloud Sync | 🔜 PRO |
-| History sync | ⚠️ Off by default |
 
 ## ⚠️ Important Notes
 
 - **Default Browser**: To utilize the URL routing feature, BrowSync must be set as your default system browser in macOS Settings.
-- **History Sync**: History synchronization is currently disabled by default for performance and privacy considerations.
 
 ## 🛡 License
 
