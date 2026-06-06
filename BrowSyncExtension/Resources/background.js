@@ -447,8 +447,8 @@ async function handlePullRequest(category, site) {
     case 'tabSharing': {
       if (!chrome.tabs) return;
       const tabs = await chrome.tabs.query({});
-      // Filter out incognito tabs for privacy if it's tab sharing
-      const filteredTabs = category === 'tabSharing' ? tabs.filter(t => !t.incognito) : tabs;
+      // Filter out incognito tabs for privacy, and non-HTTP(S) tabs, if it's tab sharing
+      const filteredTabs = category === 'tabSharing' ? tabs.filter(t => !t.incognito && /^https?:\/\//i.test(t.url)) : tabs;
       console.log(`[BrowSync] Sending ${filteredTabs.length} tabs for ${category}...`);
       const mapped = filteredTabs.map(tab => ({
         id: String(tab.id), url: tab.url, title: tab.title || '', isActive: tab.active,

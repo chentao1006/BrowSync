@@ -292,11 +292,16 @@ async function renderRemoteTabs() {
 
   if (tabSharingSection) tabSharingSection.style.display = 'block';
 
+  const seenUrls = new Set();
+
   for (const browser of Object.keys(remoteTabs)) {
     const tabs = remoteTabs[browser];
     if (!tabs || tabs.length === 0) continue;
 
     for (const tab of tabs) {
+      if (seenUrls.has(tab.url)) continue;
+      seenUrls.add(tab.url);
+
       const item = document.createElement('a');
       item.className = 'remote-tab-item';
       item.href = tab.url;
