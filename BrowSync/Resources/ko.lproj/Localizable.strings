@@ -163,7 +163,7 @@
 "Data Source Browser" = "데이터 소스 브라우저";
 "Real-time Auto Sync" = "실시간 자동 동기화";
 "Website List" = "웹사이트 목록";
-"Domain (e.g. apple.com)" = "도메인 (예: apple.com)";
+"Domain (e.g. example.com)" = "도메인 (예: example.com)";
 "Default Policy" = "기본 정책";
 "Default Source" = "기본 소스";
 "Confirm Delete Rule" = "이 규칙을 삭제하시겠습니까?";

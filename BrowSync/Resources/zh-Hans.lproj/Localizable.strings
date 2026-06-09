@@ -186,7 +186,7 @@
 "List Policy" = "名单模式";
 "Real-time Auto Sync" = "实时自动同步";
 "Website List" = "网站列表";
-"Domain (e.g. apple.com)" = "域名 (如: apple.com)";
+"Domain (e.g. example.com)" = "域名 (如: example.com)";
 "Default Policy" = "默认策略";
 "Default Source" = "默认源";
 "Confirm Delete Rule" = "确定要删除此规则吗？";

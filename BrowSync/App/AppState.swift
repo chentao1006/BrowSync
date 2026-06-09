@@ -97,6 +97,25 @@ final class AppState: ObservableObject {
         
         // Check default browser status
         checkDefaultBrowser()
+        
+        // Fetch remote disabled domains
+        Task {
+            await fetchDisabledDomains()
+        }
+    }
+    
+    private func fetchDisabledDomains() async {
+        guard let url = URL(string: "https://browsync.ct106.com/disabled-domains.json") else { return }
+        do {
+            let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10.0)
+            let (data, _) = try await URLSession.shared.data(for: request)
+            if let domains = try? JSONDecoder().decode([String].self, from: data), !domains.isEmpty {
+                WebsiteSyncSetting.syncDisabledDomains = domains
+                self.broadcastSettings()
+            }
+        } catch {
+            print("Failed to fetch disabled domains: \(error)")
+        }
     }
 
     // MARK: - Router & URL Handling
@@ -493,6 +512,7 @@ extension AppState: DaemonServerDelegate {
             payload["websiteSettings"] = AnyCodable(array)
         }
         payload["websiteListPolicy"] = AnyCodable(settingsService.syncSettings.websiteListPolicy.rawValue)
+        payload["syncDisabledDomains"] = AnyCodable(WebsiteSyncSetting.syncDisabledDomains)
 
         let msg = WSMessage(
             type: .settings,

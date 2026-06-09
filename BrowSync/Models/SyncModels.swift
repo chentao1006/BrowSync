@@ -200,6 +200,8 @@ struct WebsiteSyncSetting: Codable, Identifiable, Equatable {
     var domain: String
     var strategy: BrowserDataSyncStrategy? // nil means use default
     var sourceBrowser: Browser? // nil means use default
+    
+    static var syncDisabledDomains: [String] = []
 }
 
 // MARK: - Sync Settings

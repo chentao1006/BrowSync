@@ -163,7 +163,7 @@
 "Data Source Browser" = "Browser sorgente dati";
 "Real-time Auto Sync" = "Sincronizzazione automatica in tempo reale";
 "Website List" = "Elenco siti web";
-"Domain (e.g. apple.com)" = "Dominio (es. apple.com)";
+"Domain (e.g. example.com)" = "Dominio (es. example.com)";
 "Default Policy" = "Criterio predefinito";
 "Default Source" = "Sorgente predefinita";
 "Confirm Delete Rule" = "Eliminare questa regola?";

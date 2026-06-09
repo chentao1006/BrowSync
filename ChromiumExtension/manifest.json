@@ -26,8 +26,7 @@
     "storage",
     "scripting",
     "alarms",
-    "unlimitedStorage",
-    "nativeMessaging"
+    "unlimitedStorage"
   ],
 
   "host_permissions": [

@@ -163,7 +163,7 @@
 "Data Source Browser" = "データソース";
 "Real-time Auto Sync" = "リアルタイム自動同期";
 "Website List" = "ウェブサイトリスト";
-"Domain (e.g. apple.com)" = "ドメイン (例: apple.com)";
+"Domain (e.g. example.com)" = "ドメイン (例: example.com)";
 "Default Policy" = "デフォルトポリシー";
 "Default Source" = "デフォルトソース";
 "Confirm Delete Rule" = "このルールを削除しますか？";

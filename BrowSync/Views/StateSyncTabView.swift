@@ -9,6 +9,8 @@ struct StateSyncTabView: View {
     @State private var isSyncing = false
     @State private var showSuccess = false
     @State private var siteToDelete: WebsiteSyncSetting?
+    @State private var showDisabledDomainAlert = false
+    @State private var disabledDomainAttempted = ""
     
     private var syncSettings: Binding<SyncSettings> {
         Binding(
@@ -174,9 +176,17 @@ struct StateSyncTabView: View {
                     
                     ForEach(syncSettings.websiteSettings) { $site in
                         HStack {
-                            TextField("", text: $site.domain, prompt: Text(String(localized: "Domain (e.g. apple.com)", bundle: langBundle.bundle)))
+                            TextField("", text: $site.domain, prompt: Text(String(localized: "Domain (e.g. example.com)", bundle: langBundle.bundle)))
                                 .textFieldStyle(.roundedBorder)
                                 .labelsHidden()
+                                .onChange(of: $site.domain.wrappedValue) { _, newValue in
+                                    let lower = newValue.lowercased()
+                                    if WebsiteSyncSetting.syncDisabledDomains.contains(where: { lower == $0 || lower.hasSuffix(".\($0)") }) {
+                                        disabledDomainAttempted = newValue
+                                        showDisabledDomainAlert = true
+                                        $site.domain.wrappedValue = ""
+                                    }
+                                }
                             
                             Picker("", selection: $site.strategy) {
                                 Text(String(localized: "Default Policy", bundle: langBundle.bundle)).tag(BrowserDataSyncStrategy?.none)
@@ -237,6 +247,11 @@ struct StateSyncTabView: View {
                 Button(String(localized: "Cancel", bundle: langBundle.bundle), role: .cancel) {}
             } message: { site in
                 Text(String(format: String(localized: "Delete site rule message", bundle: langBundle.bundle), site.domain))
+            }
+            .alert(String(localized: "Cannot Sync Domain", bundle: langBundle.bundle), isPresented: $showDisabledDomainAlert) {
+                Button(String(localized: "OK", bundle: langBundle.bundle), role: .cancel) {}
+            } message: {
+                Text(String(format: String(localized: "The domain '%@' cannot be synced because of its security and authentication mechanisms.", bundle: langBundle.bundle), disabledDomainAttempted))
             }
         }
     }

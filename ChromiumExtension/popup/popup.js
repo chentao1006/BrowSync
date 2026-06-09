@@ -100,6 +100,11 @@ async function loadSettings() {
             siteSyncSection.style.display = 'none';
             return;
           }
+          const SYNC_DISABLED_DOMAINS = appSettings.syncDisabledDomains || [];
+          if (SYNC_DISABLED_DOMAINS.some(d => activeHostname === d || activeHostname.endsWith('.' + d))) {
+            siteSyncSection.style.display = 'none';
+            return;
+          }
           
           siteSyncSection.style.display = 'block';
           if (siteDomainName) siteDomainName.textContent = activeHostname;

@@ -29,8 +29,7 @@
     "scripting",
     "notifications",
     "alarms",
-    "unlimitedStorage",
-    "nativeMessaging"
+    "unlimitedStorage"
   ],
   "host_permissions": [
     "<all_urls>"

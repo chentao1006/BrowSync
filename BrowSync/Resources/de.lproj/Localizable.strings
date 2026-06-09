@@ -163,7 +163,7 @@
 "Data Source Browser" = "Datenquellen-Browser";
 "Real-time Auto Sync" = "Echtzeit-Auto-Sync";
 "Website List" = "Website-Liste";
-"Domain (e.g. apple.com)" = "Domain (z.B. apple.com)";
+"Domain (e.g. example.com)" = "Domain (z.B. example.com)";
 "Default Policy" = "Standardrichtlinie";
 "Default Source" = "Standardquelle";
 "Confirm Delete Rule" = "Regel löschen?";
