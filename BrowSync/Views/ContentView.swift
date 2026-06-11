@@ -129,6 +129,9 @@ struct AboutTabView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Toggle(String(localized: "Check for updates automatically", bundle: langBundle.bundle), isOn: settings.autoUpdate)
+                                .onChange(of: settings.autoUpdate.wrappedValue) { _, newValue in
+                                    AppDelegate.shared.updaterController.updater.automaticallyChecksForUpdates = newValue
+                                }
                         }
                     }
                     

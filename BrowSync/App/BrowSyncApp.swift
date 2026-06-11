@@ -117,6 +117,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         
+        // Sparkle Auto Update
+        updaterController.updater.automaticallyChecksForUpdates = settingsService.general.autoUpdate
+        
         // Analytics
         AnalyticsManager.shared.initialize()
         
@@ -192,11 +195,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showDockIcon() {
-        // Disabled to prevent SwiftUI MenuBarExtra freezing bug on macOS
+        NSApp.setActivationPolicy(.regular)
     }
 
     func hideDockIcon() {
-        // Disabled to prevent SwiftUI MenuBarExtra freezing bug on macOS
+        NSApp.setActivationPolicy(.accessory)
     }
 
     @objc private func windowWillClose(_ notification: Notification) {
@@ -342,6 +345,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
         return !SettingsService().general.hideWindowOnStartup
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            if !showExistingSettingsWindowIfPossible() {
+                if let url = URL(string: "browsync://open") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+        }
+        return true
     }
 
     private func createAppDirectories() {
