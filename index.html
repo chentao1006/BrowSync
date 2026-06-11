@@ -229,9 +229,9 @@
 
   <main>
     <section class="hero">
-      <div class="eyebrow" data-i18n="hero.eyebrow">macOS 本地多浏览器协同神器</div>
-      <h1 data-i18n="hero.title">告别浏览器切换焦虑。</h1>
-      <p data-i18n="hero.lead">工作链接跳 Chrome，私人链接去 Safari。自动分流，时刻同步。让所有的浏览器像一个浏览器一样顺畅工作。纯本地运行，100% 隐私安全。</p>
+      <div class="eyebrow" data-i18n="hero.eyebrow">macOS 本地多浏览器协同工具</div>
+      <h1 data-i18n="hero.title">多浏览器协同</h1>
+      <p data-i18n="hero.lead">自动分流 URL，实时同步数据。纯本地运行，不依赖云端服务。</p>
       
       <div class="cta-group">
         <a href="https://github.com/chentao1006/browsync/releases/latest" class="btn-primary" data-i18n="hero.cta">免费下载 macOS 版</a>
@@ -246,36 +246,44 @@
     </section>
 
     <section id="features" class="bento-section">
-      <h2 class="section-title" data-i18n="features.title">化繁为简，只做你需要的事。</h2>
+      <h2 class="section-title" data-i18n="features.title">主要功能</h2>
       
       <div class="bento-grid">
         <!-- Feature 1 -->
         <div class="bento-card card-large">
-          <h3 data-i18n="feat1.title">🎯 链接指哪打哪</h3>
-          <p data-i18n="feat1.desc">将 BrowSync 设为系统默认浏览器后，你可以轻松设定规则：腾讯文档用 Chrome 打开，Bilibili 用 Safari 播放。从此告别繁琐的“复制链接、打开浏览器、粘贴”流程，点击链接即达最佳归宿。</p>
+          <h3 data-i18n="feat1.title">🔗 URL 分流</h3>
+          <p data-i18n="feat1.desc">将 BrowSync 设为系统默认浏览器后，可根据规则自动将链接在指定的浏览器（如 Chrome 或 Safari）中打开。</p>
         </div>
 
         <!-- Feature 2 -->
         <div class="bento-card card-medium">
-          <h3 data-i18n="feat2.title">🔄 一处登录，处处通行</h3>
-          <p data-i18n="feat2.desc">Cookie、缓存、书签跨浏览器实时同步。在 Safari 里存的书签，在 Edge 里立刻可用；在 Chrome 登录了知乎，再打开其他浏览器直接免密进入。</p>
+          <h3 data-i18n="feat2.title">🔖 书签同步</h3>
+          <p data-i18n="feat2.desc">在 Safari 和 Chromium 浏览器之间实时同步书签。</p>
         </div>
 
         <!-- Feature 3 -->
         <div class="bento-card card-medium">
-          <h3 data-i18n="feat3.title">🔒 奇迹只在本地发生</h3>
-          <p data-i18n="feat3.desc">没有云端服务器，没有账号系统。所有的同步与规则匹配完全通过本地守护进程在你的设备上进行。隐私安全 100% 由你掌控。</p>
+          <h3 data-i18n="feat3.title">🔄 状态同步</h3>
+          <p data-i18n="feat3.desc">跨浏览器实时同步 Cookie 和缓存，保持各浏览器的登录状态一致。</p>
         </div>
 
         <!-- Feature 4 -->
         <div class="bento-card card-large">
-          <h3 data-i18n="feat4.title">✨ 原生体验，轻巧无感</h3>
-          <p data-i18n="feat4.desc">采用原生 SwiftUI 打造，支持完美深色模式与菜单栏常驻。没有臃肿的 Electron 进程，只有最纯粹的性能与极低的内存占用。</p>
+          <h3 data-i18n="feat4.title">🔒 本地运行</h3>
+          <p data-i18n="feat4.desc">数据同步与规则匹配通过本地守护进程进行，数据保存在本地设备，不依赖外部服务器。</p>
+        </div>
+
+        <!-- Feature 5 -->
+        <div class="bento-card card-full">
+          <div style="flex: 1;">
+            <h3 data-i18n="feat5.title">✨ 原生应用</h3>
+            <p data-i18n="feat5.desc">采用原生 SwiftUI 开发，支持深色模式与菜单栏常驻，内存占用低。</p>
+          </div>
         </div>
 
         <!-- Install Full Card -->
         <div id="download" class="bento-card card-full" style="flex-direction: column; align-items: center; text-align: center; background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(139, 92, 246, 0.05)); border-color: rgba(59, 130, 246, 0.15); padding: 56px 24px;">
-          <h3 data-i18n="install.title" style="justify-content: center; font-size: 2rem; margin-bottom: 24px;">准备好让浏览器协同工作了吗？</h3>
+          <h3 data-i18n="install.title" style="justify-content: center; font-size: 2rem; margin-bottom: 24px;">安装 BrowSync</h3>
           <div class="cta-group" style="margin-bottom: 32px;">
             <a href="https://github.com/chentao1006/browsync/releases/latest" class="btn-primary" data-i18n="hero.cta">免费下载 macOS 版</a>
             <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh" target="_blank" style="display:inline-flex; align-items:center; height: 48px;">
@@ -309,20 +317,22 @@
         "brand": "同览 BrowSync",
         "nav.features": "功能体验",
         "nav.download": "立即下载",
-        "hero.eyebrow": "macOS 本地多浏览器协同神器",
-        "hero.title": "告别浏览器切换焦虑。",
-        "hero.lead": "工作链接跳 Chrome，私人链接去 Safari。自动分流，时刻同步。让所有的浏览器像一个浏览器一样顺畅工作。纯本地运行，100% 隐私安全。",
-        "hero.cta": "免费下载 macOS 版",
-        "features.title": "化繁为简，只做你需要的事。",
-        "feat1.title": "🎯 链接指哪打哪",
-        "feat1.desc": "将 BrowSync 设为系统默认浏览器后，你可以轻松设定规则：腾讯文档用 Chrome 打开，Bilibili 用 Safari 播放。从此告别繁琐的“复制链接、打开浏览器、粘贴”流程，点击链接即达最佳归宿。",
-        "feat2.title": "🔄 一处登录，处处通行",
-        "feat2.desc": "登录状态、用户数据、书签跨浏览器实时同步。在 Safari 里存的书签，在 Edge 里立刻可用；在 Chrome 登录了知乎，再打开其他浏览器直接免密进入。",
-        "feat3.title": "🔒 奇迹只在本地发生",
-        "feat3.desc": "没有云端服务器，没有账号系统。所有的同步与规则匹配完全通过本地守护进程在你的设备上进行。隐私安全 100% 由你掌控。",
-        "feat4.title": "✨ 原生体验，轻巧无感",
-        "feat4.desc": "采用原生 SwiftUI 打造，支持完美深色模式与菜单栏常驻。没有臃肿的 Electron 进程，只有最纯粹的性能与极低的内存占用。",
-        "install.title": "准备好让浏览器协同工作了吗？",
+        "hero.eyebrow": "macOS 本地多浏览器协同工具",
+        "hero.title": "多浏览器协同",
+        "hero.lead": "自动分流 URL，实时同步数据。纯本地运行，不依赖云端服务。",
+        "hero.cta": "下载 macOS 版",
+        "features.title": "主要功能",
+        "feat1.title": "🔗 URL 分流",
+        "feat1.desc": "将 BrowSync 设为系统默认浏览器后，可根据规则自动将链接在指定的浏览器（如 Chrome 或 Safari）中打开。",
+        "feat2.title": "🔖 书签同步",
+        "feat2.desc": "在 Safari 和 Chromium 浏览器之间实时同步书签。",
+        "feat3.title": "🔄 状态同步",
+        "feat3.desc": "跨浏览器实时同步 Cookie 和缓存，保持各浏览器的登录状态一致。",
+        "feat4.title": "🔒 本地运行",
+        "feat4.desc": "数据同步与规则匹配通过本地守护进程进行，数据保存在本地设备，不依赖外部服务器。",
+        "feat5.title": "✨ 原生应用",
+        "feat5.desc": "采用原生 SwiftUI 开发，支持深色模式与菜单栏常驻，内存占用低。",
+        "install.title": "安装 BrowSync",
         "install.desc": "或者使用 Homebrew 安装：",
         "footer.copy": "© 2026 BrowSync. 纯本地浏览器协同工具。",
         "footer.github": "GitHub 源码",
@@ -334,19 +344,21 @@
         "nav.features": "Features",
         "nav.download": "Download",
         "hero.eyebrow": "Local Multi-Browser Sync for macOS",
-        "hero.title": "Say goodbye to browser juggling.",
-        "hero.lead": "Work links open in Chrome, personal ones in Safari. Auto-routing and constant syncing make all your browsers feel like one. 100% local, completely private.",
+        "hero.title": "Multi-browser Synergy",
+        "hero.lead": "Automatically route URLs and sync data in real time. Runs entirely locally without cloud services.",
         "hero.cta": "Download for macOS",
-        "features.title": "Everything you need, nothing you don't.",
-        "feat1.title": "🎯 Smart Link Routing",
-        "feat1.desc": "Set BrowSync as your default browser and create rules: open Google Docs in Chrome and Netflix in Safari. Stop the endless copy-pasting—just click and land in the right place.",
-        "feat2.title": "🔄 Log in once, browse everywhere",
-        "feat2.desc": "Login states, user data, and bookmarks sync across browsers in real time. Save a bookmark in Safari, use it in Edge immediately. Log in once on Chrome, never type a password again elsewhere.",
-        "feat3.title": "🔒 The magic happens locally",
-        "feat3.desc": "No cloud servers, no accounts. All synchronization and rule matching happen exclusively on your device via a local WebSocket daemon. Your data never leaves your machine.",
-        "feat4.title": "✨ Native, lightweight experience",
-        "feat4.desc": "Built with native SwiftUI for perfect macOS integration, Dark Mode support, and Menu Bar presence. No bloated Electron processes—just pure performance and minimal footprint.",
-        "install.title": "Ready to make your browsers work together?",
+        "features.title": "Key Features",
+        "feat1.title": "🔗 URL Routing",
+        "feat1.desc": "Set BrowSync as the default browser and use rules to automatically open links in specific browsers.",
+        "feat2.title": "🔖 Bookmark Sync",
+        "feat2.desc": "Sync bookmarks in real-time across Safari and Chromium browsers.",
+        "feat3.title": "🔄 State Sync",
+        "feat3.desc": "Sync Cookies and caches across browsers to maintain consistent login states.",
+        "feat4.title": "🔒 Local Execution",
+        "feat4.desc": "All synchronization and rule matching happen via a local daemon. Data stays on your device.",
+        "feat5.title": "✨ Native App",
+        "feat5.desc": "Built with SwiftUI for macOS, featuring Dark Mode support and low memory footprint.",
+        "install.title": "Install BrowSync",
         "install.desc": "Or install via Homebrew:",
         "footer.copy": "© 2026 BrowSync. Privacy-first browser sync tool.",
         "footer.github": "View GitHub",

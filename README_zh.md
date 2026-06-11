@@ -2,7 +2,7 @@
 
 [简体中文] | [English](README.md)
 
-**同览 (BrowSync)** 是一款原生 macOS 应用，旨在让 Safari、Chrome、Arc、Edge 和 Brave 协同工作。它通过本地 WebSocket 守护进程、浏览器扩展、智能 URL 分流规则以及跨浏览器数据同步，统一您的浏览体验。
+**同览 (BrowSync)** 是一款 macOS 原生应用，让 Safari、Chrome、Arc、Edge 和 Brave 协同工作。它通过本地 WebSocket 守护进程、浏览器扩展、URL 分流规则以及数据同步，统一浏览体验。
 
 [![下载 同览](https://img.shields.io/badge/同览-最新版本-blue?style=for-the-badge&logo=apple)](https://github.com/chentao1006/browsync/releases/latest) <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh"><img src="BrowSync/Resources/Marketing/chrome-web-store-badge.png" height="28" alt="Available in the Chrome Web Store"></a>
 
@@ -11,21 +11,19 @@ brew install --cask chentao1006/tap/browsync
 ```
 
 > [!IMPORTANT]
-> **隐私优先的设计理念**
-> 同览 (BrowSync) 基于严格的隐私优先架构构建。所有的同步和 URL 分流完全通过本地 WebSocket 守护进程在您的**本地设备上**进行。您的浏览数据（书签、Cookie、本地存储、活动标签页等）**绝对不会**离开您的电脑，也不涉及任何外部服务器或云服务参与。
+> **本地运行**
+> 同览 (BrowSync) 的同步和 URL 分流通过本地 WebSocket 守护进程进行。浏览数据（书签、Cookie、本地存储、活动标签页等）保存在本地设备，不涉及外部服务器。
 
-## 🚀 核心功能
+## 🚀 主要功能
 
-- **智能 URL 分流**：将同览注册为 macOS 的默认浏览器。其强大的规则引擎可根据域名、URL 模式、查询参数、来源应用或时间段，自动将链接定向到您偏好的浏览器。
-- **跨浏览器状态同步**：在 Safari 和基于 Chromium 的浏览器（Chrome、Arc、Edge、Brave）之间无缝同步 Cookie、LocalStorage、sessionStorage 和书签。
-- **实时标签页共享 (Tab Sharing)**：跨浏览器实时查看和共享当前打开的标签页。支持自动过滤无痕模式及非 HTTP(S) 协议页面，并对跨浏览器相同 URL 进行智能去重展示，既保护隐私又保持界面清爽。
-- **灵活的同步策略**：选择适合您工作流的同步逻辑：
-  - *单向同步 (主从模式)*
-  - *最后写入者胜出 (基于访问时间)*
-  - *双向合并*
-- **细粒度站点控制**：通过白名单/黑名单规则管理同步范围。为特定网站应用独立策略，实现极致的自定义。
-- **本地化与安全**：所有通信都通过本地 WebSocket 守护进程 (`ws://127.0.0.1:62333`) 在您的设备上完成。不依赖任何外部服务器。
-- **原生 macOS 体验**：使用 SwiftUI 构建。全面支持深色/浅色主题、菜单栏集成和登录时启动。
+- **URL 分流**：将同览设为 macOS 默认浏览器后，可根据域名、URL 规则、参数、来源应用或时间段，将链接自动定向到指定的浏览器。
+- **书签同步**：在 Safari 和所有 Chromium 浏览器（Chrome、Arc、Edge、Brave）之间实时同步书签。
+- **状态同步**：在各浏览器之间同步 Cookie、LocalStorage 和 sessionStorage，保持登录状态一致。
+- **标签页共享**：跨浏览器查看当前打开的标签页。自动过滤无痕模式及非 HTTP(S) 协议页面，并对重复的 URL 进行去重。
+- **同步策略**：支持单向同步（主从模式）、基于访问时间的最后写入者胜出、双向合并。
+- **站点控制**：通过白名单/黑名单管理同步范围，支持为特定网站设置独立策略。
+- **本地网络**：通信通过本地 WebSocket 守护进程 (`ws://127.0.0.1:62333`) 进行，不依赖外部服务器。
+- **原生 macOS 应用**：使用 SwiftUI 构建，支持深色/浅色主题、菜单栏集成和登录时启动。
 
 ## 🛠 安装与设置
 

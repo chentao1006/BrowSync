@@ -2,7 +2,7 @@
 
 [English] | [简体中文](README_zh.md)
 
-**BrowSync** is a macOS native app that makes Safari, Chrome, Arc, Edge, and Brave work together. It unifies your browsing experience through a local WebSocket daemon, browser extensions, intelligent URL routing rules, and cross-browser data synchronization.
+**BrowSync** is a macOS native app that makes Safari, Chrome, Arc, Edge, and Brave work together. It unifies the browsing experience through a local WebSocket daemon, browser extensions, URL routing rules, and data synchronization.
 
 [![Download BrowSync](https://img.shields.io/badge/Download-Latest%20Release-blue?style=for-the-badge&logo=apple)](https://github.com/chentao1006/browsync/releases/latest) <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh"><img src="BrowSync/Resources/Marketing/chrome-web-store-badge.png" height="28" alt="Available in the Chrome Web Store"></a>
 
@@ -11,21 +11,19 @@ brew install --cask chentao1006/tap/browsync
 ```
 
 > [!IMPORTANT]
-> **Privacy First by Design**
-> BrowSync is built on a strict privacy-first architecture. All synchronization and URL routing happen **entirely locally** on your device via a local WebSocket daemon. Your browsing data (bookmarks, cookies, local storage, active tabs) **never** leaves your machine, and no external servers or cloud services are involved.
+> **Local Execution**
+> BrowSync's synchronization and URL routing happen locally on your device via a WebSocket daemon. Browsing data (bookmarks, cookies, local storage, active tabs) is stored on your machine without external server involvement.
 
-## 🚀 Key Features
+## 🚀 Features
 
-- **Intelligent URL Routing**: Register BrowSync as your default macOS browser. Its powerful rule engine automatically directs links to your preferred browser based on domain, URL patterns, query strings, source application, or time of day.
-- **Cross-Browser Data Sync**: Seamlessly sync Cookies, LocalStorage, sessionStorage, and Bookmarks across Safari and Chromium-based browsers (Chrome, Arc, Edge, Brave).
-- **Real-time Tab Sharing**: View and share active tabs across all browsers in real-time. Automatically filters out incognito tabs and non-HTTP(S) local pages to protect privacy, and intelligently deduplicates URLs across different browsers for a clean UI.
-- **Flexible Sync Strategies**: Choose the synchronization logic that fits your workflow:
-  - *Unidirectional (Master-slave)*
-  - *Last-Write-Wins* (based on access time)
-  - *Bidirectional Merging*
-- **Granular Site Control**: Manage sync scope with whitelist/blacklist rules. Apply per-site policy overrides for ultimate customization.
-- **Local & Secure**: All communication happens entirely on your machine via a local WebSocket daemon (`ws://127.0.0.1:62333`). No external servers are involved.
-- **Native macOS Experience**: Built with SwiftUI. Supports Dark/Light themes, Menu Bar integration, and Launch at Login.
+- **URL Routing**: Register BrowSync as the default macOS browser to direct links to specific browsers based on domain, URL patterns, query strings, source application, or time of day.
+- **Bookmark Sync**: Sync bookmarks in real-time across Safari and Chromium browsers (Chrome, Arc, Edge, Brave).
+- **State Sync**: Sync Cookies, LocalStorage, and sessionStorage across supported browsers to maintain login states.
+- **Tab Sharing**: View active tabs across browsers. It filters out incognito tabs and non-HTTP(S) local pages, and deduplicates URLs.
+- **Sync Strategies**: Supports unidirectional (master-slave), last-write-wins (based on access time), and bidirectional merging.
+- **Site Control**: Manage sync scope with whitelist/blacklist rules and per-site policies.
+- **Local Network**: Communication is handled locally via a WebSocket daemon (`ws://127.0.0.1:62333`). No external servers are used.
+- **Native macOS App**: Built with SwiftUI. Supports Dark/Light themes, Menu Bar integration, and Launch at Login.
 
 ## 🛠 Installation & Setup
 
