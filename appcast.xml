@@ -3,6 +3,14 @@
     <channel>
         <title>BrowSync</title>
         <item>
+            <title>1.0.4</title>
+            <pubDate>Sat, 13 Jun 2026 00:30:55 +0800</pubDate>
+            <sparkle:version>7</sparkle:version>
+            <sparkle:shortVersionString>1.0.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/chentao1006/browsync/releases/download/v1.0.4/BrowSync.dmg" length="5955433" type="application/octet-stream" sparkle:edSignature="5HKIjjINr06NYvjOhir+pM/WqO+qenHyWvPnjK7uqHsRTzDFML+7jlDqkAVRzAhQY3iolGlrzNAmIDhNUUuLBA=="/>
+        </item>
+        <item>
             <title>1.0.3</title>
             <pubDate>Thu, 11 Jun 2026 21:53:45 +0800</pubDate>
             <sparkle:version>6</sparkle:version>
@@ -17,14 +25,6 @@
             <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/chentao1006/browsync/releases/download/v1.0.2/BrowSync.dmg" length="5897866" type="application/octet-stream" sparkle:edSignature="sDqVyslGU0Si0rNz0QXpDjUsckIRVa3JQsG/Vl89L4mBFLz0nORLPrzk5WchFTtEaJSCqR0ndDvt2dXXyYt5Bw=="/>
-        </item>
-        <item>
-            <title>1.0.1</title>
-            <pubDate>Thu, 11 Jun 2026 21:19:06 +0800</pubDate>
-            <sparkle:version>3</sparkle:version>
-            <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/chentao1006/browsync/releases/download/v1.0.1/BrowSync.dmg" length="5897847" type="application/octet-stream" sparkle:edSignature="M1NKkFi2qd1EcZJkAu1xuTIqs/nKKOcy/NYrBmTxVzxosNrSTYGf+zi6Y5qPbNxNxIBReI7FXDwA5T0nIAKCCg=="/>
         </item>
     </channel>
 </rss>

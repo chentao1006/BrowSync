@@ -320,3 +320,15 @@
 "No, thanks" = "No, gracias";
 "Send Anonymous Usage Statistics" = "Enviar estadísticas de uso anónimas";
 "Help us improve BrowSync by sending anonymous usage data." = "Ayúdenos a mejorar BrowSync enviando datos de uso anónimos.";
+
+/* Notifications */
+"Successfully synchronized: %@" = "Sincronizado con éxito: %@";
+"Browser Connected" = "Navegador conectado";
+"%@ is now connected and ready to sync." = "%@ ahora está conectado y listo para sincronizar.";
+
+"Bookmark Sync Complete" = "Sincronización de marcadores completada";
+"Successfully synced %d bookmarks." = "Sincronizados con éxito %d marcadores.";
+"State Sync Complete" = "Sincronización de estado completada";
+"Successfully synced %d cookies and %d storage items." = "Sincronizados con éxito %d cookies y %d elementos de almacenamiento.";
+"BrowSync Complete" = "BrowSync completado";
+"Synced %d bookmarks and %d state items." = "Sincronizados %d marcadores y %d elementos de estado.";

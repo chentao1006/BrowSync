@@ -321,3 +321,15 @@
 "No, thanks" = "いいえ、結構です";
 "Send Anonymous Usage Statistics" = "匿名の使用統計データを送信する";
 "Help us improve BrowSync by sending anonymous usage data." = "匿名の使用データを送信して、BrowSyncの改善にご協力ください。";
+
+/* Notifications */
+"Successfully synchronized: %@" = "同期に成功しました: %@";
+"Browser Connected" = "ブラウザが接続されました";
+"%@ is now connected and ready to sync." = "%@ が接続され、同期の準備ができました。";
+
+"Bookmark Sync Complete" = "ブックマークの同期が完了しました";
+"Successfully synced %d bookmarks." = "%d 件のブックマークを正常に同期しました。";
+"State Sync Complete" = "状態の同期が完了しました";
+"Successfully synced %d cookies and %d storage items." = "%d 件の Cookie と %d 件のストレージ項目を正常に同期しました。";
+"BrowSync Complete" = "BrowSync 同期完了";
+"Synced %d bookmarks and %d state items." = "%d 件のブックマークと %d 件の状態データを同期しました。";

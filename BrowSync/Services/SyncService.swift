@@ -4,6 +4,17 @@
 import Foundation
 import os.log
 
+struct SyncStats {
+    var bookmarks: Int = 0
+    var tabs: Int = 0
+    var cookies: Int = 0
+    var localStorage: Int = 0
+    var sessionStorage: Int = 0
+    
+    var stateItems: Int { cookies + localStorage + sessionStorage }
+    var isEmpty: Bool { bookmarks == 0 && tabs == 0 && stateItems == 0 }
+}
+
 @MainActor
 final class SyncService: ObservableObject {
     private let logger = Logger(subsystem: "com.ct106.browsync", category: "SyncService")
@@ -12,6 +23,8 @@ final class SyncService: ObservableObject {
     @Published var lastSyncDate: Date? = nil
     @Published var isSyncing: Bool = false
     @Published var syncLog: [SyncLogEntry] = []
+    
+    private var currentManualSyncStats = SyncStats()
 
     var daemon: DaemonServer?
     var settingsService: SettingsService?
@@ -108,9 +121,10 @@ final class SyncService: ObservableObject {
 
     // MARK: - Sync Now
 
-    func syncNow(categories: Set<SyncCategory>? = nil) async {
-        guard !isSyncing else { return }
+    func syncNow(categories: Set<SyncCategory>? = nil) async -> SyncStats {
+        guard !isSyncing else { return SyncStats() }
         isSyncing = true
+        currentManualSyncStats = SyncStats()
         
         let connectedClients = daemon?.connectedClients.map { "\($0.browser.rawValue)-\($0.id)" }.joined(separator: ", ") ?? "none"
         log("Starting manual sync... Connected clients: \(connectedClients)")
@@ -129,7 +143,8 @@ final class SyncService: ObservableObject {
 
         lastSyncDate = Date()
         isSyncing = false
-        log("Sync complete")
+        log("Sync complete (Bookmarks: \(currentManualSyncStats.bookmarks), Cookies: \(currentManualSyncStats.cookies), LocalStorage: \(currentManualSyncStats.localStorage), SessionStorage: \(currentManualSyncStats.sessionStorage))")
+        return currentManualSyncStats
     }
 
     private func syncCategory(_ category: SyncCategory) async {
@@ -315,11 +330,21 @@ final class SyncService: ObservableObject {
         var countStr = ""
         if let payload = filteredMessage.payload {
             switch payload {
-            case .bookmarks(let b): countStr = " (\(b.count) items)"
-            case .tabs(let t): countStr = " (\(t.count) items)"
-            case .cookies(let c): countStr = " (\(c.count) items)"
-            case .localStorage(let l): countStr = " (\(l.count) items)"
-            case .sessionStorage(let s): countStr = " (\(s.count) items)"
+            case .bookmarks(let b): 
+                countStr = " (\(b.count) items)"
+                if isSyncing { currentManualSyncStats.bookmarks += b.count }
+            case .tabs(let t): 
+                countStr = " (\(t.count) items)"
+                if isSyncing { currentManualSyncStats.tabs += t.count }
+            case .cookies(let c): 
+                countStr = " (\(c.count) items)"
+                if isSyncing { currentManualSyncStats.cookies += c.count }
+            case .localStorage(let l): 
+                countStr = " (\(l.count) items)"
+                if isSyncing { currentManualSyncStats.localStorage += l.count }
+            case .sessionStorage(let s): 
+                countStr = " (\(s.count) items)"
+                if isSyncing { currentManualSyncStats.sessionStorage += s.count }
             default: break
             }
         }
@@ -334,6 +359,28 @@ final class SyncService: ObservableObject {
                 let browserId = clientId.components(separatedBy: "-").first ?? clientId
                 if let browser = Browser(rawValue: browserId) {
                     AppState.shared.remoteTabsCache[browser] = tabs
+                }
+            }
+            
+            // Auto-sync Notification
+            if !isSyncing && AppState.shared.settingsService.general.notifySyncComplete {
+                var autoStats = SyncStats()
+                switch payload {
+                case .bookmarks(let b): autoStats.bookmarks = b.count
+                case .cookies(let c): autoStats.cookies = c.count
+                case .localStorage(let l): autoStats.localStorage = l.count
+                case .sessionStorage(let s): autoStats.sessionStorage = s.count
+                default: break
+                }
+                
+                if !autoStats.isEmpty {
+                    var categories: [SyncCategory] = []
+                    if autoStats.bookmarks > 0 { categories.append(.bookmarks) }
+                    if autoStats.stateItems > 0 { categories.append(.browserData) }
+                    
+                    if !categories.isEmpty {
+                        AppState.shared.notificationService.notifySyncComplete(stats: autoStats, categories: categories)
+                    }
                 }
             }
             

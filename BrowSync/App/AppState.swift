@@ -86,9 +86,6 @@ final class AppState: ObservableObject {
     // MARK: - Startup
 
     func onAppear() async {
-        // Request notification permissions
-        await notificationService.requestPermission()
-
         // Start daemon
         daemon.start()
 
@@ -262,8 +259,14 @@ final class AppState: ObservableObject {
             let lastConnectedKey = "extension_last_connected_\(browser.rawValue)"
             
             if connected {
+                let previousStatus = browserInfos[idx].extensionStatus
                 browserInfos[idx].extensionStatus = .connected
                 UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: lastConnectedKey)
+                
+                let shouldNotify = previousStatus == .offline || previousStatus == .notInstalled || previousStatus == .extensionDisabled
+                if shouldNotify && settingsService.general.notifyBrowserConnected {
+                    notificationService.notifyBrowserConnected(browser)
+                }
             } else {
                 browserInfos[idx].extensionStatus = .waitingConnection
                 
@@ -272,7 +275,13 @@ final class AppState: ObservableObject {
                     await MainActor.run {
                         if let currentIdx = self.browserInfos.firstIndex(where: { $0.browser == browser }), 
                            self.browserInfos[currentIdx].extensionStatus != .connected {
-                            self.browserInfos[currentIdx].extensionStatus = .offline
+                            
+                            let isRunning = !NSWorkspace.shared.runningApplications.filter { $0.bundleIdentifier == browser.bundleIdentifier }.isEmpty
+                            if !isRunning {
+                                self.browserInfos[currentIdx].extensionStatus = .offline
+                            } else {
+                                self.browserInfos[currentIdx].extensionStatus = .waitingConnection
+                            }
                         }
                     }
                 }
@@ -287,10 +296,10 @@ final class AppState: ObservableObject {
     }
 
     func sync(categories: Set<SyncCategory>?) async {
-        await syncService.syncNow(categories: categories)
+        let stats = await syncService.syncNow(categories: categories)
         if settingsService.general.notifySyncComplete {
             let enabled = Array(categories ?? settingsService.syncSettings.enabledCategories)
-            notificationService.notifySyncComplete(categories: enabled)
+            notificationService.notifySyncComplete(stats: stats, categories: enabled)
         }
     }
 }

@@ -332,3 +332,15 @@
 "No, thanks" = "No, thanks";
 "Send Anonymous Usage Statistics" = "Send Anonymous Usage Statistics";
 "Help us improve BrowSync by sending anonymous usage data." = "Help us improve BrowSync by sending anonymous usage data.";
+
+/* Notifications */
+"Successfully synchronized: %@" = "Successfully synchronized: %@";
+"Browser Connected" = "Browser Connected";
+"%@ is now connected and ready to sync." = "%@ is now connected and ready to sync.";
+
+"Bookmark Sync Complete" = "Bookmark Sync Complete";
+"Successfully synced %d bookmarks." = "Successfully synced %d bookmarks.";
+"State Sync Complete" = "State Sync Complete";
+"Successfully synced %d cookies and %d storage items." = "Successfully synced %d cookies and %d storage items.";
+"BrowSync Complete" = "BrowSync Complete";
+"Synced %d bookmarks and %d state items." = "Synced %d bookmarks and %d state items.";

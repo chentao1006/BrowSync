@@ -61,35 +61,69 @@ struct RouterTabView: View {
                     }
                     .padding(.vertical, 4)
                     
-                    ForEach($appState.routerRules) { $rule in
-                        RouterRuleRow(rule: $rule, installedApps: installedApps) {
-                            editingRule = rule
-                        } onDelete: {
-                            ruleToDelete = rule
+                    if appState.routerRules.isEmpty {
+                        VStack(spacing: 12) {
+                            Spacer().frame(height: 40)
+                            Image(systemName: "arrow.triangle.branch")
+                                .font(.system(size: 40))
+                                .foregroundColor(.secondary)
+                            Text(String(localized: "No Rules", bundle: langBundle.bundle))
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                            Text(String(localized: "Add rules to automatically route URLs to specific browsers based on domain, URL pattern, or source app.", bundle: langBundle.bundle))
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 32)
+                            
+                            Button(action: {
+                                let newRule = RouterRule()
+                                editingRule = newRule
+                            }) {
+                                Label(String(localized: "Add First Rule", bundle: langBundle.bundle), systemImage: "plus")
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                            .padding(.top, 12)
+                            Spacer().frame(height: 40)
                         }
-                    }
-                    .onDelete { indexSet in
-                        if let firstIndex = indexSet.first {
-                            ruleToDelete = appState.routerRules[firstIndex]
+                        .frame(maxWidth: .infinity)
+                        .listRowBackground(Color.clear)
+                    } else {
+                        ForEach($appState.routerRules) { $rule in
+                            RouterRuleRow(rule: $rule, installedApps: installedApps) {
+                                editingRule = rule
+                            } onDelete: {
+                                ruleToDelete = rule
+                            }
                         }
-                    }
-                    .onMove { indices, newOffset in
-                        appState.routerRules.move(fromOffsets: indices, toOffset: newOffset)
+                        .onDelete { indexSet in
+                            if let firstIndex = indexSet.first {
+                                ruleToDelete = appState.routerRules[firstIndex]
+                            }
+                        }
+                        .onMove { indices, newOffset in
+                            appState.routerRules.move(fromOffsets: indices, toOffset: newOffset)
+                        }
                     }
                 }
                 .listStyle(.inset)
                 
-                // Bottom Action Bar
-                HStack {
-                    Button(action: {
-                        let newRule = RouterRule()
-                        editingRule = newRule
-                    }) {
-                        Label(String(localized: "Add Rule", bundle: langBundle.bundle), systemImage: "plus")
+                if !appState.routerRules.isEmpty {
+                    // Bottom Action Bar
+                    HStack {
+                        Button(action: {
+                            let newRule = RouterRule()
+                            editingRule = newRule
+                        }) {
+                            Label(String(localized: "Add Rule", bundle: langBundle.bundle), systemImage: "plus")
+                        }
+                        Spacer()
                     }
-                    Spacer()
+                    .padding()
                 }
-                .padding()
             }
             .disabled(!appState.isRouterEnabled)
             

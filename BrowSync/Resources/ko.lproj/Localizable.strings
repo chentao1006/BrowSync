@@ -321,3 +321,15 @@
 "No, thanks" = "아니요, 괜찮습니다";
 "Send Anonymous Usage Statistics" = "익명 사용 통계 보내기";
 "Help us improve BrowSync by sending anonymous usage data." = "익명 사용 데이터를 전송하여 BrowSync 개선을 도와주세요.";
+
+/* Notifications */
+"Successfully synchronized: %@" = "성공적으로 동기화됨: %@";
+"Browser Connected" = "브라우저 연결됨";
+"%@ is now connected and ready to sync." = "%@ 브라우저가 연결되어 동기화할 준비가 되었습니다.";
+
+"Bookmark Sync Complete" = "북마크 동기화 완료";
+"Successfully synced %d bookmarks." = "성공적으로 %d개의 북마크를 동기화했습니다.";
+"State Sync Complete" = "상태 동기화 완료";
+"Successfully synced %d cookies and %d storage items." = "성공적으로 %d개의 쿠키와 %d개의 저장소 항목을 동기화했습니다.";
+"BrowSync Complete" = "BrowSync 완료";
+"Synced %d bookmarks and %d state items." = "%d개의 북마크와 %d개의 상태 항목을 동기화했습니다.";

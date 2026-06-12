@@ -357,3 +357,15 @@
 "No, thanks" = "不，谢谢";
 "Send Anonymous Usage Statistics" = "发送匿名使用统计数据";
 "Help us improve BrowSync by sending anonymous usage data." = "通过发送匿名使用数据帮助我们改进 BrowSync。";
+
+/* Notifications */
+"Successfully synchronized: %@" = "已成功同步：%@";
+"Browser Connected" = "浏览器已连接";
+"%@ is now connected and ready to sync." = "%@ 已连接，准备好进行同步。";
+
+"Bookmark Sync Complete" = "书签同步完成";
+"Successfully synced %d bookmarks." = "已成功同步 %d 条书签。";
+"State Sync Complete" = "状态同步完成";
+"Successfully synced %d cookies and %d storage items." = "已成功同步 %d 个 Cookie 和 %d 项存储数据。";
+"BrowSync Complete" = "BrowSync 同步完成";
+"Synced %d bookmarks and %d state items." = "已同步 %d 条书签和 %d 项状态数据。";

@@ -28,7 +28,7 @@ struct TabSharingTabView: View {
                 
                 Toggle(String(localized: "Enable Tab Sharing", bundle: langBundle.bundle), isOn: syncSettings.tabSharingEnabled)
                     .toggleStyle(.switch)
-                    .onChange(of: syncSettings.tabSharingEnabled.wrappedValue) { _ in
+                    .onChange(of: syncSettings.tabSharingEnabled.wrappedValue) {
                         appState.broadcastSettings()
                     }
             }
