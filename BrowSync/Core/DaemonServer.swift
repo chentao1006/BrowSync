@@ -501,8 +501,10 @@ final class GlobalStateStore {
     private func load() {
         if let data = try? Data(contentsOf: fileURL),
            let cache = try? JSONDecoder().decode([String: Data].self, from: data) {
-            // Drop any cached full bookmark trees, but KEEP bookmarks_removed tombstones
-            self.stateCache = cache.filter { !$0.key.hasPrefix("bookmarks_") || $0.key.hasPrefix("bookmarks_removed_") }
+            // Drop cached bookmark trees AND bookmarks_removed tombstones.
+            // bookmarks_removed are point-in-time events: replaying stale tombstones
+            // to a newly connected extension would erroneously wipe its bookmarks.
+            self.stateCache = cache.filter { !$0.key.hasPrefix("bookmarks_") }
         }
     }
 }

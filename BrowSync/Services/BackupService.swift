@@ -1,24 +1,26 @@
 // BackupService.swift
-// BrowSync — Bookmark Backup & Restore Service
+// BrowSync — Bookmark Backup & Restore Service (Now Acts as Trash Bin)
 
 import Foundation
 import os.log
 
-struct BookmarkBackup: Identifiable, Codable, Equatable {
-    var id: String { filename }
-    var timestamp: Date
+struct DeletedBookmark: Identifiable, Codable, Equatable {
+    var id: String
+    var title: String
+    var url: String?
+    var parentId: String?
+    var isFolder: Bool
+    var deletedAt: Date
     var sourceBrowser: String
-    var itemCount: Int
-    var filename: String
+    var children: [DeletedBookmark]?
 }
 
 @MainActor
 final class BackupService: ObservableObject {
-    @Published var backups: [BookmarkBackup] = []
+    @Published var deletedBookmarks: [DeletedBookmark] = []
     
     private let logger = Logger(subsystem: "com.ct106.browsync", category: "BackupService")
     private let backupsDir: URL
-    private let maxBackups = 20
     
     init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -30,110 +32,80 @@ final class BackupService: ObservableObject {
             logger.error("Failed to create backups directory: \(error)")
         }
         
-        loadBackups()
+        loadDeletedItems()
     }
     
-    func createBackup(bookmarks: [Bookmark], sourceBrowser: String) {
-        let timestamp = Date()
-        let formatter = ISO8601DateFormatter()
-        let filename = "backup_\(sourceBrowser)_\(formatter.string(from: timestamp)).json"
-        let fileURL = backupsDir.appendingPathComponent(filename)
-        
+    // MARK: - Snapshot Management (for diffing)
+    
+    func saveSnapshot(bookmarks: [Bookmark], sourceBrowser: String) {
+        let filename = sourceBrowser.replacingOccurrences(of: "/", with: "_")
+        let fileURL = backupsDir.appendingPathComponent("snapshot_\(filename).json")
         do {
             let data = try JSONEncoder().encode(bookmarks)
             try data.write(to: fileURL)
-            
-            let backup = BookmarkBackup(
-                timestamp: timestamp,
-                sourceBrowser: sourceBrowser,
-                itemCount: bookmarks.count,
-                filename: filename
-            )
-            
-            backups.insert(backup, at: 0)
-            enforceLimit()
-            saveIndex()
-            
-            logger.info("Created bookmark backup: \(filename) (\(bookmarks.count) items)")
         } catch {
-            logger.error("Failed to create backup: \(error)")
+            logger.error("Failed to save snapshot for \(sourceBrowser): \(error)")
         }
     }
     
-    func getBookmarks(for backupId: String) -> [Bookmark]? {
-        let fileURL = backupsDir.appendingPathComponent(backupId)
+    func getSnapshot(sourceBrowser: String) -> [Bookmark]? {
+        let filename = sourceBrowser.replacingOccurrences(of: "/", with: "_")
+        let fileURL = backupsDir.appendingPathComponent("snapshot_\(filename).json")
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
         do {
             let data = try Data(contentsOf: fileURL)
             return try JSONDecoder().decode([Bookmark].self, from: data)
         } catch {
-            logger.error("Failed to load backup data for \(backupId): \(error)")
+            logger.error("Failed to load snapshot for \(sourceBrowser): \(error)")
             return nil
         }
     }
     
-    func deleteBackup(id: String) {
-        let fileURL = backupsDir.appendingPathComponent(id)
-        try? FileManager.default.removeItem(at: fileURL)
-        backups.removeAll { $0.id == id }
-        saveIndex()
+    // MARK: - Trash Bin Management
+    
+    func addDeletedBookmarks(_ newBookmarks: [DeletedBookmark]) {
+        // Prevent duplicates based on ID and Title
+        let existingSignatures = Set(deletedBookmarks.map { "\($0.id)-\($0.title)" })
+        let uniqueNew = newBookmarks.filter { !existingSignatures.contains("\($0.id)-\($0.title)") }
+        
+        guard !uniqueNew.isEmpty else { return }
+        
+        deletedBookmarks.insert(contentsOf: uniqueNew, at: 0)
+        // Limit to 500 deleted items
+        if deletedBookmarks.count > 500 {
+            deletedBookmarks = Array(deletedBookmarks.prefix(500))
+        }
+        saveDeletedItems()
     }
     
-    private func loadBackups() {
-        let indexURL = backupsDir.appendingPathComponent("index.json")
+    func removeDeletedBookmark(id: String) {
+        deletedBookmarks.removeAll { $0.id == id }
+        saveDeletedItems()
+    }
+    
+    func clearAllDeletedBookmarks() {
+        deletedBookmarks.removeAll()
+        saveDeletedItems()
+    }
+    
+    private func loadDeletedItems() {
+        let fileURL = backupsDir.appendingPathComponent("trash.json")
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
         do {
-            let data = try Data(contentsOf: indexURL)
-            backups = try JSONDecoder().decode([BookmarkBackup].self, from: data)
+            let data = try Data(contentsOf: fileURL)
+            deletedBookmarks = try JSONDecoder().decode([DeletedBookmark].self, from: data)
         } catch {
-            // Index doesn't exist or is corrupted, rebuild it
-            rebuildIndex()
+            logger.error("Failed to load trash.json: \(error)")
         }
     }
     
-    private func saveIndex() {
-        let indexURL = backupsDir.appendingPathComponent("index.json")
+    private func saveDeletedItems() {
+        let fileURL = backupsDir.appendingPathComponent("trash.json")
         do {
-            let data = try JSONEncoder().encode(backups)
-            try data.write(to: indexURL)
+            let data = try JSONEncoder().encode(deletedBookmarks)
+            try data.write(to: fileURL)
         } catch {
-            logger.error("Failed to save backup index: \(error)")
-        }
-    }
-    
-    private func enforceLimit() {
-        while backups.count > maxBackups {
-            if let oldest = backups.popLast() {
-                let fileURL = backupsDir.appendingPathComponent(oldest.filename)
-                try? FileManager.default.removeItem(at: fileURL)
-            }
-        }
-    }
-    
-    private func rebuildIndex() {
-        backups = []
-        do {
-            let files = try FileManager.default.contentsOfDirectory(at: backupsDir, includingPropertiesForKeys: [.creationDateKey])
-            for file in files where file.pathExtension == "json" && file.lastPathComponent != "index.json" {
-                if let data = try? Data(contentsOf: file),
-                   let bookmarks = try? JSONDecoder().decode([Bookmark].self, from: data) {
-                    
-                    let attrs = try? FileManager.default.attributesOfItem(atPath: file.path)
-                    let creationDate = attrs?[.creationDate] as? Date ?? Date()
-                    let source = file.lastPathComponent.components(separatedBy: "_").dropFirst().first ?? "Unknown"
-                    
-                    let backup = BookmarkBackup(
-                        timestamp: creationDate,
-                        sourceBrowser: source,
-                        itemCount: bookmarks.count,
-                        filename: file.lastPathComponent
-                    )
-                    backups.append(backup)
-                }
-            }
-            backups.sort { $0.timestamp > $1.timestamp }
-            enforceLimit()
-            saveIndex()
-        } catch {
-            logger.error("Failed to rebuild backup index: \(error)")
+            logger.error("Failed to save trash.json: \(error)")
         }
     }
 }

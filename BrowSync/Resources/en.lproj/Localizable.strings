@@ -344,3 +344,20 @@
 "Successfully synced %d cookies and %d storage items." = "Successfully synced %d cookies and %d storage items.";
 "BrowSync Complete" = "BrowSync Complete";
 "Synced %d bookmarks and %d state items." = "Synced %d bookmarks and %d state items.";
+
+"Deleted Bookmarks (Trash Bin)" = "Deleted Bookmarks (Trash Bin)";
+"No deleted bookmarks" = "No deleted bookmarks";
+"These bookmarks were deleted recently. You can restore them individually." = "These bookmarks were deleted recently. You can restore them individually.";
+"Clear All" = "Clear All";
+"Delete Permanently" = "Delete Permanently";
+"This deleted bookmark will be permanently removed from the trash bin." = "This deleted bookmark will be permanently removed from the trash bin.";
+"Confirm Clear All" = "Confirm Clear All";
+"Are you sure you want to permanently delete all bookmarks in the trash bin?" = "Are you sure you want to permanently delete all bookmarks in the trash bin?";
+
+"Added %d" = "Added %d";
+"Deleted %d" = "Deleted %d";
+"Modified %d" = "Modified %d";
+"Total: %d" = "Total: %d";
+"Restore All" = "Restore All";
+"Confirm Restore All" = "Confirm Restore All";
+"Are you sure you want to restore all bookmarks from the trash bin?" = "Are you sure you want to restore all bookmarks from the trash bin?";

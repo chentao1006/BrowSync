@@ -51,6 +51,23 @@ const INSTANCE_ID = `${DETECTED_BROWSER}-main`;
 
 // ─── WebSocket management ────────────────────────────────────────────────────
 
+let messageQueue = [];
+let isProcessingQueue = false;
+
+async function processQueue() {
+  if (isProcessingQueue) return;
+  isProcessingQueue = true;
+  while (messageQueue.length > 0) {
+    const msg = messageQueue.shift();
+    try {
+      await handleIncoming(msg);
+    } catch (e) {
+      console.error('[BrowSync] Error processing message:', e);
+    }
+  }
+  isProcessingQueue = false;
+}
+
 let ws = null;
 let isConnecting = false;
 let reconnectDelay = 1000;
@@ -101,7 +118,8 @@ async function connect() {
   ws.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data.trim());
-      handleIncoming(msg);
+      messageQueue.push(msg);
+      processQueue();
     } catch (e) {
       console.warn('[BrowSync] Parse error:', e);
     }
@@ -215,8 +233,15 @@ async function applySync(message) {
       if (chrome.bookmarks && payload.bookmark) {
         const bm = payload.bookmark;
         console.log(`[BrowSync] Removing bookmark title ${bm.title}`);
+        
+        const storageData = await chrome.storage.local.get('syncIdMap');
+        const syncIdMap = storageData.syncIdMap || {};
+        const chromeId = syncIdMap[bm.id];
+        let targetId = chromeId || bm.id;
+        
+        isApplyingSync = true;
         try {
-          await chrome.bookmarks.removeTree(bm.id);
+          await chrome.bookmarks.removeTree(targetId);
         } catch(e) {
           if (bm.url) {
             const results = await chrome.bookmarks.search({ url: bm.url });
@@ -239,6 +264,7 @@ async function applySync(message) {
             if (foundFolderId) await chrome.bookmarks.removeTree(foundFolderId).catch(()=>{});
           }
         }
+        setTimeout(() => { isApplyingSync = false; }, 2000);
       }
       break;
     case 'localStorage':
@@ -402,6 +428,15 @@ async function handlePullRequest(category, site) {
     case 'bookmarks': {
       if (!chrome.bookmarks) return;
       const tree = await chrome.bookmarks.getTree();
+      const storageData = await chrome.storage.local.get('syncIdMap');
+      const syncIdMap = storageData.syncIdMap || {};
+      const chromeToSafariId = new Map();
+      for (const [safariId, chromeId] of Object.entries(syncIdMap)) {
+        if (!chromeToSafariId.has(chromeId)) {
+          chromeToSafariId.set(chromeId, safariId);
+        }
+      }
+
       const flat = [];
       function traverse(nodes) {
         for (const node of nodes) {
@@ -412,11 +447,14 @@ async function handlePullRequest(category, site) {
             else if (node.parentId === localMobileId) normalizedParentId = '3';
             else if (node.parentId === '0') normalizedParentId = '1';
 
+            let mappedId = chromeToSafariId.get(node.id) || node.id;
+            let mappedParentId = chromeToSafariId.get(normalizedParentId) || normalizedParentId;
+
             flat.push({ 
-              id: node.id, 
+              id: mappedId, 
               title: node.title, 
               url: node.url, 
-              parentId: normalizedParentId,
+              parentId: mappedParentId,
               isFolder: !node.url, 
               dateAdded: node.dateAdded, 
               sourceBrowser: DETECTED_BROWSER 
@@ -553,7 +591,12 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
     });
   }
 
-  const idMap = new Map(); // incoming id -> local chrome id
+  // Load persistent map of Safari ID -> Chrome ID to handle renames
+  const storageData = await chrome.storage.local.get('syncIdMap');
+  const syncIdMap = storageData.syncIdMap || {};
+  const idMap = new Map(Object.entries(syncIdMap));
+  
+  // Always enforce root mappings
   idMap.set('1', localBarId);
   idMap.set('2', localOtherId);
   idMap.set('3', localMobileId);
@@ -586,14 +629,33 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
   }
 
   async function processNodes(nodes, localParentId) {
-    for (const bm of nodes) {
+    for (let i = 0; i < nodes.length; i++) {
+      const bm = nodes[i];
       let existingNode = null;
-      if (bm.isFolder) {
-        const children = await chrome.bookmarks.getChildren(localParentId);
-        existingNode = children.find(c => !c.url && c.title === bm.title);
-      } else if (bm.url) {
-        const searchResults = await chrome.bookmarks.search({ url: bm.url });
-        existingNode = searchResults.find(r => r.parentId === localParentId);
+      
+      // 1. Try to find by persistent ID mapping first (handles renames/moves perfectly)
+      if (idMap.has(bm.id)) {
+        const mappedId = idMap.get(bm.id);
+        const results = await chrome.bookmarks.get(mappedId).catch(() => []);
+        if (results && results.length > 0) {
+          existingNode = results[0];
+        } else {
+          idMap.delete(bm.id); // Stale map
+        }
+      }
+      
+      // 2. Fallback to title/url matching
+      if (!existingNode) {
+        if (bm.isFolder) {
+          const children = await chrome.bookmarks.getChildren(localParentId).catch(() => []);
+          existingNode = children.find(c => !c.url && c.title === bm.title);
+        } else if (bm.url) {
+          const searchResults = await chrome.bookmarks.search({ url: bm.url });
+          existingNode = searchResults.find(r => r.parentId === localParentId);
+          if (!existingNode && searchResults.length > 0) {
+            existingNode = searchResults[0];
+          }
+        }
       }
 
       let localId;
@@ -603,13 +665,16 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
           await chrome.bookmarks.update(localId, { title: bm.title, url: bm.isFolder ? undefined : bm.url }).catch(()=>{});
         }
         if (existingNode.parentId !== localParentId) {
-          await chrome.bookmarks.move(localId, { parentId: localParentId }).catch(()=>{});
+          await chrome.bookmarks.move(localId, { parentId: localParentId, index: i }).catch(()=>{});
+        } else if (existingNode.index !== i) {
+          await chrome.bookmarks.move(localId, { index: i }).catch(()=>{});
         }
       } else {
         const created = await chrome.bookmarks.create({
           parentId: localParentId,
           title: bm.title,
-          url: bm.isFolder ? undefined : bm.url
+          url: bm.isFolder ? undefined : bm.url,
+          index: i
         });
         localId = created.id;
       }
@@ -624,10 +689,21 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
 
   await processNodes(rootsBar, localBarId);
   await processNodes(rootsOther, localOtherId);
+  
+  // Persist mapping to prevent duplicates/deletions on restart or subsequent syncs
+  await chrome.storage.local.set({ syncIdMap: Object.fromEntries(idMap) });
+
 
   // STEP 2: Prune items not in incoming payload
   if (isFullMirror) {
-    const mappedLocalIds = new Set(Array.from(idMap.values()));
+    const incomingSafariIds = new Set(bookmarks.map(b => b.id));
+    const mappedLocalIds = new Set();
+    for (const [safariId, chromeId] of idMap.entries()) {
+      if (incomingSafariIds.has(safariId)) {
+        mappedLocalIds.add(chromeId);
+      }
+    }
+    
     // Always keep system roots
     mappedLocalIds.add('0');
     mappedLocalIds.add('1');
@@ -668,84 +744,94 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
   }
 }
 
-if (chrome.bookmarks) {
-  chrome.bookmarks.onCreated.addListener(async (id, bookmark) => {
-    if (isApplyingSync) return;
-    
-    let normalizedParentId = bookmark.parentId;
-    if (normalizedParentId === localBarId) normalizedParentId = '1';
-    else if (normalizedParentId === localOtherId) normalizedParentId = '2';
-    else if (normalizedParentId === localMobileId) normalizedParentId = '3';
-
+let bookmarkDebounceTimer = null;
+async function handleBookmarkChange(reason) {
+  if (isApplyingSync) return;
+  
+  // Clear existing timer to debounce
+  if (bookmarkDebounceTimer) {
+    clearTimeout(bookmarkDebounceTimer);
+  }
+  
+  // Wait for 3 seconds of silence
+  bookmarkDebounceTimer = setTimeout(async () => {
+    if (isApplyingSync) return; // double check
+    console.log(`[BrowSync] Bookmark changed (${reason}), preparing to sync after debounce...`);
+    const preTree = await chrome.bookmarks.getTree();
+    const snapshot = [];
+    function flatForBackup(nodes) {
+      for (const node of nodes) {
+        if (node.id !== '0') {
+          let pId = node.parentId;
+          if (pId === localBarId) pId = '1';
+          else if (pId === localOtherId) pId = '2';
+          else if (pId === localMobileId) pId = '3';
+          
+          snapshot.push({
+            id: node.id,
+            title: node.title,
+            url: node.url || null,
+            parentId: pId,
+            isFolder: !node.url,
+            inBookmarksBar: pId === '1'
+          });
+        }
+        if (node.children) flatForBackup(node.children);
+      }
+    }
+    flatForBackup(preTree);
+    console.log(`[BrowSync] Sending pre-sync backup: ${snapshot.length} items`);
     send({
       type: 'sync',
       browser: DETECTED_BROWSER,
-      site: bookmark.url ? safeHostname(bookmark.url) : 'folder',
-      category: 'bookmarks',
-      payload: {
-        kind: 'bookmarks',
-        bookmarks: [{ 
-          id, 
-          title: bookmark.title, 
-          url: bookmark.url, 
-          parentId: normalizedParentId,
-          isFolder: !bookmark.url, 
-          dateAdded: Date.now(), 
-          sourceBrowser: DETECTED_BROWSER 
-        }]
-      },
+      category: 'bookmark_backup',
+      payload: { kind: 'bookmarks', bookmarks: snapshot },
       messageId: crypto.randomUUID(),
-      timestamp: Date.now(),
+      timestamp: Date.now()
     });
-  });
+    
+    // Actually trigger the full sync!
+    await handlePullRequest('bookmarks');
+  }, 10000);
+}
 
-  chrome.bookmarks.onRemoved.addListener((id, removeInfo) => {
+if (chrome.bookmarks) {
+  chrome.bookmarks.onCreated.addListener(() => handleBookmarkChange('created'));
+  chrome.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
     if (isApplyingSync) return;
     
-    let normalizedParentId = removeInfo.parentId;
-    if (normalizedParentId === localBarId) normalizedParentId = '1';
-    else if (normalizedParentId === localOtherId) normalizedParentId = '2';
-    else if (normalizedParentId === localMobileId) normalizedParentId = '3';
+    // Explicitly send the removed bookmark to the server
+    const storageData = await chrome.storage.local.get('syncIdMap');
+    const syncIdMap = storageData.syncIdMap || {};
+    const chromeToSafariId = new Map();
+    for (const [safariId, chromeId] of Object.entries(syncIdMap)) {
+      if (!chromeToSafariId.has(chromeId)) {
+        chromeToSafariId.set(chromeId, safariId);
+      }
+    }
     
-    const node = removeInfo.node || {};
-
+    const mappedId = chromeToSafariId.get(id) || id;
+    const deletedBm = {
+      id: mappedId,
+      title: removeInfo.node.title,
+      url: removeInfo.node.url,
+      isFolder: !removeInfo.node.url
+    };
+    
+    console.log('[BrowSync] Explicit bookmark removed:', deletedBm);
     send({
       type: 'sync',
       browser: DETECTED_BROWSER,
       category: 'bookmarks_removed',
-      payload: { 
-        kind: 'bookmarks_removed', 
-        bookmark: {
-          id,
-          title: node.title || 'Unknown',
-          url: node.url || null,
-          parentId: normalizedParentId,
-          isFolder: !node.url,
-          sourceBrowser: DETECTED_BROWSER,
-          dateAdded: node.dateAdded || Date.now()
-        }
-      },
+      payload: { bookmarksRemoved: deletedBm },
       messageId: crypto.randomUUID(),
-      timestamp: Date.now(),
+      timestamp: Date.now()
     });
+    
+    handleBookmarkChange('removed');
   });
-
-  let bookmarkSyncTimer = null;
-  function triggerFullBookmarkSync() {
-    if (isApplyingSync) return;
-    if (bookmarkSyncTimer) clearTimeout(bookmarkSyncTimer);
-    bookmarkSyncTimer = setTimeout(() => {
-      handlePullRequest('bookmarks');
-    }, 1000);
-  }
-
-  chrome.bookmarks.onChanged.addListener(() => {
-    triggerFullBookmarkSync();
-  });
-
-  chrome.bookmarks.onMoved.addListener(() => {
-    triggerFullBookmarkSync();
-  });
+  chrome.bookmarks.onChanged.addListener(() => handleBookmarkChange('changed'));
+  chrome.bookmarks.onMoved.addListener(() => handleBookmarkChange('moved'));
 }
 
 // ─── Cookies ─────────────────────────────────────────────────────────────────
@@ -1082,31 +1168,36 @@ async function broadcastToContentScripts(category, items, site) {
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
 
+let tabDebounceTimer = null;
 if (chrome.tabs) {
   chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (changeInfo.status !== 'complete' || !tab.url) return;
-    send({
-      type: 'sync',
-      browser: DETECTED_BROWSER,
-      site: safeHostname(tab.url),
-      category: 'browserState',
-      payload: {
-        kind: 'tabs',
-        tabs: [{
-          id: String(tabId),
-          url: tab.url,
-          title: tab.title || '',
-          isActive: tab.active,
-          windowId: String(tab.windowId),
-          index: tab.index,
-          favIconURL: tab.favIconUrl,
-          sourceBrowser: DETECTED_BROWSER,
-          capturedAt: Date.now(),
-        }]
-      },
-      messageId: crypto.randomUUID(),
-      timestamp: Date.now(),
-    });
+    
+    if (tabDebounceTimer) clearTimeout(tabDebounceTimer);
+    tabDebounceTimer = setTimeout(() => {
+      send({
+        type: 'sync',
+        browser: DETECTED_BROWSER,
+        site: safeHostname(tab.url),
+        category: 'browserState',
+        payload: {
+          kind: 'tabs',
+          tabs: [{
+            id: String(tabId),
+            url: tab.url,
+            title: tab.title || '',
+            isActive: tab.active,
+            windowId: String(tab.windowId),
+            index: tab.index,
+            favIconURL: tab.favIconUrl,
+            sourceBrowser: DETECTED_BROWSER,
+            capturedAt: Date.now(),
+          }]
+        },
+        messageId: crypto.randomUUID(),
+        timestamp: Date.now(),
+      });
+    }, 10000);
   });
 }
 

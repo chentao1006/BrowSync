@@ -38,7 +38,16 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
             
             if hasBookmarks && !hasState {
                 content.title = String(localized: "Bookmark Sync Complete", bundle: langBundle)
-                content.body = String(format: String(localized: "Successfully synced %d bookmarks.", bundle: langBundle), stats.bookmarks)
+                var parts: [String] = []
+                if stats.bookmarksAdded > 0 { parts.append(String(format: String(localized: "Added %d", bundle: langBundle), stats.bookmarksAdded)) }
+                if stats.bookmarksDeleted > 0 { parts.append(String(format: String(localized: "Deleted %d", bundle: langBundle), stats.bookmarksDeleted)) }
+                if stats.bookmarksModified > 0 { parts.append(String(format: String(localized: "Modified %d", bundle: langBundle), stats.bookmarksModified)) }
+                let details = parts.joined(separator: ", ")
+                if !details.isEmpty {
+                    content.body = "\(details). " + String(format: String(localized: "Total: %d", bundle: langBundle), stats.bookmarks)
+                } else {
+                    content.body = String(format: String(localized: "Successfully synced %d bookmarks.", bundle: langBundle), stats.bookmarks)
+                }
             } else if hasState && !hasBookmarks {
                 content.title = String(localized: "State Sync Complete", bundle: langBundle)
                 let storageCount = stats.localStorage + stats.sessionStorage

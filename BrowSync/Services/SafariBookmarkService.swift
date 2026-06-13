@@ -13,6 +13,8 @@ import AppKit
 /// As a secondary approach, write directly to Bookmarks.plist when Safari is NOT running.
 @MainActor
 final class SafariBookmarkService {
+    private var fileMonitor: DispatchSourceFileSystemObject?
+    private var isWritingInternally = false
     private let logger = Logger(subsystem: "com.ct106.browsync", category: "SafariBookmarks")
 
     private var bookmarksURL: URL? {
@@ -35,6 +37,16 @@ final class SafariBookmarkService {
             return 0
         }
 
+        fileMonitor?.setEventHandler { [weak self] in
+            guard let self = self else { return }
+            if self.isWritingInternally {
+                self.logger.debug("Ignoring Bookmarks.plist change because it was triggered by a sync write")
+                return
+            }
+            print("[\(Date().ISO8601Format())] Safari Bookmarks.plist changed! Triggering auto-sync...")
+            NotificationCenter.default.post(name: NSNotification.Name("SafariBookmarksChanged"), object: nil)
+        }
+        
         do {
             let data = try Data(contentsOf: url)
             guard var plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
@@ -50,11 +62,20 @@ final class SafariBookmarkService {
 
             let writeBlock = {
                 do {
+                    self.isWritingInternally = true
                     let newData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
                     try newData.write(to: url, options: .atomic)
                     self.logger.info("Wrote \(added) bookmarks to Safari Bookmarks.plist from \(sourceBrowser)")
+                    
+                    // Reset the flag after a delay to allow file system events to clear
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        self.isWritingInternally = false
+                    }
                 } catch {
                     self.logger.error("Failed to write Safari bookmarks: \(error)")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        self.isWritingInternally = false
+                    }
                 }
             }
 
@@ -112,12 +133,57 @@ final class SafariBookmarkService {
 
         var addedCount = 0
 
+        var extractedLeaves = [String: [[String: Any]]]()
+        var extractedFolders = [String: [[String: Any]]]()
+
+        func extractExistingNodes(from nodes: inout [[String: Any]]) {
+            for i in (0..<nodes.count).reversed() {
+                if let url = nodes[i]["URLString"] as? String {
+                    if bookmarks.contains(where: { !$0.isFolder && $0.url == url }) {
+                        let removed = nodes.remove(at: i)
+                        extractedLeaves[url, default: []].append(removed)
+                    }
+                } else if let type = nodes[i]["WebBookmarkType"] as? String, type == "WebBookmarkTypeList", let title = nodes[i]["Title"] as? String {
+                    if bookmarks.contains(where: { $0.isFolder && $0.title == title }) {
+                        var removed = nodes.remove(at: i)
+                        if var subChildren = removed["Children"] as? [[String: Any]] {
+                            extractExistingNodes(from: &subChildren)
+                            removed["Children"] = subChildren
+                        }
+                        extractedFolders[title, default: []].append(removed)
+                    } else if var subChildren = nodes[i]["Children"] as? [[String: Any]] {
+                        extractExistingNodes(from: &subChildren)
+                        nodes[i]["Children"] = subChildren
+                    }
+                } else if var subChildren = nodes[i]["Children"] as? [[String: Any]] {
+                    extractExistingNodes(from: &subChildren)
+                    nodes[i]["Children"] = subChildren
+                }
+            }
+        }
+        
+        extractExistingNodes(from: &children)
+
         func buildNode(from bookmark: SyncBookmark, allBookmarks: [SyncBookmark]) -> [String: Any]? {
-            let uuid = UUID().uuidString.lowercased()
+            var uuid = UUID().uuidString.lowercased()
             if bookmark.isFolder {
+                var nodeBase: [String: Any]? = nil
+                if var existingList = extractedFolders[bookmark.title], !existingList.isEmpty {
+                    nodeBase = existingList.removeLast()
+                    extractedFolders[bookmark.title] = existingList
+                    if let oldUuid = nodeBase?["WebBookmarkUUID"] as? String {
+                        uuid = oldUuid
+                    }
+                }
+                
                 let children = allBookmarks.filter { $0.parentId == bookmark.id }
-                let childNodes = children.compactMap { buildNode(from: $0, allBookmarks: allBookmarks) }
-                if childNodes.isEmpty { return nil } // Ignore empty folders
+                var childNodes = children.compactMap { buildNode(from: $0, allBookmarks: allBookmarks) }
+                
+                // Preserve any Safari-only children that were inside this folder but not in Chrome
+                if let oldChildren = nodeBase?["Children"] as? [[String: Any]] {
+                    childNodes.append(contentsOf: oldChildren)
+                }
+                
                 return [
                     "WebBookmarkType": "WebBookmarkTypeList",
                     "Title": bookmark.title,
@@ -126,6 +192,18 @@ final class SafariBookmarkService {
                 ]
             } else {
                 guard let urlStr = bookmark.url else { return nil }
+                
+                if var existingNodesList = extractedLeaves[urlStr], !existingNodesList.isEmpty {
+                    var existingNode = existingNodesList.removeLast()
+                    extractedLeaves[urlStr] = existingNodesList
+                    
+                    existingNode["Title"] = bookmark.title
+                    var uriDict = existingNode["URIDictionary"] as? [String: Any] ?? [String: Any]()
+                    uriDict["title"] = bookmark.title
+                    existingNode["URIDictionary"] = uriDict
+                    return existingNode
+                }
+                
                 return [
                     "WebBookmarkType": "WebBookmarkTypeLeaf",
                     "URLString": urlStr,
@@ -138,20 +216,75 @@ final class SafariBookmarkService {
 
         let rootChromeIds = Set(["0", "1", "2", "3"])
 
-        func processRoot(chromeParentId: String, safariTitle: String, children: inout [[String: Any]]) {
-            guard let idx = children.firstIndex(where: { ($0["Title"] as? String) == safariTitle }),
-                  var nodeChildren = children[idx]["Children"] as? [[String: Any]] else { return }
-
-            var existingURLs = Set<String>()
-            func scanExistingURLs(nodes: [[String: Any]]) {
-                for node in nodes {
-                    if let url = node["URLString"] as? String { existingURLs.insert(url) }
-                    if let children = node["Children"] as? [[String: Any]] { scanExistingURLs(nodes: children) }
+        func mergeLevel(chromeNodes: [SyncBookmark], safariNodes: inout [[String: Any]], isRoot: Bool = false) {
+            var newSafariNodes = [[String: Any]]()
+            var systemNodes = [(Int, [String: Any])]() // index, node
+            
+            if isRoot {
+                let systemTitles = Set(["BookmarksBar", "BookmarksMenu", "History", "com.apple.ReadingList"])
+                for (i, child) in safariNodes.enumerated().reversed() {
+                    let isSystemTitle = (child["Title"] as? String).map { systemTitles.contains($0) } ?? false
+                    let isReadingList = (child["ReadingListNonSync"] as? Bool) ?? false
+                    let type = child["WebBookmarkType"] as? String
+                    let isSystemType = (type != "WebBookmarkTypeList" && type != "WebBookmarkTypeLeaf")
+                    
+                    if isSystemTitle || isReadingList || isSystemType {
+                        systemNodes.append((i, safariNodes.remove(at: i)))
+                    }
+                }
+                systemNodes.reverse() // Keep original ascending order
+            }
+            
+            for bookmark in chromeNodes {
+                if bookmark.isFolder {
+                    if let idx = safariNodes.firstIndex(where: { ($0["WebBookmarkType"] as? String) == "WebBookmarkTypeList" && ($0["Title"] as? String) == bookmark.title }) {
+                        var existingFolder = safariNodes.remove(at: idx)
+                        var subChildren = existingFolder["Children"] as? [[String: Any]] ?? []
+                        let chromeSub = bookmarks.filter { $0.parentId == bookmark.id }
+                        mergeLevel(chromeNodes: chromeSub, safariNodes: &subChildren, isRoot: false)
+                        existingFolder["Children"] = subChildren
+                        newSafariNodes.append(existingFolder)
+                    } else {
+                        if let node = buildNode(from: bookmark, allBookmarks: bookmarks) {
+                            newSafariNodes.append(node)
+                            addedCount += 1
+                        }
+                    }
+                } else if let urlStr = bookmark.url {
+                    if var existingNodesList = extractedLeaves[urlStr], !existingNodesList.isEmpty {
+                        var existingNode = existingNodesList.removeLast()
+                        extractedLeaves[urlStr] = existingNodesList
+                        
+                        existingNode["Title"] = bookmark.title
+                        var uriDict = existingNode["URIDictionary"] as? [String: Any] ?? [String: Any]()
+                        uriDict["title"] = bookmark.title
+                        existingNode["URIDictionary"] = uriDict
+                        newSafariNodes.append(existingNode)
+                        addedCount += 1
+                    } else {
+                        if let node = buildNode(from: bookmark, allBookmarks: bookmarks) {
+                            newSafariNodes.append(node)
+                            addedCount += 1
+                        }
+                    }
                 }
             }
-            // Scan global children to prevent duplicating root bookmarks into BookmarksMenu
-            scanExistingURLs(nodes: children)
+            
+            // Append any remaining Safari-only items that were not in Chrome
+            newSafariNodes.append(contentsOf: safariNodes)
+            
+            if isRoot {
+                // Re-insert system nodes at their original indices (or as close as possible)
+                for (originalIndex, node) in systemNodes {
+                    let insertIndex = min(originalIndex, newSafariNodes.count)
+                    newSafariNodes.insert(node, at: insertIndex)
+                }
+            }
+            
+            safariNodes = newSafariNodes
+        }
 
+        func processRoot(chromeParentId: String, safariTitle: String?, children: inout [[String: Any]]) {
             let topLevelBookmarks = bookmarks.filter {
                 guard !rootChromeIds.contains($0.id) else { return false }
                 let pid = $0.parentId ?? "1"
@@ -162,25 +295,45 @@ final class SafariBookmarkService {
                 }
             }
 
-            if isFullMirror {
-                nodeChildren = topLevelBookmarks.compactMap { buildNode(from: $0, allBookmarks: bookmarks) }
-                addedCount += topLevelBookmarks.count
-            } else {
-                for bookmark in topLevelBookmarks {
-                    if !bookmark.isFolder, let url = bookmark.url, existingURLs.contains(url) { continue }
-                    if bookmark.isFolder && nodeChildren.contains(where: { ($0["Title"] as? String) == bookmark.title }) { continue }
+            if let safariTitle = safariTitle {
+                guard let idx = children.firstIndex(where: { ($0["Title"] as? String) == safariTitle }),
+                      var nodeChildren = children[idx]["Children"] as? [[String: Any]] else { return }
 
-                    if let node = buildNode(from: bookmark, allBookmarks: bookmarks) {
-                        nodeChildren.append(node)
-                        addedCount += 1
+                if isFullMirror {
+                    nodeChildren = topLevelBookmarks.compactMap { buildNode(from: $0, allBookmarks: bookmarks) }
+                    addedCount += topLevelBookmarks.count
+                } else {
+                    mergeLevel(chromeNodes: topLevelBookmarks, safariNodes: &nodeChildren, isRoot: false)
+                }
+                children[idx]["Children"] = nodeChildren
+            } else {
+                if isFullMirror {
+                    let systemTitles = Set(["BookmarksBar", "BookmarksMenu", "History", "com.apple.ReadingList"])
+                    children.removeAll { child in
+                        if let title = child["Title"] as? String, systemTitles.contains(title) { return false }
+                        if let isReadingList = child["ReadingListNonSync"] as? Bool, isReadingList { return false }
+                        if let type = child["WebBookmarkType"] as? String, type != "WebBookmarkTypeList" && type != "WebBookmarkTypeLeaf" { return false }
+                        return true
                     }
+                    let newNodes = topLevelBookmarks.compactMap { buildNode(from: $0, allBookmarks: bookmarks) }
+                    children.append(contentsOf: newNodes)
+                    addedCount += newNodes.count
+                } else {
+                    mergeLevel(chromeNodes: topLevelBookmarks, safariNodes: &children, isRoot: true)
                 }
             }
-            children[idx]["Children"] = nodeChildren
         }
 
         processRoot(chromeParentId: "1", safariTitle: "BookmarksBar", children: &children)
-        processRoot(chromeParentId: "2", safariTitle: "BookmarksMenu", children: &children)
+        processRoot(chromeParentId: "2", safariTitle: nil, children: &children)
+
+        // Restore any extracted nodes that weren't placed back (e.g., they were moved to a system folder not managed here)
+        for (_, nodesList) in extractedLeaves {
+            children.append(contentsOf: nodesList)
+        }
+        for (_, nodesList) in extractedFolders {
+            children.append(contentsOf: nodesList)
+        }
 
         plist["Children"] = children
         return addedCount

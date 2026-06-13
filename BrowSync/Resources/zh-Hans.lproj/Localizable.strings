@@ -369,3 +369,20 @@
 "Successfully synced %d cookies and %d storage items." = "已成功同步 %d 个 Cookie 和 %d 项存储数据。";
 "BrowSync Complete" = "BrowSync 同步完成";
 "Synced %d bookmarks and %d state items." = "已同步 %d 条书签和 %d 项状态数据。";
+
+"Deleted Bookmarks (Trash Bin)" = "已删除书签 (回收站)";
+"No deleted bookmarks" = "回收站为空";
+"These bookmarks were deleted recently. You can restore them individually." = "以下是最近被删除的书签。你可以单独恢复它们。";
+"Clear All" = "清空回收站";
+"Delete Permanently" = "彻底删除";
+"This deleted bookmark will be permanently removed from the trash bin." = "此书签将从回收站彻底移除，无法再恢复。";
+"Confirm Clear All" = "确认清空";
+"Are you sure you want to permanently delete all bookmarks in the trash bin?" = "你确定要彻底清空回收站中的所有书签吗？";
+
+"Added %d" = "新增 %d";
+"Deleted %d" = "删除 %d";
+"Modified %d" = "修改 %d";
+"Total: %d" = "总计: %d";
+"Restore All" = "全部恢复";
+"Confirm Restore All" = "确认全部恢复";
+"Are you sure you want to restore all bookmarks from the trash bin?" = "确定要从回收站恢复所有书签吗？";

@@ -355,6 +355,7 @@ extension AppState: DaemonServerDelegate {
 
     nonisolated func daemonServer(_ server: DaemonServer, didReceivePullBookmarks clientId: String) {
         Task { @MainActor in
+            guard self.settingsService.syncSettings.enabledCategories.contains(.bookmarks) else { return }
             let strategy = self.settingsService.syncSettings.bookmarkSyncStrategy
             let sourceBrowser = self.settingsService.syncSettings.bookmarkSourceBrowser
             
@@ -366,22 +367,58 @@ extension AppState: DaemonServerDelegate {
             if sourceBrowser == .chrome && clientId.contains("chrome") { return }
             
             var bookmarksToSend: [Bookmark]? = nil
+            var currentSafariBms: [SyncBookmark] = []
             
             if sourceBrowser == .safari {
                 let safariSvc = SafariBookmarkService()
-                let safariBms = safariSvc.readBookmarks()
-                if !safariBms.isEmpty {
-                    bookmarksToSend = safariBms.map { b in
+                currentSafariBms = safariSvc.readBookmarks()
+                if !currentSafariBms.isEmpty {
+                    bookmarksToSend = currentSafariBms.map { b in
                         Bookmark(id: b.id, title: b.title, url: b.url, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
                     }
                 }
             } else {
-                if let latestBackup = self.backupService.backups.first(where: { $0.sourceBrowser.starts(with: sourceBrowser.rawValue) }) {
-                    bookmarksToSend = self.backupService.getBookmarks(for: latestBackup.id)
+                if let snapshot = self.backupService.getSnapshot(sourceBrowser: sourceBrowser.rawValue) {
+                    bookmarksToSend = snapshot
                 }
             }
             
             guard let bookmarks = bookmarksToSend, !bookmarks.isEmpty else { return }
+            
+            // ── Offline Deletion Sync ────────────────────────────────────────────
+            // Compare Safari's current state to this client's last known snapshot.
+            // Any bookmark that was in the client's snapshot but is no longer in
+            // Safari was deleted while the client was offline. Send explicit
+            // bookmarks_removed so the client removes them on reconnect.
+            // We compare by URL (for leaves) and title (for folders) — not by UUID
+            // — to avoid false positives from Safari's UUID drift.
+            if sourceBrowser == .safari && !currentSafariBms.isEmpty,
+               let clientSnapshot = self.backupService.getSnapshot(sourceBrowser: clientId) {
+                let currentUrls = Set(currentSafariBms.compactMap { $0.url }.map { $0.lowercased() })
+                let currentFolderTitles = Set(currentSafariBms.filter { $0.isFolder }.map { $0.title.lowercased() })
+                
+                let offlineDeleted = clientSnapshot.filter { bm in
+                    if let urlOpt = bm.url, let url = urlOpt, currentUrls.contains(url.lowercased()) { return false }
+                    if bm.isFolder == true && currentFolderTitles.contains((bm.title ?? "").lowercased()) { return false }
+                    return true
+                }
+                
+                if !offlineDeleted.isEmpty {
+                    self.syncService.log("Sending \(offlineDeleted.count) offline deletions to [\(clientId)]")
+                    for deletedBm in offlineDeleted {
+                        let delMsg = WSMessage(
+                            type: .sync,
+                            site: "*",
+                            category: "bookmarks_removed",
+                            payload: .bookmarksRemoved(deletedBm),
+                            messageId: UUID().uuidString,
+                            timestamp: Date().timeIntervalSince1970
+                        )
+                        server.send(delMsg, toClientId: clientId)
+                    }
+                }
+            }
+            // ────────────────────────────────────────────────────────────────────
             
             var msg = WSMessage(
                 type: .sync,
@@ -391,7 +428,7 @@ extension AppState: DaemonServerDelegate {
                 messageId: UUID().uuidString,
                 timestamp: Date().timeIntervalSince1970
             )
-            msg.isFullMirror = (strategy == .oneWay)
+            msg.isFullMirror = false // NEVER full mirror, to prevent mass-deletion on client restart
             // Only send to the requesting client
             let sourceName = sourceBrowser == .safari ? "Safari" : "Chrome"
             self.syncService.log("Answering pull request from [\(clientId)]: Pushed \(bookmarks.count) \(sourceName) bookmarks (isFullMirror: \(msg.isFullMirror ?? false))")
