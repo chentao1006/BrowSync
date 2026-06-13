@@ -2,7 +2,7 @@
 
 [English] | [简体中文](README_zh.md)
 
-**BrowSync** is a macOS native app that makes Safari, Chrome, Arc, Edge, and Brave work together. It unifies the browsing experience through a local WebSocket daemon, browser extensions, URL routing rules, and data synchronization.
+**BrowSync** is a cross-browser routing and sync hub for macOS. It unites Safari and all Chromium-based browsers, intelligently routing links and syncing bookmarks and sessions in real-time.
 
 [![Download BrowSync](https://img.shields.io/badge/Download-Latest%20Release-blue?style=for-the-badge&logo=apple)](https://github.com/chentao1006/browsync/releases/latest) <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh"><img src="BrowSync/Resources/Marketing/chrome-web-store-badge.png" height="28" alt="Available in the Chrome Web Store"></a>
 
@@ -17,13 +17,22 @@ brew install --cask chentao1006/tap/browsync
 ## 🚀 Features
 
 - **URL Routing**: Register BrowSync as the default macOS browser to direct links to specific browsers based on domain, URL patterns, query strings, source application, or time of day.
-- **Bookmark Sync**: Sync bookmarks in real-time across Safari and Chromium browsers (Chrome, Arc, Edge, Brave).
+- **Bookmark Sync**: Sync bookmarks in real-time across Safari and all Chromium-based browsers.
 - **State Sync**: Sync Cookies, LocalStorage, and sessionStorage across supported browsers to maintain login states.
 - **Tab Sharing**: View active tabs across browsers. It filters out incognito tabs and non-HTTP(S) local pages, and deduplicates URLs.
 - **Sync Strategies**: Supports unidirectional (master-slave), last-write-wins (based on access time), and bidirectional merging.
 - **Site Control**: Manage sync scope with whitelist/blacklist rules and per-site policies.
 - **Local Network**: Communication is handled locally via a WebSocket daemon (`ws://127.0.0.1:62333`). No external servers are used.
 - **Native macOS App**: Built with SwiftUI. Supports Dark/Light themes, Menu Bar integration, and Launch at Login.
+
+## 📸 Screenshots
+
+| | |
+|:---:|:---:|
+| ![Screenshot 1](screenshots/000001.jpg) | ![Screenshot 2](screenshots/000002.jpg) |
+| ![Screenshot 3](screenshots/000003.jpg) | ![Screenshot 4](screenshots/000004.jpg) |
+| ![Screenshot 5](screenshots/000005.jpg) | ![Screenshot 6](screenshots/000006.jpg) |
+| ![Screenshot 7](screenshots/000007.jpg) | ![Screenshot 8](screenshots/000008.jpg) |
 
 ## 🛠 Installation & Setup
 
@@ -73,7 +82,7 @@ Then in Xcode:
 
 ### 4. Install Browser Extension
 
-**Chromium Browsers (Chrome, Arc, Edge, Brave)**:
+**Chromium-based Browsers**:
 You can install the BrowSync extension directly from the Chrome Web Store:
 [Install from Chrome Web Store](https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh)
 
@@ -85,7 +94,7 @@ The app includes a native Safari extension. After running the BrowSync app, you 
 ### System Architecture
 
 ```text
-Safari Extension           Chrome / Arc / Edge / Brave Extension
+Safari Extension                Chromium Extension
       │                                    │
       └──────────── WebSocket ─────────────┘
                          │
@@ -117,7 +126,7 @@ BrowSync/
 │       ├── popup.html
 │       └── popup.js
 │
-├── ChromiumExtension/          # Shared MV3 extension (Chrome/Arc/Edge/Brave)
+├── ChromiumExtension/          # Shared MV3 extension (Chromium-based)
 │   ├── manifest.json
 │   ├── background/
 │   │   └── service-worker.js   # Same logic as Safari background.js

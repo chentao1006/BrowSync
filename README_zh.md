@@ -2,7 +2,7 @@
 
 [简体中文] | [English](README.md)
 
-**同览 (BrowSync)** 是一款 macOS 原生应用，让 Safari、Chrome、Arc、Edge 和 Brave 协同工作。它通过本地 WebSocket 守护进程、浏览器扩展、URL 分流规则以及数据同步，统一浏览体验。
+**同览 (BrowSync)** 是一款 macOS 原生的跨浏览器分流与同步中枢。它打通 Safari 与所有 Chromium 内核浏览器，智能分流链接并实时同步数据，为您统一浏览体验。
 
 [![下载 同览](https://img.shields.io/badge/同览-最新版本-blue?style=for-the-badge&logo=apple)](https://github.com/chentao1006/browsync/releases/latest) <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh"><img src="BrowSync/Resources/Marketing/chrome-web-store-badge.png" height="28" alt="Available in the Chrome Web Store"></a>
 
@@ -17,13 +17,22 @@ brew install --cask chentao1006/tap/browsync
 ## 🚀 主要功能
 
 - **URL 分流**：将同览设为 macOS 默认浏览器后，可根据域名、URL 规则、参数、来源应用或时间段，将链接自动定向到指定的浏览器。
-- **书签同步**：在 Safari 和所有 Chromium 浏览器（Chrome、Arc、Edge、Brave）之间实时同步书签。
+- **书签同步**：在 Safari 和所有 Chromium 内核浏览器之间实时同步书签。
 - **状态同步**：在各浏览器之间同步 Cookie、LocalStorage 和 sessionStorage，保持登录状态一致。
 - **标签页共享**：跨浏览器查看当前打开的标签页。自动过滤无痕模式及非 HTTP(S) 协议页面，并对重复的 URL 进行去重。
 - **同步策略**：支持单向同步（主从模式）、基于访问时间的最后写入者胜出、双向合并。
 - **站点控制**：通过白名单/黑名单管理同步范围，支持为特定网站设置独立策略。
 - **本地网络**：通信通过本地 WebSocket 守护进程 (`ws://127.0.0.1:62333`) 进行，不依赖外部服务器。
 - **原生 macOS 应用**：使用 SwiftUI 构建，支持深色/浅色主题、菜单栏集成和登录时启动。
+
+## 📸 界面截图
+
+| | |
+|:---:|:---:|
+| ![截图 1](screenshots/000001.jpg) | ![截图 2](screenshots/000002.jpg) |
+| ![截图 3](screenshots/000003.jpg) | ![截图 4](screenshots/000004.jpg) |
+| ![截图 5](screenshots/000005.jpg) | ![截图 6](screenshots/000006.jpg) |
+| ![截图 7](screenshots/000007.jpg) | ![截图 8](screenshots/000008.jpg) |
 
 ## 🛠 安装与设置
 
@@ -73,7 +82,7 @@ open BrowSync.xcodeproj
 
 ### 4. 安装浏览器扩展
 
-**Chromium 浏览器 (Chrome, Arc, Edge, Brave)**:
+**Chromium 内核浏览器**:
 您可以直接从 Chrome 网上应用店安装同览 (BrowSync) 扩展：
 [前往 Chrome Web Store 安装](https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh)
 
@@ -85,7 +94,7 @@ open BrowSync.xcodeproj
 ### 系统架构
 
 ```text
-Safari 扩展                 Chrome / Arc / Edge / Brave 扩展
+Safari 扩展                 Chromium 扩展
       │                                    │
       └──────────── WebSocket ─────────────┘
                          │
@@ -117,7 +126,7 @@ BrowSync/
 │       ├── popup.html
 │       └── popup.js
 │
-├── ChromiumExtension/          # 共享 MV3 扩展 (Chrome/Arc/Edge/Brave)
+├── ChromiumExtension/          # 共享 MV3 扩展 (Chromium 内核)
 │   ├── manifest.json
 │   ├── background/
 │   │   └── service-worker.js   # 逻辑与 Safari background.js 相同
