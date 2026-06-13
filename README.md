@@ -205,4 +205,4 @@ BrowSync stores its data locally in your Application Support folder:
 
 ## 🛡 License
 
-© 2026 BrowSync. All rights reserved.
+This project is licensed under the MIT License. See [LICENSE](LICENSE).

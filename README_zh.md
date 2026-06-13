@@ -205,4 +205,4 @@ BrowSync 将其数据本地存储在您的 Application Support 文件夹中：
 
 ## 🛡 许可证
 
-© 2026 BrowSync. 保留所有权利。
+本项目采用 MIT License，详见 [LICENSE](LICENSE)。
