@@ -1,24 +1,25 @@
 {
   "manifest_version": 3,
   "name": "__MSG_extName__",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
-
   "background": {
     "service_worker": "background/service-worker.js",
     "type": "module"
   },
-
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content/content-script.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content/content-script.js"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }
   ],
-
   "permissions": [
     "bookmarks",
     "tabs",
@@ -28,17 +29,14 @@
     "alarms",
     "unlimitedStorage"
   ],
-
   "host_permissions": [
     "<all_urls>"
   ],
-
   "icons": {
     "16": "icons/ext-icon16.png",
     "48": "icons/ext-icon48.png",
     "128": "icons/ext-icon128.png"
   },
-
   "action": {
     "default_popup": "popup/popup.html",
     "default_title": "__MSG_extName__",
