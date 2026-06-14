@@ -1,6 +1,9 @@
 #!/bin/bash
 
 # Configuration
+# Ensure we use the newer git from Homebrew if available, as older git versions (like 2.33)
+# do not support gpg.format = ssh and will fail to parse ~/.gitconfig.
+export PATH="/opt/homebrew/bin:$PATH"
 PLIST_PATH="BrowSync/Resources/Info.plist"
 PROJECT_YML="project.yml"
 RESULT_DIR="./dist"
