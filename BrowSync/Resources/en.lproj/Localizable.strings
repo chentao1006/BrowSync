@@ -361,3 +361,6 @@
 "Restore All" = "Restore All";
 "Confirm Restore All" = "Confirm Restore All";
 "Are you sure you want to restore all bookmarks from the trash bin?" = "Are you sure you want to restore all bookmarks from the trash bin?";
+
+"iCloud Sync" = "iCloud Sync";
+"Synchronize all settings, rules, and open tabs across your Mac devices using iCloud." = "Synchronize all settings, rules, and open tabs across your Mac devices using iCloud.";

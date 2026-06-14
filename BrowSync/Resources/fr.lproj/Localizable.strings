@@ -332,3 +332,6 @@
 "Successfully synced %d cookies and %d storage items." = "%d cookies et %d éléments de stockage synchronisés avec succès.";
 "BrowSync Complete" = "BrowSync terminé";
 "Synced %d bookmarks and %d state items." = "%d favoris et %d éléments d'état synchronisés.";
+
+"iCloud Sync" = "Synchronisation iCloud";
+"Synchronize all settings, rules, and open tabs across your Mac devices using iCloud." = "Synchronisez tous les paramètres, règles et onglets ouverts sur vos appareils Mac à l’aide d’iCloud.";

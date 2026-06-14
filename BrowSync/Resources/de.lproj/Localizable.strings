@@ -74,7 +74,7 @@
 
 "Automatic Sync" = "Automatische Synchronisierung";
 "Sync automatically whenever changes are detected" = "Automatisch synchronisieren, wenn Änderungen erkannt werden";
-"iCloud Sync" = "iCloud Sync";
+"iCloud Sync" = "iCloud-Synchronisierung";
 "Keep sync data in iCloud across your Macs" = "Synchronisierungsdaten in iCloud halten";
 
 "App Behavior" = "App-Verhalten";
@@ -331,3 +331,6 @@
 "Successfully synced %d cookies and %d storage items." = "Erfolgreich %d Cookies und %d Speicherobjekte synchronisiert.";
 "BrowSync Complete" = "BrowSync abgeschlossen";
 "Synced %d bookmarks and %d state items." = "%d Lesezeichen und %d Statusobjekte synchronisiert.";
+
+"iCloud Sync" = "iCloud-Synchronisierung";
+"Synchronize all settings, rules, and open tabs across your Mac devices using iCloud." = "Synchronisieren Sie alle Einstellungen, Regeln und geöffneten Tabs auf Ihren Mac-Geräten mit iCloud.";

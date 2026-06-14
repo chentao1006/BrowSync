@@ -333,3 +333,6 @@
 "Successfully synced %d cookies and %d storage items." = "성공적으로 %d개의 쿠키와 %d개의 저장소 항목을 동기화했습니다.";
 "BrowSync Complete" = "BrowSync 완료";
 "Synced %d bookmarks and %d state items." = "%d개의 북마크와 %d개의 상태 항목을 동기화했습니다.";
+
+"iCloud Sync" = "iCloud 동기화";
+"Synchronize all settings, rules, and open tabs across your Mac devices using iCloud." = "iCloud를 사용하여 모든 Mac 기기 간에 설정, 규칙 및 열려 있는 탭을 동기화합니다.";

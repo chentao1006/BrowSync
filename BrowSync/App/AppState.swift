@@ -15,6 +15,7 @@ final class AppState: ObservableObject {
     let settingsService = SettingsService()
     let notificationService = NotificationService()
     let backupService = BackupService()
+    let iCloudSyncManager = ICloudSyncManager()
 
     private var cancellables = Set<AnyCancellable>()
     
@@ -30,7 +31,11 @@ final class AppState: ObservableObject {
     @Published var activeDomainStrategy: String = "Merge"
 
     // Tab Sharing state
-    @Published var remoteTabsCache: [Browser: [BrowserTab]] = [:]
+    @Published var remoteTabsCache: [Browser: [BrowserTab]] = [:] {
+        didSet {
+            iCloudSyncManager.uploadTabs(remoteTabsCache)
+        }
+    }
 
 
     // Router state
@@ -74,6 +79,8 @@ final class AppState: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+            
+        iCloudSyncManager.setup(settingsService: settingsService)
         
         checkFullDiskAccess()
     }
@@ -399,7 +406,7 @@ extension AppState: DaemonServerDelegate {
                 
                 let offlineDeleted = clientSnapshot.filter { bm in
                     if let urlOpt = bm.url, let url = urlOpt, currentUrls.contains(url.lowercased()) { return false }
-                    if bm.isFolder == true && currentFolderTitles.contains((bm.title ?? "").lowercased()) { return false }
+                    if bm.isFolder == true && currentFolderTitles.contains(bm.title.lowercased()) { return false }
                     return true
                 }
                 

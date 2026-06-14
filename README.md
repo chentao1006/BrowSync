@@ -24,6 +24,7 @@ brew install --cask chentao1006/tap/browsync
 - **Site Control**: Manage sync scope with whitelist/blacklist rules and per-site policies.
 - **Local Network**: Communication is handled locally via a WebSocket daemon (`ws://127.0.0.1:62333`). No external servers are used.
 - **Native macOS App**: Built with SwiftUI. Supports Dark/Light themes, Menu Bar integration, and Launch at Login.
+- **iCloud Sync**: Automatically sync your routing rules, settings, and site preferences across all your Mac devices via iCloud.
 
 ## 📸 Screenshots
 
@@ -198,6 +199,7 @@ BrowSync stores its data locally in your Application Support folder:
 | Granular site sync control | ✅ |
 | Safari & Chromium MV3 Extensions | ✅ |
 | Dark/Light/System theme & EN/zh-Hans localization | ✅ |
+| iCloud Sync for rules and settings | ✅ |
 
 ## ⚠️ Important Notes
 

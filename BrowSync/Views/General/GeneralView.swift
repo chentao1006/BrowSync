@@ -34,6 +34,11 @@ struct GeneralView: View {
                     ))
 
                     Toggle(String(localized: "Hide Window on Startup", bundle: langBundle.bundle), isOn: settings.hideWindowOnStartup)
+                    
+                    Toggle(String(localized: "iCloud Sync", bundle: langBundle.bundle), isOn: settings.iCloudSync)
+                    Text(String(localized: "Synchronize all settings, rules, and open tabs across your Mac devices using iCloud.", bundle: langBundle.bundle))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
 
                 // Appearance

@@ -386,3 +386,6 @@
 "Restore All" = "全部恢复";
 "Confirm Restore All" = "确认全部恢复";
 "Are you sure you want to restore all bookmarks from the trash bin?" = "确定要从回收站恢复所有书签吗？";
+
+"iCloud Sync" = "iCloud 同步";
+"Synchronize all settings, rules, and open tabs across your Mac devices using iCloud." = "使用 iCloud 在所有 Mac 设备间同步所有设置、规则和已打开的标签页。";

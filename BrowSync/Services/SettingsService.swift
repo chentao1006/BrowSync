@@ -26,8 +26,11 @@ struct GeneralSettings: Codable, Equatable {
     var analyticsOptInPrompted: Bool = false
     var firstLaunchDate: Date? = nil
     
+    // Sync
+    var iCloudSync: Bool = false
+    
     private enum CodingKeys: String, CodingKey {
-        case launchAtLogin, hideWindowOnStartup, menuBarMode, theme, language, notifySyncComplete, notifyBrowserConnected, autoUpdate, analyticsEnabled, analyticsOptInPrompted, firstLaunchDate
+        case launchAtLogin, hideWindowOnStartup, menuBarMode, theme, language, notifySyncComplete, notifyBrowserConnected, autoUpdate, analyticsEnabled, analyticsOptInPrompted, firstLaunchDate, iCloudSync
     }
 
     init() {}
@@ -45,6 +48,7 @@ struct GeneralSettings: Codable, Equatable {
         analyticsEnabled = try container.decodeIfPresent(Bool.self, forKey: .analyticsEnabled) ?? false
         analyticsOptInPrompted = try container.decodeIfPresent(Bool.self, forKey: .analyticsOptInPrompted) ?? false
         firstLaunchDate = try container.decodeIfPresent(Date.self, forKey: .firstLaunchDate)
+        iCloudSync = try container.decodeIfPresent(Bool.self, forKey: .iCloudSync) ?? false
     }
 }
 
@@ -166,6 +170,11 @@ final class SettingsService: ObservableObject {
             let bundle = SettingsBundle(general: general, sync: syncSettings, router: routerSettings)
             let data = try JSONEncoder().encode(bundle)
             try data.write(to: settingsURL, options: .atomicWrite)
+            
+            // Push to iCloud if enabled
+            Task { @MainActor in
+                AppState.shared.iCloudSyncManager.uploadSettings(from: self)
+            }
         } catch {
             logger.error("Failed to save settings: \(error)")
         }
@@ -191,8 +200,256 @@ final class SettingsService: ObservableObject {
 
 // MARK: - Settings Bundle (Codable wrapper)
 
-private struct SettingsBundle: Codable {
+struct SettingsBundle: Codable {
     var general: GeneralSettings
     var sync: SyncSettings
     var router: RouterSettings?
+}
+// ICloudSyncManager.swift
+// BrowSync — iCloud Synchronization
+
+import Foundation
+import os.log
+
+@MainActor
+final class ICloudSyncManager: ObservableObject {
+    private let logger = Logger(subsystem: "com.ct106.browsync", category: "ICloudSyncManager")
+    
+    // Using NSUbiquitousKeyValueStore.default
+    private let kvStore = NSUbiquitousKeyValueStore.default
+    
+    // Keys
+    private let settingsKey = "browsync_settings"
+    private let tabsPrefix = "browsync_tabs_"
+    
+    // The local device ID
+    private let deviceID: String
+    
+    // Prevent upload loops
+    private var isDownloadingRemoteTabs = false
+    private var isDownloadingSettings = false
+    
+    // Dependencies
+    private weak var settingsService: SettingsService?
+    
+    init() {
+        self.deviceID = Host.current().localizedName ?? UUID().uuidString
+        logger.info("ICloudSyncManager initialized with device ID: \(self.deviceID)")
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(storeDidChange(_:)),
+            name: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
+            object: kvStore
+        )
+        
+        // Trigger initial sync
+        kvStore.synchronize()
+    }
+    
+    func setup(settingsService: SettingsService) {
+        self.settingsService = settingsService
+        
+        if settingsService.general.iCloudSync {
+            uploadSettings(from: settingsService)
+        }
+    }
+    
+    // MARK: - Upload Settings
+    
+    func uploadSettings(from service: SettingsService) {
+        guard service.general.iCloudSync else { return }
+        guard !isDownloadingSettings else { return }
+        
+        do {
+            let bundle = SettingsBundle(general: service.general, sync: service.syncSettings, router: service.routerSettings)
+            let data = try JSONEncoder().encode(bundle)
+            kvStore.set(data, forKey: settingsKey)
+            kvStore.synchronize()
+            logger.info("Uploaded settings to iCloud.")
+        } catch {
+            logger.error("Failed to encode settings for iCloud: \(error)")
+        }
+    }
+    
+    // MARK: - Upload Tabs
+    
+    func uploadTabs(_ tabsCache: [Browser: [BrowserTab]]) {
+        guard let service = settingsService, service.general.iCloudSync else { return }
+        guard !isDownloadingRemoteTabs else { return }
+        
+        // Only upload truly local tabs, filter out remote iCloud tabs
+        var localTabsToUpload: [Browser: [BrowserTab]] = [:]
+        for (browser, tabs) in tabsCache {
+            localTabsToUpload[browser] = tabs.filter { !$0.id.hasPrefix("icloud_") }
+        }
+        
+        let key = tabsPrefix + deviceID
+        do {
+            // Encode the tabs dictionary
+            let data = try JSONEncoder().encode(localTabsToUpload)
+            kvStore.set(data, forKey: key)
+            kvStore.synchronize()
+            logger.info("Uploaded tabs to iCloud for device: \(self.deviceID)")
+        } catch {
+            logger.error("Failed to encode tabs for iCloud: \(error)")
+        }
+    }
+    
+    // MARK: - iCloud Observations
+    
+    @objc private func storeDidChange(_ notification: Notification) {
+        Task { @MainActor in
+            guard let service = settingsService, service.general.iCloudSync else { return }
+            
+            guard let userInfo = notification.userInfo else { return }
+            guard let reasonForChange = userInfo[NSUbiquitousKeyValueStoreChangeReasonKey] as? Int else { return }
+            
+            // We can check changed keys, but for simplicity we'll just check if settings or tabs changed
+            guard let changedKeys = userInfo[NSUbiquitousKeyValueStoreChangedKeysKey] as? [String] else { return }
+            
+            logger.info("iCloud store changed remotely: \(changedKeys)")
+            
+            if changedKeys.contains(settingsKey) {
+                downloadSettings()
+            }
+            
+            if changedKeys.contains(where: { $0.hasPrefix(tabsPrefix) && $0 != tabsPrefix + deviceID }) {
+                downloadRemoteTabs()
+            }
+        }
+    }
+    
+    private func downloadSettings() {
+        guard let service = settingsService else { return }
+        guard let data = kvStore.data(forKey: settingsKey) else { return }
+        
+        do {
+            let remoteBundle = try JSONDecoder().decode(SettingsBundle.self, from: data)
+            let wasSyncEnabled = service.general.iCloudSync
+            
+            isDownloadingSettings = true
+            
+            // General Settings: latest wins
+            service.general = remoteBundle.general
+            service.general.iCloudSync = wasSyncEnabled
+            
+            // Router Settings: Merge rules
+            let localRules = service.routerSettings.rules
+            let remoteRules = remoteBundle.router?.rules ?? []
+            
+            var mergedRules = localRules
+            for remoteRule in remoteRules {
+                if let idx = mergedRules.firstIndex(where: { $0.id == remoteRule.id }) {
+                    mergedRules[idx] = remoteRule
+                } else {
+                    mergedRules.append(remoteRule)
+                }
+            }
+            
+            service.routerSettings.isEnabled = remoteBundle.router?.isEnabled ?? service.routerSettings.isEnabled
+            service.routerSettings.fallbackBrowserId = remoteBundle.router?.fallbackBrowserId ?? service.routerSettings.fallbackBrowserId
+            service.routerSettings.rules = mergedRules
+            
+            // Sync Settings: Merge collections
+            let remoteSync = remoteBundle.sync
+            service.syncSettings.conflictStrategy = remoteSync.conflictStrategy
+            service.syncSettings.bookmarkSyncStrategy = remoteSync.bookmarkSyncStrategy
+            service.syncSettings.bookmarkSourceBrowser = remoteSync.bookmarkSourceBrowser
+            service.syncSettings.bookmarkAutoSync = remoteSync.bookmarkAutoSync
+            service.syncSettings.browserDataSyncStrategy = remoteSync.browserDataSyncStrategy
+            service.syncSettings.stateSourceBrowser = remoteSync.stateSourceBrowser
+            service.syncSettings.websiteListPolicy = remoteSync.websiteListPolicy
+            service.syncSettings.tabSharingEnabled = remoteSync.tabSharingEnabled
+            service.syncSettings.automaticSync = remoteSync.automaticSync
+            
+            // Union of Sets
+            service.syncSettings.bookmarkParticipatingBrowsers.formUnion(remoteSync.bookmarkParticipatingBrowsers)
+            service.syncSettings.stateParticipatingBrowsers.formUnion(remoteSync.stateParticipatingBrowsers)
+            service.syncSettings.tabSharingParticipatingBrowsers.formUnion(remoteSync.tabSharingParticipatingBrowsers)
+            service.syncSettings.enabledCategories.formUnion(remoteSync.enabledCategories)
+            
+            // Merge WebsiteSettings
+            var mergedSites = service.syncSettings.websiteSettings
+            for remoteSite in remoteSync.websiteSettings {
+                if let idx = mergedSites.firstIndex(where: { $0.domain == remoteSite.domain }) {
+                    mergedSites[idx] = remoteSite
+                } else {
+                    mergedSites.append(remoteSite)
+                }
+            }
+            service.syncSettings.websiteSettings = mergedSites
+            
+            service.save() // Save locally
+            isDownloadingSettings = false
+            
+            logger.info("Successfully applied and merged iCloud settings to local store.")
+            
+            // Because save() skips iCloud upload during isDownloadingSettings, we should explicitly upload the *merged* result 
+            // once, so that the remote iCloud store gets the union of our local settings and the remote ones.
+            Task { @MainActor in
+                self.uploadSettings(from: service)
+            }
+            
+            // Inform AppState to broadcast
+            AppState.shared.broadcastSettings()
+            
+            // Because router rules might have changed:
+            AppState.shared.routerRules = service.routerSettings.rules
+            AppState.shared.isRouterEnabled = service.routerSettings.isEnabled
+            AppState.shared.fallbackBrowserId = service.routerSettings.fallbackBrowserId
+            
+        } catch {
+            isDownloadingSettings = false
+            logger.error("Failed to decode remote settings: \(error)")
+        }
+    }
+    
+    func downloadRemoteTabs() {
+        guard let service = settingsService, service.general.iCloudSync else { return }
+        
+        let allKeys = kvStore.dictionaryRepresentation.keys.filter { $0.hasPrefix(tabsPrefix) && $0 != tabsPrefix + deviceID }
+        
+        var mergedTabs: [Browser: [BrowserTab]] = [:]
+        
+        // Start with current local daemon cache
+        let localCache = AppState.shared.remoteTabsCache
+        
+        for key in allKeys {
+            if let data = kvStore.data(forKey: key) {
+                do {
+                    let remoteDeviceTabs = try JSONDecoder().decode([Browser: [BrowserTab]].self, from: data)
+                    let remoteDeviceName = key.replacingOccurrences(of: tabsPrefix, with: "")
+                    
+                    for (browser, tabs) in remoteDeviceTabs {
+                        // Append device name to windowId or tab title to distinguish them?
+                        // Actually, we can just append them to the list of tabs for that browser.
+                        // Or modify the windowId so we know it's remote.
+                        let markedTabs = tabs.map { tab -> BrowserTab in
+                            var modifiedTab = tab
+                            modifiedTab.id = "icloud_\(remoteDeviceName)_\(tab.id)"
+                            modifiedTab.title = "[\(remoteDeviceName)] \(tab.title)"
+                            return modifiedTab
+                        }
+                        
+                        mergedTabs[browser, default: []].append(contentsOf: markedTabs)
+                    }
+                } catch {
+                    logger.error("Failed to decode remote tabs from \(key): \(error)")
+                }
+            }
+        }
+        
+        // Now merge local and remote
+        for (browser, tabs) in localCache {
+            let purelyLocalTabs = tabs.filter { !$0.id.hasPrefix("icloud_") }
+            mergedTabs[browser, default: []].insert(contentsOf: purelyLocalTabs, at: 0)
+        }
+        
+        isDownloadingRemoteTabs = true
+        AppState.shared.remoteTabsCache = mergedTabs
+        isDownloadingRemoteTabs = false
+        
+        logger.info("Merged remote iCloud tabs into AppState.")
+    }
 }
