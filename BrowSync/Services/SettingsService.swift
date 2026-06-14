@@ -251,9 +251,11 @@ final class ICloudSyncManager: ObservableObject {
         self.settingsService = settingsService
         
         if settingsService.general.iCloudSync {
-            downloadSettings()
-            downloadRemoteTabs()
-            uploadSettings(from: settingsService)
+            Task { @MainActor in
+                downloadSettings()
+                downloadRemoteTabs()
+                uploadSettings(from: settingsService)
+            }
         }
     }
     
