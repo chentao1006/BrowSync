@@ -82,5 +82,8 @@
   },
   "settingTabSharing": {
     "message": "Tab Sharing"
+  },
+  "disabledByBlacklist": {
+    "message": "Sync is disabled for this domain to protect your account security."
   }
 }

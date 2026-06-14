@@ -82,5 +82,8 @@
   },
   "settingTabSharing": {
     "message": "Tab-Freigabe"
+  },
+  "disabledByBlacklist": {
+    "message": "Die Synchronisierung ist für diese Domäne deaktiviert, um Ihre Kontosicherheit zu schützen."
   }
 }

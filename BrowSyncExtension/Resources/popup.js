@@ -92,100 +92,123 @@ async function loadSettings() {
 
   if (siteSyncSection) {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      siteSyncSection.style.display = 'block'; // ALWAYS SHOW
       const url = tabs.length > 0 ? tabs[0].url : null;
+      let activeHostname = null;
+
       if (url && /^https?:/i.test(url)) {
         try {
-          let activeHostname = getBaseDomain(new URL(url).hostname);
-          if (!activeHostname) {
-            siteSyncSection.style.display = 'none';
-            return;
-          }
-          const SYNC_DISABLED_DOMAINS = appSettings.syncDisabledDomains || [];
-          if (SYNC_DISABLED_DOMAINS.some(d => activeHostname === d || activeHostname.endsWith('.' + d))) {
-            siteSyncSection.style.display = 'none';
-            return;
-          }
-          
-          siteSyncSection.style.display = 'block';
-          if (siteDomainName) siteDomainName.textContent = activeHostname;
-          
-          const policy = appSettings.websiteListPolicy || 'allow_list';
-          const settingsList = appSettings.websiteSettings || [];
-          
-          const siteSetting = settingsList.find(s => {
-            const listed = s.domain;
-            return activeHostname === listed || activeHostname.endsWith('.' + listed) || listed.endsWith('.' + activeHostname);
-          });
-          
-          const inList = !!siteSetting;
-          
-          let isSiteEnabled = false;
-          if (policy === 'allow_list') isSiteEnabled = inList;
-          else if (policy === 'block_list') isSiteEnabled = !inList;
-          
-          if (toggleSiteSync) {
-            toggleSiteSync.checked = isSiteEnabled;
-            toggleSiteSync.dataset.domain = activeHostname;
-          }
-          
-          const siteStrategyRow = document.getElementById('siteStrategyRow');
-          const siteSourceBrowserRow = document.getElementById('siteSourceBrowserRow');
-          
-          if (isSiteEnabled) {
-            if (siteStrategyRow) siteStrategyRow.style.display = 'flex';
-            if (btnSyncSiteNow) btnSyncSiteNow.style.display = 'block';
-            if (siteSourceBrowserRow) {
-               const strat = siteSetting?.strategy || 'default';
-               siteSourceBrowserRow.style.display = (strat === 'primary_wins') ? 'flex' : 'none';
-            }
-          } else {
-            if (siteStrategyRow) siteStrategyRow.style.display = 'none';
-            if (btnSyncSiteNow) btnSyncSiteNow.style.display = 'none';
-            if (siteSourceBrowserRow) siteSourceBrowserRow.style.display = 'none';
-          }
-          
-          if (selectSiteStrategy) {
-            selectSiteStrategy.value = siteSetting?.strategy || 'default';
-            selectSiteStrategy.disabled = !isSiteEnabled;
-            selectSiteStrategy.dataset.domain = activeHostname;
-          }
-          if (selectSiteSourceBrowser) {
-            const installedBrowsers = appSettings.installedBrowsers || ['safari', 'chrome'];
-            selectSiteSourceBrowser.innerHTML = '';
-            
-            const browserNames = {
-              'safari': 'Safari',
-              'chrome': 'Chrome',
-              'arc': 'Arc',
-              'edge': 'Edge',
-              'brave': 'Brave'
-            };
-            
-            installedBrowsers.forEach(b => {
-              const opt = document.createElement('option');
-              opt.value = b;
-              opt.textContent = browserNames[b] || b;
-              selectSiteSourceBrowser.appendChild(opt);
-            });
-            
-            let sourceBrowser = siteSetting?.sourceBrowser;
-            if (!sourceBrowser || !installedBrowsers.includes(sourceBrowser)) {
-               sourceBrowser = installedBrowsers.length > 0 ? installedBrowsers[0] : 'safari';
-            }
+          activeHostname = getBaseDomain(new URL(url).hostname);
+        } catch (e) {}
+      }
 
-            selectSiteSourceBrowser.value = sourceBrowser;
-            selectSiteSourceBrowser.disabled = !isSiteEnabled;
-            selectSiteSourceBrowser.dataset.domain = activeHostname;
-          }
-          if (btnSyncSiteNow) {
-            btnSyncSiteNow.disabled = !isSiteEnabled;
-            btnSyncSiteNow.dataset.domain = activeHostname;
-          }
-        } catch (e) {
-          siteSyncSection.style.display = 'none';
+      const siteStrategyRow = document.getElementById('siteStrategyRow');
+      const siteSourceBrowserRow = document.getElementById('siteSourceBrowserRow');
+
+      if (!activeHostname) {
+        if (siteDomainName) siteDomainName.textContent = chrome.i18n.getMessage("noWebsite") || 'N/A';
+        if (toggleSiteSync) {
+          toggleSiteSync.checked = false;
+          toggleSiteSync.disabled = true;
+          const label = document.getElementById('toggleSiteSyncLabel');
+          if (label) label.title = "";
+        }
+        if (siteStrategyRow) siteStrategyRow.style.display = 'none';
+        if (siteSourceBrowserRow) siteSourceBrowserRow.style.display = 'none';
+        if (btnSyncSiteNow) btnSyncSiteNow.style.display = 'none';
+        return;
+      }
+
+      if (siteDomainName) siteDomainName.textContent = activeHostname;
+      
+      const SYNC_DISABLED_DOMAINS = appSettings.syncDisabledDomains || [];
+      const isDisabledDomain = SYNC_DISABLED_DOMAINS.some(d => activeHostname === d || activeHostname.endsWith('.' + d));
+
+      if (isDisabledDomain) {
+        if (toggleSiteSync) {
+          toggleSiteSync.checked = false;
+          toggleSiteSync.disabled = true;
+          const label = document.getElementById('toggleSiteSyncLabel');
+          if (label) label.title = chrome.i18n.getMessage("disabledByBlacklist") || "Sync is disabled for this domain to protect your account security.";
+        }
+        if (siteStrategyRow) siteStrategyRow.style.display = 'none';
+        if (siteSourceBrowserRow) siteSourceBrowserRow.style.display = 'none';
+        if (btnSyncSiteNow) btnSyncSiteNow.style.display = 'none';
+        return;
+      }
+
+      const policy = appSettings.websiteListPolicy || 'allow_list';
+      const settingsList = appSettings.websiteSettings || [];
+      
+      const siteSetting = settingsList.find(s => {
+        const listed = s.domain;
+        return activeHostname === listed || activeHostname.endsWith('.' + listed) || listed.endsWith('.' + activeHostname);
+      });
+      
+      const inList = !!siteSetting;
+      let isSiteEnabled = false;
+      if (policy === 'allow_list') isSiteEnabled = inList;
+      else if (policy === 'block_list') isSiteEnabled = !inList;
+      
+      if (toggleSiteSync) {
+        toggleSiteSync.checked = isSiteEnabled;
+        toggleSiteSync.disabled = false;
+        toggleSiteSync.dataset.domain = activeHostname;
+        const label = document.getElementById('toggleSiteSyncLabel');
+        if (label) label.title = "";
+      }
+      
+      if (isSiteEnabled) {
+        if (siteStrategyRow) siteStrategyRow.style.display = 'flex';
+        if (btnSyncSiteNow) btnSyncSiteNow.style.display = 'block';
+        if (siteSourceBrowserRow) {
+           const strat = siteSetting?.strategy || 'default';
+           siteSourceBrowserRow.style.display = (strat === 'primary_wins') ? 'flex' : 'none';
         }
       } else {
-        siteSyncSection.style.display = 'none';
+        if (siteStrategyRow) siteStrategyRow.style.display = 'none';
+        if (btnSyncSiteNow) btnSyncSiteNow.style.display = 'none';
+        if (siteSourceBrowserRow) siteSourceBrowserRow.style.display = 'none';
+      }
+      
+      if (selectSiteStrategy) {
+        selectSiteStrategy.value = siteSetting?.strategy || 'default';
+        selectSiteStrategy.disabled = !isSiteEnabled;
+        selectSiteStrategy.dataset.domain = activeHostname;
+      }
+      
+      if (selectSiteSourceBrowser) {
+        const installedBrowsers = appSettings.installedBrowsers || ['safari', 'chrome'];
+        selectSiteSourceBrowser.innerHTML = '';
+        
+        const browserNames = {
+          'safari': 'Safari',
+          'chrome': 'Chrome',
+          'arc': 'Arc',
+          'edge': 'Edge',
+          'brave': 'Brave'
+        };
+        
+        installedBrowsers.forEach(b => {
+          const opt = document.createElement('option');
+          opt.value = b;
+          opt.textContent = browserNames[b] || b;
+          selectSiteSourceBrowser.appendChild(opt);
+        });
+        
+        let sourceBrowser = siteSetting?.sourceBrowser;
+        if (!sourceBrowser || !installedBrowsers.includes(sourceBrowser)) {
+           sourceBrowser = installedBrowsers.length > 0 ? installedBrowsers[0] : 'safari';
+        }
+
+        selectSiteSourceBrowser.value = sourceBrowser;
+        selectSiteSourceBrowser.disabled = !isSiteEnabled;
+        selectSiteSourceBrowser.dataset.domain = activeHostname;
+      }
+      
+      if (btnSyncSiteNow) {
+        btnSyncSiteNow.disabled = !isSiteEnabled;
+        btnSyncSiteNow.dataset.domain = activeHostname;
       }
     });
   }

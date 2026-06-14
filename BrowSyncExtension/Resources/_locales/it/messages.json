@@ -82,5 +82,8 @@
   },
   "settingTabSharing": {
     "message": "Condivisione schede"
+  },
+  "disabledByBlacklist": {
+    "message": "La sincronizzazione è disabilitata per questo dominio per proteggere la sicurezza del tuo account."
   }
 }

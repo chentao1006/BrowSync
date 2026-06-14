@@ -263,7 +263,14 @@ final class ICloudSyncManager: ObservableObject {
         
         do {
             let bundle = SettingsBundle(general: service.general, sync: service.syncSettings, router: service.routerSettings)
-            let data = try JSONEncoder().encode(bundle)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .sortedKeys
+            let data = try encoder.encode(bundle)
+            
+            if let existing = kvStore.data(forKey: settingsKey), existing == data {
+                return
+            }
+            
             kvStore.set(data, forKey: settingsKey)
             kvStore.synchronize()
             logger.info("Uploaded settings to iCloud.")
@@ -287,7 +294,14 @@ final class ICloudSyncManager: ObservableObject {
         let key = tabsPrefix + deviceID
         do {
             // Encode the tabs dictionary
-            let data = try JSONEncoder().encode(localTabsToUpload)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .sortedKeys
+            let data = try encoder.encode(localTabsToUpload)
+            
+            if let existing = kvStore.data(forKey: key), existing == data {
+                return
+            }
+            
             kvStore.set(data, forKey: key)
             kvStore.synchronize()
             logger.info("Uploaded tabs to iCloud for device: \(self.deviceID)")

@@ -82,5 +82,8 @@
   },
   "settingTabSharing": {
     "message": "標籤頁共享"
+  },
+  "disabledByBlacklist": {
+    "message": "为保护您的账号安全，此网站禁止被同步。"
   }
 }

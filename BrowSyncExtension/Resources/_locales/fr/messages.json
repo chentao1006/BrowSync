@@ -82,5 +82,8 @@
   },
   "settingTabSharing": {
     "message": "Partage d'onglets"
+  },
+  "disabledByBlacklist": {
+    "message": "La synchronisation est désactivée pour ce domaine afin de protéger la sécurité de votre compte."
   }
 }

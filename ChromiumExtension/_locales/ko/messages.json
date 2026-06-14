@@ -82,5 +82,8 @@
   },
   "settingTabSharing": {
     "message": "탭 공유"
+  },
+  "disabledByBlacklist": {
+    "message": "계정 보안을 위해 이 도메인의 동기화가 비활성화되었습니다."
   }
 }

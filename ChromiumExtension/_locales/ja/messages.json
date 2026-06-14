@@ -82,5 +82,8 @@
   },
   "settingTabSharing": {
     "message": "タブ共有"
+  },
+  "disabledByBlacklist": {
+    "message": "アカウントのセキュリティを保護するため、このドメインの同期は無効になっています。"
   }
 }

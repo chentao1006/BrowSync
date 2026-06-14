@@ -82,5 +82,8 @@
   },
   "settingTabSharing": {
     "message": "Compartir pestañas"
+  },
+  "disabledByBlacklist": {
+    "message": "La sincronización está deshabilitada para este dominio para proteger la seguridad de su cuenta."
   }
 }
