@@ -706,9 +706,9 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
     
     // Always keep system roots
     mappedLocalIds.add('0');
-    mappedLocalIds.add('1');
-    mappedLocalIds.add('2');
-    mappedLocalIds.add('3'); // Mobile bookmarks in some browsers
+    mappedLocalIds.add(localBarId);
+    mappedLocalIds.add(localOtherId);
+    if (localMobileId) mappedLocalIds.add(localMobileId);
 
     console.log(`[BrowSync] Pruning. Mapped local IDs: ${mappedLocalIds.size}`);
 
@@ -730,10 +730,9 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
       }
     }
 
-    // Prune inside all safe system roots: id=1, id=2, id=3
-    const rootsToPrune = ['1', '2', '3'];
-    for (const rootId of rootsToPrune) {
-      const rootNode = freshTree[0]?.children?.find(c => c.id === rootId);
+    // Prune inside all safe system roots
+    const rootNodes = freshTree[0]?.children || [];
+    for (const rootNode of rootNodes) {
       if (rootNode?.children) {
         await pruneTree(rootNode.children);
       }

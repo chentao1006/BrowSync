@@ -441,7 +441,7 @@ extension AppState: DaemonServerDelegate {
                 messageId: UUID().uuidString,
                 timestamp: Date().timeIntervalSince1970
             )
-            msg.isFullMirror = false // NEVER full mirror, to prevent mass-deletion on client restart
+            msg.isFullMirror = (strategy == .oneWay) // Full mirror if one-way, otherwise just merge
             // Only send to the requesting client
             let sourceName = sourceBrowser == .safari ? "Safari" : "Chrome"
             self.syncService.log("Answering pull request from [\(clientId)]: Pushed \(bookmarks.count) \(sourceName) bookmarks (isFullMirror: \(msg.isFullMirror ?? false))")

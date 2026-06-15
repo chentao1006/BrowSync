@@ -260,7 +260,7 @@ final class SyncService: ObservableObject {
                         messageId: UUID().uuidString,
                         timestamp: Date().timeIntervalSince1970
                     )
-                    pushMsg.isFullMirror = false // NEVER full mirror, just merge + explicit deletions
+                    pushMsg.isFullMirror = (strategy == .oneWay) // Full mirror if one-way, otherwise just merge
                     daemon?.broadcast(pushMsg, participatingBrowsers: settings.bookmarkParticipatingBrowsers)
                     log("Pushed \(bookmarks.count) Safari bookmarks to clients")
                 } else {
@@ -327,9 +327,10 @@ final class SyncService: ObservableObject {
                 return
             }
         }
-        if strategy == .oneWay {
-            // We do NOT set isFullMirror = true anymore, to prevent wiping target's local bookmarks.
-            // Target will just receive the merged items.
+        if strategy == .oneWay && category == "bookmarks" {
+            // In one-way sync, the target should exactly mirror the source.
+            // Setting isFullMirror = true ensures the target prunes local items not present in the payload.
+            filteredMessage.isFullMirror = true
         }
         if category == "bookmarks", case .bookmarks(let bms) = filteredMessage.payload {
             // We no longer perform implicit deletion diffing for Chrome/Edge clients.
