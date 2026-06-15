@@ -315,6 +315,11 @@ final class AppState: ObservableObject {
             notificationService.notifySyncComplete(stats: stats, categories: enabled)
         }
     }
+    
+    func requestTabSharingPull() {
+        let msg = WSMessage.pull(category: "tabSharing")
+        daemon.broadcast(msg)
+    }
 }
 
 

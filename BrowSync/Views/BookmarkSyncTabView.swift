@@ -116,6 +116,12 @@ struct BookmarkSyncTabView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    
+                    if syncSettings.bookmarkSyncStrategy.wrappedValue == .twoWayMerge {
+                        Text(String(localized: "Merge Warning Note", bundle: langBundle.bundle))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 
                     if syncSettings.bookmarkSyncStrategy.wrappedValue == .oneWay {
                         Picker(String(localized: "Bookmark Source Browser", bundle: langBundle.bundle), selection: syncSettings.bookmarkSourceBrowser) {
@@ -171,7 +177,7 @@ struct BookmarkSyncTabView: View {
                         }
                     }
                     
-                    Toggle(String(localized: "Auto Bookmark Sync", bundle: langBundle.bundle), isOn: syncSettings.bookmarkAutoSync)
+                    Toggle(String(localized: "Real-time Auto Sync", bundle: langBundle.bundle), isOn: syncSettings.bookmarkAutoSync)
                 }
                 if (syncSettings.bookmarkSyncStrategy.wrappedValue == .twoWayMerge || 
                    (syncSettings.bookmarkSyncStrategy.wrappedValue == .oneWay && syncSettings.bookmarkSourceBrowser.wrappedValue == .safari)) 

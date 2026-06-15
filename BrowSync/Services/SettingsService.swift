@@ -427,6 +427,7 @@ final class ICloudSyncManager: ObservableObject {
                             var modifiedTab = tab
                             modifiedTab.id = "icloud_\(remoteDeviceName)_\(tab.id)"
                             modifiedTab.title = "[\(remoteDeviceName)] \(tab.title)"
+                            modifiedTab.deviceName = remoteDeviceName
                             return modifiedTab
                         }
                         
@@ -438,9 +439,15 @@ final class ICloudSyncManager: ObservableObject {
             }
         }
         
+        let localDeviceName = Host.current().localizedName ?? "Local Device"
+        
         // Now merge local and remote
         for (browser, tabs) in localCache {
-            let purelyLocalTabs = tabs.filter { !$0.id.hasPrefix("icloud_") }
+            let purelyLocalTabs = tabs.filter { !$0.id.hasPrefix("icloud_") }.map { tab -> BrowserTab in
+                var modifiedTab = tab
+                modifiedTab.deviceName = localDeviceName
+                return modifiedTab
+            }
             mergedTabs[browser, default: []].insert(contentsOf: purelyLocalTabs, at: 0)
         }
         

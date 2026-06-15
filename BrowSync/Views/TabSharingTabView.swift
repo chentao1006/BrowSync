@@ -6,6 +6,9 @@ import SwiftUI
 struct TabSharingTabView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var langBundle: LanguageBundle
+    @Environment(\.scenePhase) private var scenePhase
+
+    private let refreshTimer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
     
     private var syncSettings: Binding<SyncSettings> {
         Binding(
@@ -30,6 +33,9 @@ struct TabSharingTabView: View {
                     .toggleStyle(.switch)
                     .onChange(of: syncSettings.tabSharingEnabled.wrappedValue) {
                         appState.broadcastSettings()
+                        if syncSettings.tabSharingEnabled.wrappedValue {
+                            appState.requestTabSharingPull()
+                        }
                     }
             }
             .padding()
@@ -76,19 +82,75 @@ struct TabSharingTabView: View {
                     }
                 }
                 
-                Section(String(localized: "Overview", bundle: langBundle.bundle)) {
-                    // Provide a quick overview of currently cached tabs in the daemon
-                    let remoteTabsCount = appState.remoteTabsCache.values.map { $0.count }.reduce(0, +)
-                    HStack {
-                        Text(String(localized: "Cached Remote Tabs:", bundle: langBundle.bundle))
-                        Spacer()
-                        Text("\(remoteTabsCount)")
+                Section(String(localized: "Currently Open Tab Count", bundle: langBundle.bundle)) {
+                    let groupedTabs = groupTabsByDeviceAndBrowser()
+                    if groupedTabs.isEmpty {
+                        Text(String(localized: "No active tabs found.", bundle: langBundle.bundle))
                             .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(groupedTabs.keys.sorted(), id: \.self) { device in
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Image(systemName: "desktopcomputer")
+                                        .foregroundStyle(.blue)
+                                    Text(device).font(.headline)
+                                }
+                                ForEach(groupedTabs[device]?.keys.sorted() ?? [], id: \.self) { browserId in
+                                    HStack {
+                                        let b = Browser(rawValue: browserId)
+                                        if let info = appState.browserInfos.first(where: { $0.browser == b }) {
+                                            if let url = info.appURL {
+                                                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                                                    .resizable()
+                                                    .frame(width: 16, height: 16)
+                                            } else {
+                                                Image(systemName: info.id.sfSymbol)
+                                                    .frame(width: 16, height: 16)
+                                            }
+                                            Text(info.displayName)
+                                        } else {
+                                            Text(browserId.capitalized)
+                                        }
+                                        Spacer()
+                                        Text("\(groupedTabs[device]?[browserId] ?? 0)")
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .padding(.leading, 8)
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
                     }
                 }
             }
             .formStyle(.grouped)
             .disabled(!syncSettings.tabSharingEnabled.wrappedValue)
+            .onAppear {
+                appState.requestTabSharingPull()
+            }
+            .onChange(of: scenePhase) {
+                if scenePhase == .active && syncSettings.tabSharingEnabled.wrappedValue {
+                    appState.requestTabSharingPull()
+                }
+            }
+            .onReceive(refreshTimer) { _ in
+                guard syncSettings.tabSharingEnabled.wrappedValue else { return }
+                appState.requestTabSharingPull()
+            }
         }
+    }
+
+    private func groupTabsByDeviceAndBrowser() -> [String: [String: Int]] {
+        var result: [String: [String: Int]] = [:]
+        for (browser, tabs) in appState.remoteTabsCache {
+            for tab in tabs {
+                let deviceName = tab.deviceName ?? "Unknown Device"
+                if result[deviceName] == nil {
+                    result[deviceName] = [:]
+                }
+                result[deviceName]![browser.rawValue, default: 0] += 1
+            }
+        }
+        return result
     }
 }

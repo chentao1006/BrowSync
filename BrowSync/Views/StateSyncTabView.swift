@@ -78,15 +78,7 @@ struct StateSyncTabView: View {
                             .foregroundStyle(.secondary)
                         
                         Group {
-                            Text(String(localized: "Sync Warning Reason", bundle: langBundle.bundle)).fontWeight(.bold) +
                             Text(String(localized: "Sync Warning Reason Detail", bundle: langBundle.bundle))
-                        }
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                            
-                        Group {
-                            Text(String(localized: "Sync Warning Solution", bundle: langBundle.bundle)).fontWeight(.bold) +
-                            Text(String(localized: "Sync Warning Solution Detail", bundle: langBundle.bundle))
                         }
                         .font(.subheadline)
                         .foregroundStyle(.secondary)

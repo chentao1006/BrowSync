@@ -30,12 +30,22 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
 
     func notifySyncComplete(stats: SyncStats, categories: [SyncCategory]) {
         Task {
-            await requestPermission()
-            let content = UNMutableNotificationContent()
-            
             let hasBookmarks = categories.contains(where: { $0.rawValue == "bookmarks" })
             let hasState = categories.contains(where: { $0.rawValue != "bookmarks" })
-            
+            let storageCount = stats.localStorage + stats.sessionStorage
+
+            if hasBookmarks && !hasState {
+                let hasBookmarkChanges = stats.bookmarksAdded > 0 || stats.bookmarksDeleted > 0 || stats.bookmarksModified > 0 || stats.bookmarks > 0
+                guard hasBookmarkChanges else { return }
+            } else if hasState && !hasBookmarks {
+                guard stats.cookies > 0 || storageCount > 0 else { return }
+            } else {
+                guard stats.bookmarks > 0 || stats.cookies > 0 || storageCount > 0 else { return }
+            }
+
+            await requestPermission()
+            let content = UNMutableNotificationContent()
+
             if hasBookmarks && !hasState {
                 content.title = String(localized: "Bookmark Sync Complete", bundle: langBundle)
                 var parts: [String] = []
@@ -50,14 +60,19 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
                 }
             } else if hasState && !hasBookmarks {
                 content.title = String(localized: "State Sync Complete", bundle: langBundle)
-                let storageCount = stats.localStorage + stats.sessionStorage
-                content.body = String(format: String(localized: "Successfully synced %d cookies and %d storage items.", bundle: langBundle), stats.cookies, storageCount)
+                var parts: [String] = []
+                if stats.cookies > 0 { parts.append(String(format: String(localized: "%d cookies", bundle: langBundle), stats.cookies)) }
+                if storageCount > 0 { parts.append(String(format: String(localized: "%d storage items", bundle: langBundle), storageCount)) }
+                content.body = String(format: String(localized: "Successfully synced %@.", bundle: langBundle), parts.joined(separator: ", "))
             } else {
                 content.title = String(localized: "BrowSync Complete", bundle: langBundle)
-                let storageCount = stats.cookies + stats.localStorage + stats.sessionStorage
-                content.body = String(format: String(localized: "Synced %d bookmarks and %d state items.", bundle: langBundle), stats.bookmarks, storageCount)
+                var parts: [String] = []
+                if stats.bookmarks > 0 { parts.append(String(format: String(localized: "%d bookmarks", bundle: langBundle), stats.bookmarks)) }
+                if stats.cookies > 0 { parts.append(String(format: String(localized: "%d cookies", bundle: langBundle), stats.cookies)) }
+                if storageCount > 0 { parts.append(String(format: String(localized: "%d storage items", bundle: langBundle), storageCount)) }
+                content.body = String(format: String(localized: "Synced %@.", bundle: langBundle), parts.joined(separator: ", "))
             }
-            
+
             content.sound = .default
 
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)

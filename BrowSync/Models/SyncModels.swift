@@ -31,6 +31,7 @@ struct BrowserTab: Identifiable, Codable, Equatable {
     var favIconURL: String?
     var sourceBrowser: Browser
     var capturedAt: Date
+    var deviceName: String?
 }
 
 // MARK: - Storage Item
@@ -164,7 +165,6 @@ enum BookmarkSyncStrategy: String, CaseIterable, Codable, Identifiable {
 enum BrowserDataSyncStrategy: String, CaseIterable, Codable, Identifiable {
     case primaryWins = "primary_wins"
     case latestWins = "latest_wins"
-    case twoWayMerge = "two_way_merge"
 
     var id: String { rawValue }
 
@@ -172,7 +172,6 @@ enum BrowserDataSyncStrategy: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .primaryWins: return "Primary Wins (One-way)"
         case .latestWins: return "Latest Activity Wins"
-        case .twoWayMerge: return "Two-way Merge"
         }
     }
 }

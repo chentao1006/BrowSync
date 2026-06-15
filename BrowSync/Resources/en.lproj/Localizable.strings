@@ -301,6 +301,7 @@
 "%@ %@ %@" = "%@ %@ %@";
 "%@%@ • %@" = "%@%@ • %@";
 "Primary Only (One-way Sync)" = "Primary Only (One-way Sync)";
+"Merge Warning Note" = "May produce unpredictable results when bookmark differences are significant";
 "Browser Data Strategy" = "Browser Data Strategy";
 "Check for Updates" = "Check for Updates";
 "Any Condition" = "Any Condition";
@@ -358,6 +359,11 @@
 "Deleted %d" = "Deleted %d";
 "Modified %d" = "Modified %d";
 "Total: %d" = "Total: %d";
+"%d bookmarks" = "%d bookmarks";
+"%d cookies" = "%d cookies";
+"%d storage items" = "%d storage items";
+"Successfully synced %@." = "Successfully synced %@.";
+"Synced %@." = "Synced %@.";
 "Restore All" = "Restore All";
 "Confirm Restore All" = "Confirm Restore All";
 "Are you sure you want to restore all bookmarks from the trash bin?" = "Are you sure you want to restore all bookmarks from the trash bin?";
@@ -367,3 +373,4 @@
 
 "Protocol" = "Protocol";
 "Select Protocol" = "Select Protocol";
+"Currently Open Tab Count" = "Currently Open Tab Count";

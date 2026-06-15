@@ -422,7 +422,15 @@ final class SyncService: ObservableObject {
             if category == "tabSharing", case .tabs(let tabs) = payload {
                 let browserId = clientId.components(separatedBy: "-").first ?? clientId
                 if let browser = Browser(rawValue: browserId) {
-                    AppState.shared.remoteTabsCache[browser] = tabs
+                    let localDeviceName = Host.current().localizedName ?? "Local Device"
+                    let localTabs = tabs.map { tab -> BrowserTab in
+                        var modifiedTab = tab
+                        modifiedTab.deviceName = localDeviceName
+                        return modifiedTab
+                    }
+                    
+                    let existingRemote = AppState.shared.remoteTabsCache[browser]?.filter { $0.id.hasPrefix("icloud_") } ?? []
+                    AppState.shared.remoteTabsCache[browser] = localTabs + existingRemote
                 }
             }
             
@@ -432,8 +440,8 @@ final class SyncService: ObservableObject {
                 switch payload {
                 case .bookmarks(let b): 
                     autoStats.bookmarks = b.count
-                    let prevMap = Dictionary(uniqueKeysWithValues: preSyncAutoBookmarks.map { ($0.id, $0) })
-                    let newMap = Dictionary(uniqueKeysWithValues: b.map { ($0.id, $0) })
+                    let prevMap = Dictionary(preSyncAutoBookmarks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                    let newMap = Dictionary(b.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
                     
                     for (id, bm) in newMap {
                         if let p = prevMap[id] {
@@ -580,19 +588,12 @@ final class SyncService: ObservableObject {
 
             let strategy = siteMatch?.strategy ?? settings.browserDataSyncStrategy
             
-            if cookie.removed == true && strategy == .twoWayMerge {
-                log("Dropped tombstone for \(cookie.domain)\(cookie.path)::\(cookie.name) from [\(clientId)]: additive-only policy (two-way merge)")
-                return false
-            }
-
             switch strategy {
             case .primaryWins:
                 let source = siteMatch?.sourceBrowser ?? settings.stateSourceBrowser
                 return clientId.lowercased().starts(with: source.rawValue.lowercased())
             case .latestWins:
                 return acceptLatestCookie(cookie, clientId: clientId)
-            case .twoWayMerge:
-                return true
             }
         }
     }

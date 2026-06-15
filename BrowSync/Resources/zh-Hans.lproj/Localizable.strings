@@ -58,7 +58,7 @@
 "Never synced" = "从未同步";
 "Syncing…" = "同步中…";
 "Sync Now" = "立即同步";
-"Primary Browser" = "主浏览器";
+"Primary Browser" = "基准浏览器";
 "The primary source of truth for conflict resolution" = "冲突解决时的主要数据源";
 "Conflict Strategy" = "冲突策略";
 "How to resolve conflicting data between browsers" = "如何解决浏览器之间的数据冲突";
@@ -77,7 +77,7 @@
 "URLs, titles, visit times and counts" = "URL、标题、访问时间和次数";
 
 /* Conflict strategies */
-"Primary Wins" = "主浏览器优先";
+"Primary Wins" = "以单浏览器为准";
 "Latest Wins" = "最新版本优先";
 "Merge" = "合并";
 
@@ -183,7 +183,7 @@
 "Website Options" = "网站选项";
 "Default Strategy" = "默认策略";
 "Data Source Browser" = "数据源浏览器";
-"List Policy" = "名单模式";
+"List Policy" = "列表模式";
 "Real-time Auto Sync" = "实时自动同步";
 "Website List" = "网站列表";
 "Domain (e.g. example.com)" = "域名 (如: example.com)";
@@ -274,7 +274,7 @@
 "Contains" = "包含";
 "Delete this rule?" = "删除此规则？";
 "English" = "英文";
-"Two-way Merge" = "双向合并";
+"Two-way Merge" = "多向合并";
 "BrowSyncExtension" = "BrowSync 扩展";
 "BrowSync is not the default browser. Routing may not work fully." = "BrowSync 目前不是系统默认浏览器。分流功能可能无法完全生效。";
 "Ends With" = "以...结束";
@@ -316,7 +316,7 @@
 "Starts With" = "以...开始";
 "PRO" = "专业版";
 "Excludes" = "不包含";
-"Primary Wins (One-way)" = "主浏览器优先 (单向)";
+"Primary Wins (One-way)" = "以单浏览器为准 (推荐)";
 "BrowSync" = "BrowSync";
 "Domain" = "域名";
 "Wildcard Match" = "通配符匹配";
@@ -325,7 +325,8 @@
 "Delete this condition?" = "删除此条件？";
 "%@%@ • %@" = "%@%@ • %@";
 "Match" = "匹配";
-"Primary Only (One-way Sync)" = "仅主浏览器 (单向同步)";
+"Primary Only (One-way Sync)" = "以单浏览器为准 (推荐)";
+"Merge Warning Note" = "在不同浏览器书签差异较大时可能产生不易预见的问题";
 "For sites that cannot maintain login through sync, it is recommended to log in manually in each browser, or add the site to the list below and disable its state sync." = "对于无法保持登录的网站，建议分别手动登录，或将其添加到下方列表并禁用状态同步。";
 "Browser Data Strategy" = "浏览器数据策略";
 "Check for Updates" = "检查更新";
@@ -385,9 +386,20 @@
 "Deleted %d" = "删除 %d";
 "Modified %d" = "修改 %d";
 "Total: %d" = "总计: %d";
+"%d bookmarks" = "%d 条书签";
+"%d cookies" = "%d 个 Cookie";
+"%d storage items" = "%d 项存储数据";
+"Successfully synced %@." = "已成功同步 %@。";
+"Synced %@." = "已同步 %@。";
 "Restore All" = "全部恢复";
 "Confirm Restore All" = "确认全部恢复";
 "Are you sure you want to restore all bookmarks from the trash bin?" = "确定要从回收站恢复所有书签吗？";
 
 "iCloud Sync" = "iCloud 同步";
 "Synchronize all settings, rules, and open tabs across your Mac devices using iCloud." = "使用 iCloud 在所有 Mac 设备间同步所有设置、规则和已打开的标签页。";
+
+"No active tabs found." = "未找到处于打开状态的标签页。";
+
+"Unknown Device" = "未知设备";
+
+"Currently Open Tab Count" = "当前打开的标签页数量";
