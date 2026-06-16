@@ -122,8 +122,8 @@ if command -v gh >/dev/null 2>&1; then
     zip -r "../${RESULT_DIR}/ChromiumExtension-v${NEW_VERSION}.zip" * -x "*.DS_Store" -x "*.git*" > /dev/null
     cd ..
     
-    # DMG and Extension are the primary assets
-    ASSETS=("${RESULT_DIR}/BrowSync.dmg" "${RESULT_DIR}/ChromiumExtension-v${NEW_VERSION}.zip")
+    # DMG is the primary asset
+    ASSETS=("${RESULT_DIR}/BrowSync.dmg")
     
     # If re-releasing the same version, we need to delete the old one first
     echo "🧹 Removing existing release and tag if they exist..."
