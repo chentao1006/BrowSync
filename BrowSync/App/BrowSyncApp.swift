@@ -127,16 +127,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsService.general.firstLaunchDate = Date()
             settingsService.save()
         }
-        
-        let firstLaunch = settingsService.general.firstLaunchDate ?? Date()
-        let timeSinceLaunch = Date().timeIntervalSince(firstLaunch)
-        
-        if !settingsService.general.analyticsOptInPrompted {
-            let delay = max(0, 600 - timeSinceLaunch)
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                self.promptForAnalyticsOptIn()
-            }
-        }
     }
     
     private func promptForAnalyticsOptIn() {
@@ -177,6 +167,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shouldShowSettingsWindow = false
         flushPendingURLRequests()
         updateDockIconForVisibleWindows()
+        
+        let settingsService = SettingsService()
+        if !settingsService.general.analyticsOptInPrompted {
+            let firstLaunch = settingsService.general.firstLaunchDate ?? Date()
+            let timeSinceLaunch = Date().timeIntervalSince(firstLaunch)
+            
+            if timeSinceLaunch >= 120 {
+                // 已经超过 2 分钟，直接在当前窗口弹出（加 0.5 秒动画缓冲）
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    if self.hasVisibleSettingsWindow() && !settingsService.general.analyticsOptInPrompted {
+                        self.promptForAnalyticsOptIn()
+                    }
+                }
+            } else {
+                // 还没到 2 分钟，等待剩下的时间。如果时间到了窗口还开着，就弹出。
+                let remaining = 120 - timeSinceLaunch
+                DispatchQueue.main.asyncAfter(deadline: .now() + remaining) {
+                    let currentSettings = SettingsService()
+                    if self.hasVisibleSettingsWindow() && !currentSettings.general.analyticsOptInPrompted {
+                        self.promptForAnalyticsOptIn()
+                    }
+                }
+            }
+        }
     }
 
     func prepareToOpenSettingsWindow() {
