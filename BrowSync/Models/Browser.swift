@@ -12,6 +12,7 @@ enum Browser: String, CaseIterable, Codable, Identifiable, Hashable {
     case arc = "arc"
     case edge = "edge"
     case brave = "brave"
+    case firefox = "firefox"
 
     var id: String { rawValue }
 
@@ -22,6 +23,7 @@ enum Browser: String, CaseIterable, Codable, Identifiable, Hashable {
         case .arc: return "Arc"
         case .edge: return "Edge"
         case .brave: return "Brave"
+        case .firefox: return "Firefox"
         }
     }
 
@@ -32,6 +34,7 @@ enum Browser: String, CaseIterable, Codable, Identifiable, Hashable {
         case .arc: return "company.thebrowser.Browser"
         case .edge: return "com.microsoft.edgemac"
         case .brave: return "com.brave.Browser"
+        case .firefox: return "org.mozilla.firefox"
         }
     }
 
@@ -46,6 +49,7 @@ enum Browser: String, CaseIterable, Codable, Identifiable, Hashable {
         case .arc: return "arc.circle"
         case .edge: return "e.circle"
         case .brave: return "b.circle"
+        case .firefox: return "f.circle"
         }
     }
 
@@ -57,6 +61,7 @@ enum Browser: String, CaseIterable, Codable, Identifiable, Hashable {
         case .arc: return "Arc/User Data"
         case .edge: return "Microsoft Edge"
         case .brave: return "BraveSoftware/Brave-Browser"
+        case .firefox: return nil
         }
     }
 }

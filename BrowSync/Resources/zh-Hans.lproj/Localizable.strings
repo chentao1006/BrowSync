@@ -157,6 +157,17 @@
 "Link Router" = "链接分流";
 "Select an item" = "请选择一项";
 
+/* Extension compatibility */
+"Extension Compatibility" = "扩展兼容";
+"Install Chrome extensions for use in Safari. This experimental feature currently supports a limited selection." = "在 Safari 中安装并使用 Chrome 扩展。该功能仍在测试中，暂仅兼容部分扩展。";
+"Open Chrome Web Store" = "打开 Chrome 网上应用店";
+"No Chrome Extensions" = "没有已添加的 Chrome 扩展";
+"Visit a Chrome Web Store extension page in Safari and choose Add to Safari." = "请在 Safari 中打开 Chrome 网上应用店的扩展页面，然后选择“添加到 Safari”。";
+"Ready in Safari" = "可在 Safari 中使用";
+"Saved — adapter not available yet" = "已保存，暂未提供适配器";
+"Extension Installation Failed" = "扩展安装失败";
+"Installing…" = "正在安装…";
+
 /* BrowsersTabView */
 "Installed Browsers" = "已安装的浏览器";
 "Default System" = "(系统默认)";

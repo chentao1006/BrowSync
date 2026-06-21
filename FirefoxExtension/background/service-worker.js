@@ -39,6 +39,7 @@ async function setCookieTimestamp(cookie, updatedAt) {
 
 function detectBrowserId() {
   const ua = navigator.userAgent;
+  if (ua.includes('Firefox/')) return 'firefox';
   if (ua.includes('Edg/')) return 'edge';
   if (ua.includes('Safari/') && !ua.includes('Chrome/')) return 'safari';
   if (ua.includes('Brave/') || navigator.brave) return 'brave';
@@ -445,7 +446,8 @@ async function handlePullRequest(category, site) {
             if (node.parentId === localBarId) normalizedParentId = '1';
             else if (node.parentId === localOtherId) normalizedParentId = '2';
             else if (node.parentId === localMobileId) normalizedParentId = '3';
-            else if (node.parentId === '0') normalizedParentId = '1';
+            else if (node.parentId === 'unfiled_____') normalizedParentId = '2';
+            else if (node.parentId === '0' || node.parentId === 'root________') normalizedParentId = '1';
 
             let mappedId = chromeToSafariId.get(node.id) || node.id;
             let mappedParentId = chromeToSafariId.get(normalizedParentId) || normalizedParentId;
@@ -516,6 +518,22 @@ let localOtherId = '2';
 let localMobileId = '3';
 let systemRoots = new Set(['0', '1', '2', '3']);
 
+function updateLocalRoots(tree) {
+  const localRoots = tree[0]?.children || [];
+  const isFirefox = localRoots.some(n => n.id === 'toolbar_____');
+  if (isFirefox) {
+    localBarId = localRoots.find(n => n.id === 'toolbar_____')?.id || 'toolbar_____';
+    localOtherId = localRoots.find(n => n.id === 'menu________')?.id || 'menu________';
+    localMobileId = localRoots.find(n => n.id === 'mobile____')?.id || 'mobile____';
+    systemRoots = new Set(['0', 'root________', 'unfiled_____', localBarId, localOtherId, localMobileId]);
+  } else {
+    localBarId = localRoots[0]?.id || '1';
+    localOtherId = localRoots[1]?.id || '2';
+    localMobileId = localRoots[2]?.id || '3';
+    systemRoots = new Set(['0', localBarId, localOtherId, localMobileId]);
+  }
+}
+
 if (chrome.bookmarks) {
   chrome.bookmarks.getTree().then(tree => {
     send({
@@ -529,14 +547,9 @@ if (chrome.bookmarks) {
   });
 }
 
-
 if (chrome.bookmarks) {
   chrome.bookmarks.getTree().then(tree => {
-    const localRoots = tree[0]?.children || [];
-    localBarId = localRoots[0]?.id || '1';
-    localOtherId = localRoots[1]?.id || '2';
-    localMobileId = localRoots[2]?.id || '3';
-    systemRoots = new Set(['0', localBarId, localOtherId, localMobileId]);
+    updateLocalRoots(tree);
   }).catch(()=>{});
 }
 
@@ -552,11 +565,7 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
 
   // Ensure system roots are up to date
   const localTree = await chrome.bookmarks.getTree();
-  const localRoots = localTree[0]?.children || [];
-  localBarId = localRoots[0]?.id || '1';
-  localOtherId = localRoots[1]?.id || '2';
-  localMobileId = localRoots[2]?.id || '3';
-  systemRoots = new Set(['0', localBarId, localOtherId, localMobileId]);
+  updateLocalRoots(localTree);
 
   // STEP 1: If full mirror, snapshot current Chrome state and send back as backup
   if (isFullMirror) {
@@ -564,14 +573,21 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
     const snapshot = [];
     function flatForBackup(nodes) {
       for (const node of nodes) {
-        if (node.id !== '0' && node.id !== '1' && node.id !== '2' && node.id !== '3') {
+        if (!systemRoots.has(node.id)) {
+          let pId = node.parentId;
+          if (pId === localBarId) pId = '1';
+          else if (pId === localOtherId) pId = '2';
+          else if (pId === localMobileId) pId = '3';
+          else if (pId === 'unfiled_____') pId = '2';
+          else if (pId === '0' || pId === 'root________') pId = '1';
+
           snapshot.push({
             id: node.id,
             title: node.title || '',
             url: node.url || null,
-            parentId: node.parentId || null,
+            parentId: pId || null,
             isFolder: !node.url,
-            inBookmarksBar: node.parentId === '1',
+            inBookmarksBar: pId === '1',
             dateAdded: (node.dateAdded || Date.now()) / 1000,
             sourceBrowser: DETECTED_BROWSER
           });
@@ -760,11 +776,13 @@ async function handleBookmarkChange(reason) {
     const snapshot = [];
     function flatForBackup(nodes) {
       for (const node of nodes) {
-        if (node.id !== '0') {
+        if (!systemRoots.has(node.id)) {
           let pId = node.parentId;
           if (pId === localBarId) pId = '1';
           else if (pId === localOtherId) pId = '2';
           else if (pId === localMobileId) pId = '3';
+          else if (pId === 'unfiled_____') pId = '2';
+          else if (pId === '0' || pId === 'root________') pId = '1';
           
           snapshot.push({
             id: node.id,

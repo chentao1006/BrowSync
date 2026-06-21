@@ -79,6 +79,7 @@ final class AppState: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+
             
         iCloudSyncManager.setup(settingsService: settingsService)
         
@@ -370,6 +371,7 @@ extension AppState: DaemonServerDelegate {
             NSApp.activate(ignoringOtherApps: true)
         }
     }
+
 
     nonisolated func daemonServer(_ server: DaemonServer, didReceivePullBookmarks clientId: String) {
         Task { @MainActor in

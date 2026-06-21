@@ -130,7 +130,7 @@
     }
 
     .cta-group {
-      display: flex; gap: 16px; justify-content: flex-start; align-items: center; flex-wrap: wrap;
+      display: flex; gap: 16px; justify-content: flex-start; align-items: center; white-space: nowrap;
     }
     .btn-primary {
       background: #000000; color: #ffffff;
@@ -178,6 +178,7 @@
       display: inline-flex; align-items: center; height: 48px;
       transition: all 0.3s ease; border-radius: 8px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      white-space: nowrap;
     }
     .store-badge img {
       height: 100%; border-radius: 8px; border: 1px solid var(--border);
@@ -196,12 +197,56 @@
     }
     .btn-secondary:hover { background: var(--card-bg); transform: translateY(-2px); }
 
+    .hero-visuals {
+      display: flex; flex-direction: column; align-items: center; gap: 24px;
+      flex: 1; max-width: 400px;
+    }
     .promo-img {
       border-radius: 16px; border: 1px solid var(--border);
       box-shadow: 0 24px 80px rgba(0,0,0,0.3); overflow: hidden;
-      position: relative;
-      flex: 1; max-width: 400px;
+      position: relative; width: 100%;
       margin: 0;
+    }
+
+    /* Browser Correlation */
+    .browser-correlation {
+      display: flex; align-items: center; gap: 20px;
+      padding: 12px 24px;
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 999px; width: fit-content;
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.05);
+    }
+    .browser-correlation img {
+      width: 42px; height: 42px; border-radius: 10px;
+      filter: drop-shadow(0 4px 8px rgba(0,0,0,0.15));
+      transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .browser-correlation img:hover {
+      transform: scale(1.15) rotate(-5deg);
+    }
+    .sync-arrows {
+      width: 24px; height: 24px; color: var(--muted);
+      animation: pulseSync 2.5s infinite ease-in-out;
+    }
+    @keyframes pulseSync {
+      0%, 100% { opacity: 0.4; transform: scale(0.9); }
+      50% { opacity: 1; transform: scale(1.1); color: var(--accent); }
+    }
+
+    /* Firefox Badge */
+    .btn-firefox {
+      background: var(--card-bg); color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-firefox:hover {
+      background: var(--card-bg-hover);
+    }
+    .btn-firefox img {
+      padding: 8px 12px; height: 100%; border: none !important; border-radius: 0;
+    }
+    .btn-firefox span {
+      font-weight: 600; padding-right: 16px; font-size: 0.95rem; white-space: nowrap;
     }
 
     /* Carousel */
@@ -373,12 +418,10 @@
       .hero-content { text-align: center; max-width: 100%; }
       .hero p { margin: 0 auto 40px auto; }
       .cta-group { justify-content: center; }
-      .promo-img { max-width: 500px; margin-top: 40px; width: 100%; }
+      .hero-visuals { max-width: 500px; margin-top: 40px; width: 100%; }
     }
     @media (max-width: 600px) {
       .hero { margin-top: 80px; }
-      .cta-group { flex-direction: column; }
-      .cta-group a { width: 100%; text-align: center; justify-content: center; }
       footer { flex-direction: column; align-items: flex-start; }
       .bento-card { padding: 32px 24px; }
     }
@@ -406,8 +449,7 @@
       <div class="hero-content">
         <div class="eyebrow" data-i18n="hero.eyebrow">macOS 原生应用</div>
         <h1 data-i18n="hero.title">跨浏览器的分流与同步中枢</h1>
-        <p data-i18n="hero.lead">打通 Safari 与所有 Chromium 内核浏览器。根据规则智能分流链接，并实时同步书签与登录状态。纯本地运行，捍卫您的隐私。</p>
-        
+        <p data-i18n="hero.lead">打通 Safari、所有 Chromium 内核浏览器与 Firefox。根据规则智能分流链接，并实时同步书签与登录状态。纯本地运行，捍卫您的隐私。</p>
         <div class="cta-container">
           <div class="cta-group">
             <a href="https://github.com/chentao1006/browsync/releases/latest/download/BrowSync.dmg" class="btn-primary">
@@ -416,6 +458,10 @@
             </a>
             <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh" target="_blank" class="store-badge">
               <img src="BrowSync/Resources/Marketing/chrome-web-store-badge.png" alt="Available in the Chrome Web Store">
+            </a>
+            <a href="https://addons.mozilla.org/zh-CN/firefox/addon/brow-sync/" target="_blank" class="store-badge btn-firefox">
+              <img src="ChromiumExtension/icons/firefox.png" alt="Firefox">
+              <span>Firefox Add-on</span>
             </a>
           </div>
           <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 24px;">
@@ -428,20 +474,29 @@
         </div>
       </div>
 
-      <div class="promo-img">
-        <button class="carousel-btn prev" aria-label="Previous">‹</button>
-        <button class="carousel-btn next" aria-label="Next">›</button>
-        <div class="carousel-slides" id="carousel">
-          <div class="carousel-slide"><img src="screenshots/en/000001.jpg" alt="Screenshot 1"></div>
-          <div class="carousel-slide"><img src="screenshots/en/000002.jpg" alt="Screenshot 2"></div>
-          <div class="carousel-slide"><img src="screenshots/en/000003.jpg" alt="Screenshot 3"></div>
-          <div class="carousel-slide"><img src="screenshots/en/000004.jpg" alt="Screenshot 4"></div>
-          <div class="carousel-slide"><img src="screenshots/en/000005.jpg" alt="Screenshot 5"></div>
-          <div class="carousel-slide"><img src="screenshots/en/000006.jpg" alt="Screenshot 6"></div>
-          <div class="carousel-slide"><img src="screenshots/en/000007.jpg" alt="Screenshot 7"></div>
-          <div class="carousel-slide"><img src="screenshots/en/000008.jpg" alt="Screenshot 8"></div>
+      <div class="hero-visuals">
+        <div class="browser-correlation">
+          <img src="assets/safari.svg" alt="Safari" title="Safari">
+          <svg class="sync-arrows" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"></path><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><path d="M7 23l-4-4 4-4"></path><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+          <img src="assets/chrome.svg" alt="Chrome" title="Chromium / Chrome / Edge">
+          <svg class="sync-arrows" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"></path><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><path d="M7 23l-4-4 4-4"></path><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+          <img src="ChromiumExtension/icons/firefox.png" alt="Firefox" title="Firefox">
         </div>
-        <div class="carousel-dots" id="carousel-dots"></div>
+        <div class="promo-img">
+          <button class="carousel-btn prev" aria-label="Previous">‹</button>
+          <button class="carousel-btn next" aria-label="Next">›</button>
+          <div class="carousel-slides" id="carousel">
+            <div class="carousel-slide"><img src="screenshots/en/000001.jpg" alt="Screenshot 1"></div>
+            <div class="carousel-slide"><img src="screenshots/en/000002.jpg" alt="Screenshot 2"></div>
+            <div class="carousel-slide"><img src="screenshots/en/000003.jpg" alt="Screenshot 3"></div>
+            <div class="carousel-slide"><img src="screenshots/en/000004.jpg" alt="Screenshot 4"></div>
+            <div class="carousel-slide"><img src="screenshots/en/000005.jpg" alt="Screenshot 5"></div>
+            <div class="carousel-slide"><img src="screenshots/en/000006.jpg" alt="Screenshot 6"></div>
+            <div class="carousel-slide"><img src="screenshots/en/000007.jpg" alt="Screenshot 7"></div>
+            <div class="carousel-slide"><img src="screenshots/en/000008.jpg" alt="Screenshot 8"></div>
+          </div>
+          <div class="carousel-dots" id="carousel-dots"></div>
+        </div>
       </div>
     </section>
 
@@ -452,13 +507,13 @@
         <!-- Feature 1 -->
         <div class="bento-card card-large">
           <h3 data-i18n="feat1.title">🔗 URL 分流</h3>
-          <p data-i18n="feat1.desc">将 BrowSync 设为系统默认浏览器后，可根据规则自动将链接在指定的浏览器（如 Chrome 或 Safari）中打开。</p>
+          <p data-i18n="feat1.desc">将 BrowSync 设为系统默认浏览器后，可根据规则自动将链接在指定的浏览器（如 Chrome、Safari 或 Firefox）中打开。</p>
         </div>
 
         <!-- Feature 2 -->
         <div class="bento-card card-medium">
           <h3 data-i18n="feat2.title">🔖 书签同步</h3>
-          <p data-i18n="feat2.desc">在 Safari 和 Chromium 浏览器之间实时同步书签。</p>
+          <p data-i18n="feat2.desc">在 Safari、Chromium 和 Firefox 浏览器之间实时同步书签。</p>
         </div>
 
         <!-- Feature 3 -->
@@ -498,6 +553,10 @@
             <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh" target="_blank" class="store-badge">
               <img src="BrowSync/Resources/Marketing/chrome-web-store-badge.png" alt="Available in the Chrome Web Store">
             </a>
+            <a href="https://addons.mozilla.org/zh-CN/firefox/addon/brow-sync/" target="_blank" class="store-badge btn-firefox">
+              <img src="ChromiumExtension/icons/firefox.png" alt="Firefox">
+              <span>Firefox Add-on</span>
+            </a>
           </div>
           <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
             <span style="color: var(--muted); font-size: 0.95rem;" data-i18n="install.desc">或者使用 Homebrew 安装：</span>
@@ -532,13 +591,13 @@
         "nav.download": "立即下载",
         "hero.eyebrow": "macOS 原生应用",
         "hero.title": "跨浏览器的分流与同步中枢",
-        "hero.lead": "打通 Safari 与所有 Chromium 内核浏览器。根据规则智能分流链接，并实时同步书签与登录状态。纯本地运行，捍卫您的隐私。",
+        "hero.lead": "打通 Safari、所有 Chromium 内核浏览器与 Firefox。根据规则智能分流链接，并实时同步书签与登录状态。纯本地运行，捍卫您的隐私。",
         "hero.cta": "下载安装包",
         "features.title": "主要功能",
         "feat1.title": "🔗 URL 分流",
-        "feat1.desc": "将 BrowSync 设为系统默认浏览器后，可根据规则自动将链接在指定的浏览器（如 Chrome 或 Safari）中打开。",
+        "feat1.desc": "将 BrowSync 设为系统默认浏览器后，可根据规则自动将链接在指定的浏览器（如 Chrome、Safari 或 Firefox）中打开。",
         "feat2.title": "🔖 书签同步",
-        "feat2.desc": "在 Safari 和 Chromium 浏览器之间实时同步书签。",
+        "feat2.desc": "在 Safari、Chromium 和 Firefox 浏览器之间实时同步书签。",
         "feat3.title": "🔄 状态同步",
         "feat3.desc": "跨浏览器实时同步 Cookie 和缓存，保持各浏览器的登录状态一致。",
         "feat4.title": "🔒 本地运行",
@@ -560,13 +619,13 @@
         "nav.download": "Download",
         "hero.eyebrow": "Native macOS App",
         "hero.title": "Cross-Browser Routing & Sync Hub",
-        "hero.lead": "Unite Safari and all Chromium-based browsers. Intelligently route your links, and sync bookmarks and sessions in real-time. 100% local and privacy-first.",
+        "hero.lead": "Unite Safari, all Chromium-based browsers, and Firefox. Intelligently route your links, and sync bookmarks and sessions in real-time. 100% local and privacy-first.",
         "hero.cta": "Download DMG",
         "features.title": "Key Features",
         "feat1.title": "🔗 URL Routing",
         "feat1.desc": "Set BrowSync as the default browser and use rules to automatically open links in specific browsers.",
         "feat2.title": "🔖 Bookmark Sync",
-        "feat2.desc": "Sync bookmarks in real-time across Safari and Chromium browsers.",
+        "feat2.desc": "Sync bookmarks in real-time across Safari, Chromium, and Firefox browsers.",
         "feat3.title": "🔄 State Sync",
         "feat3.desc": "Sync Cookies and caches across browsers to maintain consistent login states.",
         "feat4.title": "🔒 Local Execution",

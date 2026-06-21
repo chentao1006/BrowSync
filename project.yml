@@ -83,22 +83,22 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 
     dependencies:
-      - target: BrowSyncExtension
+      - target: SafariExtension
       - package: Sparkle
       - package: Aptabase
 
   # ─── Safari Web Extension ────────────────────────────────────────────────────
 
-  BrowSyncExtension:
+  SafariExtension:
     type: app-extension
     platform: macOS
     deploymentTarget: "14.0"
 
     info:
-      path: BrowSyncExtension/Info.plist
+      path: SafariExtension/Info.plist
       properties:
         CFBundleIdentifier: com.ct106.browsync.extension
-        CFBundleName: BrowSyncExtension
+        CFBundleName: SafariExtension
         CFBundleDisplayName: BrowSync Extension
         CFBundleShortVersionString: "1.0.11"
         CFBundleVersion: "23"
@@ -109,22 +109,22 @@ targets:
         LSMinimumSystemVersion: "14.0"
 
     sources:
-      - BrowSyncExtension/SafariWebExtensionHandler.swift
-      - BrowSyncExtension/Resources/manifest.json
-      - BrowSyncExtension/Resources/background.js
-      - BrowSyncExtension/Resources/content.js
-      - BrowSyncExtension/Resources/popup.html
-      - BrowSyncExtension/Resources/popup.js
-      - path: BrowSyncExtension/Resources/icons
+      - SafariExtension/SafariWebExtensionHandler.swift
+      - SafariExtension/Resources/manifest.json
+      - SafariExtension/Resources/background.js
+      - SafariExtension/Resources/content.js
+      - SafariExtension/Resources/popup.html
+      - SafariExtension/Resources/popup.js
+      - path: SafariExtension/Resources/icons
         type: folder
-      - path: BrowSyncExtension/Resources/_locales
+      - path: SafariExtension/Resources/_locales
         type: folder
 
 
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ct106.browsync.extension
-        CODE_SIGN_ENTITLEMENTS: BrowSyncExtension.entitlements
+        CODE_SIGN_ENTITLEMENTS: SafariExtension.entitlements
         DEVELOPMENT_TEAM: "U2NEAJ73J2"
         CODE_SIGN_STYLE: Automatic
         SWIFT_EMIT_LOC_STRINGS: YES

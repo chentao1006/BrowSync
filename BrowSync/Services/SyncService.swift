@@ -292,6 +292,24 @@ final class SyncService: ObservableObject {
                 timestamp: Date().timeIntervalSince1970
             )
             daemon?.broadcast(requestMessage)
+            
+            // Proactively push the globally cached state from the central app.
+            // This ensures that if the primary state source browser is not running,
+            // we still sync the latest accumulated state to all connected browsers.
+            let cachedPayloads = GlobalStateStore.shared.pull(category: category.rawValue)
+            for payloadData in cachedPayloads {
+                if let msg = try? JSONDecoder().decode(WSMessage.self, from: payloadData) {
+                    if msg.category == "cookies", case .cookies(let cookies) = msg.payload {
+                        let liveOnly = cookies.filter { $0.removed != true }
+                        if liveOnly.isEmpty { continue }
+                        var cleaned = msg
+                        cleaned.payload = .cookies(liveOnly)
+                        daemon?.broadcast(cleaned)
+                    } else {
+                        daemon?.broadcast(msg)
+                    }
+                }
+            }
         }
     }
 

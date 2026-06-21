@@ -74,7 +74,8 @@ else
 
     # Update Extension manifests
     sed -i '' -E "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" "ChromiumExtension/manifest.json"
-    sed -i '' -E "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" "BrowSyncExtension/Resources/manifest.json"
+    sed -i '' -E "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" "FirefoxExtension/manifest.json"
+    sed -i '' -E "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" "SafariExtension/Resources/manifest.json"
 
     echo "✅ Local configuration updated. Regenerating project..."
     xcodegen > /dev/null
@@ -120,6 +121,11 @@ if command -v gh >/dev/null 2>&1; then
     echo "📦 Packaging Chromium Extension..."
     cd ChromiumExtension
     zip -r "../${RESULT_DIR}/ChromiumExtension-v${NEW_VERSION}.zip" * -x "*.DS_Store" -x "*.git*" > /dev/null
+    cd ..
+
+    echo "📦 Packaging Firefox Extension..."
+    cd FirefoxExtension
+    zip -r "../${RESULT_DIR}/FirefoxExtension-v${NEW_VERSION}.zip" * -x "*.DS_Store" -x "*.git*" > /dev/null
     cd ..
     
     # DMG is the primary asset

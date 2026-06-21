@@ -1,0 +1,95 @@
+{
+  "extName": {
+    "message": "BrowSync 同览"
+  },
+  "extDescription": {
+    "message": "在 macOS 设备之间同步浏览器状态。"
+  },
+  "appSubtitle": {
+    "message": "同览"
+  },
+  "statusConnecting": {
+    "message": "连接中..."
+  },
+  "statusConnected": {
+    "message": "已连接 中枢"
+  },
+  "statusSyncing": {
+    "message": "同步中..."
+  },
+  "statusDisconnected": {
+    "message": "已断开连接"
+  },
+  "btnVisitWebsite": {
+    "message": "访问官网"
+  },
+  "btnOpenApp": {
+    "message": "打开核心应用"
+  },
+  "settingRouterDefault": {
+    "message": "链接分流"
+  },
+  "settingBookmarkSync": {
+    "message": "书签同步"
+  },
+  "settingStateSync": {
+    "message": "状态同步"
+  },
+  "btnSetDefault": {
+    "message": "设为默认"
+  },
+  "textIsDefault": {
+    "message": "默认浏览器"
+  },
+  "btnMoreSettings": {
+    "message": "更多设置"
+  },
+  "remoteTabs": {
+    "message": "共享标签页"
+  },
+  "btnRefresh": {
+    "message": "刷新"
+  },
+  "currentWebsite": {
+    "message": "当前网站"
+  },
+  "btnSyncSiteNow": {
+    "message": "立即同步"
+  },
+  "syncStateForSite": {
+    "message": "同步状态"
+  },
+  "syncStrategy": {
+    "message": "策略"
+  },
+  "strategyDefault": {
+    "message": "默认策略"
+  },
+  "strategyPrimaryWins": {
+    "message": "主浏览器优先"
+  },
+  "strategyLatestWins": {
+    "message": "最新优先"
+  },
+  "strategyMerge": {
+    "message": "双向合并"
+  },
+  "sourceBrowser": {
+    "message": "来源浏览器"
+  },
+  "browserDefault": {
+    "message": "默认浏览器"
+  },
+  "settingTabSharing": {
+    "message": "标签页共享"
+  },
+  "disabledByBlacklist": {
+    "message": "为保护您的账号安全，此网站禁止被同步。"
+  },
+  "addToSafari": {
+    "message": "添加到 Safari"
+  },
+  "addingToSafari": {
+    "message": "正在添加…"
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "extName": {
+    "message": "BrowSync"
+  },
+  "extDescription": {
+    "message": "macOSデバイス間でブラウザの状態を同期します。"
+  },
+  "appSubtitle": {
+    "message": "同期"
+  },
+  "statusConnecting": {
+    "message": "接続中..."
+  },
+  "statusConnected": {
+    "message": "ハブに接続済み"
+  },
+  "statusSyncing": {
+    "message": "同期中..."
+  },
+  "statusDisconnected": {
+    "message": "切断されました"
+  },
+  "btnVisitWebsite": {
+    "message": "公式サイトへ"
+  },
+  "btnOpenApp": {
+    "message": "アプリを開く"
+  },
+  "settingRouterDefault": {
+    "message": "リンクルーター"
+  },
+  "settingBookmarkSync": {
+    "message": "ブックマーク同期"
+  },
+  "settingStateSync": {
+    "message": "状態の同期"
+  },
+  "btnSetDefault": {
+    "message": "デフォルトに設定"
+  },
+  "textIsDefault": {
+    "message": "デフォルトブラウザ"
+  },
+  "btnMoreSettings": {
+    "message": "詳細設定"
+  },
+  "remoteTabs": {
+    "message": "共有タブ"
+  },
+  "btnRefresh": {
+    "message": "更新"
+  },
+  "currentWebsite": {
+    "message": "現在のウェブサイト"
+  },
+  "btnSyncSiteNow": {
+    "message": "今すぐ同期"
+  },
+  "syncStateForSite": {
+    "message": "状態を同期"
+  },
+  "syncStrategy": {
+    "message": "戦略"
+  },
+  "strategyDefault": {
+    "message": "デフォルトポリシー"
+  },
+  "strategyPrimaryWins": {
+    "message": "メインブラウザ優先"
+  },
+  "strategyLatestWins": {
+    "message": "最新優先"
+  },
+  "strategyMerge": {
+    "message": "双方向マージ"
+  },
+  "sourceBrowser": {
+    "message": "ソースブラウザ"
+  },
+  "browserDefault": {
+    "message": "デフォルトブラウザ"
+  },
+  "settingTabSharing": {
+    "message": "タブ共有"
+  },
+  "disabledByBlacklist": {
+    "message": "アカウントのセキュリティを保護するため、このドメインの同期は無効になっています。"
+  },
+  "addToSafari": {
+    "message": "Safari に追加"
+  },
+  "addingToSafari": {
+    "message": "追加中…"
+  }
+}

@@ -24,7 +24,7 @@ struct BrowSyncApp: App {
         }
         .menuBarExtraStyle(.menu)
 
-        WindowGroup("BrowSync", id: "SettingsWindow") {
+        Window("BrowSync", id: "SettingsWindow") {
             ContentView()
                 .environmentObject(appState)
                 .environmentObject(langBundle)

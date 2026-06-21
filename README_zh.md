@@ -2,9 +2,9 @@
 
 [简体中文] | [English](README.md)
 
-**同览 (BrowSync)** 是一款 macOS 原生的跨浏览器分流与同步中枢。它打通 Safari 与所有 Chromium 内核浏览器，智能分流链接并实时同步数据，为您统一浏览体验。
+**同览 (BrowSync)** 是一款 macOS 原生的跨浏览器分流与同步中枢。它打通 Safari、所有 Chromium 内核浏览器与 Firefox，智能分流链接并实时同步数据，为您统一浏览体验。
 
-[![下载 同览](https://img.shields.io/badge/同览-最新版本-blue?style=for-the-badge&logo=apple)](https://github.com/chentao1006/browsync/releases/latest) <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh"><img src="BrowSync/Resources/Marketing/chrome-web-store-badge.png" height="28" alt="Available in the Chrome Web Store"></a>
+[![下载 同览](https://img.shields.io/badge/同览-最新版本-blue?style=for-the-badge&logo=apple)](https://github.com/chentao1006/browsync/releases/latest) <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh"><img src="BrowSync/Resources/Marketing/chrome-web-store-badge.png" height="28" alt="Available in the Chrome Web Store"></a> <a href="https://addons.mozilla.org/zh-CN/firefox/addon/brow-sync/"><img src="https://img.shields.io/badge/Firefox_Add--on-FF7139?style=for-the-badge&logo=firefox&logoColor=white" height="28" alt="获取 Firefox 附加组件"></a>
 
 ```bash
 brew install --cask chentao1006/tap/browsync
@@ -17,7 +17,7 @@ brew install --cask chentao1006/tap/browsync
 ## 🚀 主要功能
 
 - **URL 分流**：将同览设为 macOS 默认浏览器后，可根据域名、URL 规则、参数、来源应用或时间段，将链接自动定向到指定的浏览器。
-- **书签同步**：在 Safari 和所有 Chromium 内核浏览器之间实时同步书签。
+- **书签同步**：在 Safari、所有 Chromium 内核浏览器和 Firefox 之间实时同步书签。
 - **状态同步**：在各浏览器之间同步 Cookie、LocalStorage 和 sessionStorage，保持登录状态一致。
 - **标签页共享**：跨浏览器查看当前打开的标签页。自动过滤无痕模式及非 HTTP(S) 协议页面，并对重复的 URL 进行去重。
 - **同步策略**：支持单向同步（主从模式）、基于访问时间的最后写入者胜出、双向合并。
@@ -87,6 +87,10 @@ open BrowSync.xcodeproj
 您可以直接从 Chrome 网上应用店安装同览 (BrowSync) 扩展：
 [前往 Chrome Web Store 安装](https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh)
 
+**Firefox**:
+您可以直接从 Firefox 附加组件页面安装同览 (BrowSync) 扩展：
+[前往 Firefox 附加组件安装](https://addons.mozilla.org/zh-CN/firefox/addon/brow-sync/)
+
 **Safari 浏览器**:
 应用内置了原生的 Safari 扩展。运行 BrowSync 应用后，您可以在 Safari 的“设置” -> “扩展”中直接启用它。
 
@@ -95,9 +99,9 @@ open BrowSync.xcodeproj
 ### 系统架构
 
 ```text
-Safari 扩展                 Chromium 扩展
-      │                                    │
-      └──────────── WebSocket ─────────────┘
+Safari 扩展       Chromium 扩展       Firefox 扩展
+      │                  │                   │
+      └──────────────────┼───────────────────┘
                          │
                   BrowSync 守护进程
               ws://127.0.0.1:62333
@@ -118,7 +122,7 @@ BrowSync/
 │   ├── Services/               # 规则引擎, 同步服务, 设置服务
 │   └── Resources/              # Info.plist, 国际化字符串 (en + zh-Hans)
 │
-├── BrowSyncExtension/          # Safari 网页扩展 target
+├── SafariExtension/            # Safari 网页扩展 target
 │   ├── SafariWebExtensionHandler.swift
 │   └── Resources/
 │       ├── manifest.json
@@ -139,6 +143,10 @@ BrowSync/
 │   └── _locales/
 │       ├── en/messages.json
 │       └── zh_CN/messages.json
+│
+├── FirefoxExtension/           # Firefox MV3 扩展
+│   ├── manifest.json           # 包含 Firefox 专用的 CSP 和设置
+│   └── (结构与 ChromiumExtension 相同)
 │
 ├── project.yml                 # XcodeGen 配置
 ├── BrowSync.entitlements       # 应用权限 (不使用沙盒)
@@ -197,7 +205,7 @@ BrowSync 将其数据本地存储在您的 Application Support 文件夹中：
 | Cookie 跨浏览器同步 | ✅ |
 | 实时标签页共享 (去重与隐私过滤) | ✅ |
 | 细粒度站点同步控制 | ✅ |
-| Safari 与 Chromium MV3 扩展 | ✅ |
+| Safari, Chromium 与 Firefox MV3 扩展 | ✅ |
 | 深色/浅色/系统主题与中英文国际化 | ✅ |
 | iCloud 规则与设置同步 | ✅ |
 

@@ -1,0 +1,95 @@
+{
+  "extName": {
+    "message": "BrowSync"
+  },
+  "extDescription": {
+    "message": "Synchronisieren Sie Ihren Browser-Status auf macOS-Geräten."
+  },
+  "appSubtitle": {
+    "message": "Sync"
+  },
+  "statusConnecting": {
+    "message": "Verbinden..."
+  },
+  "statusConnected": {
+    "message": "Verbunden mit Hub"
+  },
+  "statusSyncing": {
+    "message": "Synchronisieren..."
+  },
+  "statusDisconnected": {
+    "message": "Getrennt"
+  },
+  "btnVisitWebsite": {
+    "message": "Offizielle Website besuchen"
+  },
+  "btnOpenApp": {
+    "message": "App öffnen"
+  },
+  "settingRouterDefault": {
+    "message": "Link Router"
+  },
+  "settingBookmarkSync": {
+    "message": "Bookmark Sync"
+  },
+  "settingStateSync": {
+    "message": "State Sync"
+  },
+  "btnSetDefault": {
+    "message": "Set as Default"
+  },
+  "textIsDefault": {
+    "message": "Default Browser"
+  },
+  "btnMoreSettings": {
+    "message": "Weitere Einstellungen"
+  },
+  "remoteTabs": {
+    "message": "Freigegebene Tabs"
+  },
+  "btnRefresh": {
+    "message": "Aktualisieren"
+  },
+  "currentWebsite": {
+    "message": "Aktuelle Website"
+  },
+  "btnSyncSiteNow": {
+    "message": "Jetzt synchronisieren"
+  },
+  "syncStateForSite": {
+    "message": "Status synchronisieren"
+  },
+  "syncStrategy": {
+    "message": "Strategie"
+  },
+  "strategyDefault": {
+    "message": "Standardrichtlinie"
+  },
+  "strategyPrimaryWins": {
+    "message": "Hauptbrowser bevorzugt"
+  },
+  "strategyLatestWins": {
+    "message": "Neueste bevorzugt"
+  },
+  "strategyMerge": {
+    "message": "Zwei-Wege-Zusammenführung"
+  },
+  "sourceBrowser": {
+    "message": "Quellbrowser"
+  },
+  "browserDefault": {
+    "message": "Standardbrowser"
+  },
+  "settingTabSharing": {
+    "message": "Tab-Freigabe"
+  },
+  "disabledByBlacklist": {
+    "message": "Die Synchronisierung ist für diese Domäne deaktiviert, um Ihre Kontosicherheit zu schützen."
+  },
+  "addToSafari": {
+    "message": "Zu Safari hinzufügen"
+  },
+  "addingToSafari": {
+    "message": "Wird hinzugefügt…"
+  }
+}

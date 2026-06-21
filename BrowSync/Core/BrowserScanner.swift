@@ -40,6 +40,8 @@ final class BrowserScanner: ObservableObject {
 
         if browser == .safari {
             info.extensionStatus = await checkSafariExtensionStatus()
+        } else if browser == .firefox {
+            info.extensionStatus = checkFirefoxExtensionStatus()
         } else {
             info.extensionStatus = checkChromiumExtensionStatus(for: browser)
         }
@@ -168,5 +170,39 @@ final class BrowserScanner: ObservableObject {
             }
         }
         return false
+    }
+
+    // MARK: - Firefox Extension Status
+
+    private func checkFirefoxExtensionStatus() -> ExtensionStatus {
+        let libraryURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let firefoxURL = libraryURL.appendingPathComponent("Firefox/Profiles")
+        
+        var foundExtension = false
+        
+        if let subdirs = try? FileManager.default.contentsOfDirectory(at: firefoxURL, includingPropertiesForKeys: [.isDirectoryKey]) {
+            for subdir in subdirs {
+                let extensionsJsonURL = subdir.appendingPathComponent("extensions.json")
+                if let data = try? Data(contentsOf: extensionsJsonURL),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let addons = json["addons"] as? [[String: Any]] {
+                    
+                    for addon in addons {
+                        if let name = addon["name"] as? String,
+                           let active = addon["active"] as? Bool {
+                            if name.lowercased().contains("browsync") || name.lowercased().contains("__msg_extname__") {
+                                if active {
+                                    return .waitingConnection
+                                } else {
+                                    foundExtension = true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        return foundExtension ? .extensionDisabled : .extensionRequired
     }
 }

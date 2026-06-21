@@ -2,9 +2,9 @@
 
 [English] | [简体中文](README_zh.md)
 
-**BrowSync** is a cross-browser routing and sync hub for macOS. It unites Safari and all Chromium-based browsers, intelligently routing links and syncing bookmarks and sessions in real-time.
+**BrowSync** is a cross-browser routing and sync hub for macOS. It unites Safari, all Chromium-based browsers, and Firefox, intelligently routing links and syncing bookmarks and sessions in real-time.
 
-[![Download BrowSync](https://img.shields.io/badge/Download-Latest%20Release-blue?style=for-the-badge&logo=apple)](https://github.com/chentao1006/browsync/releases/latest) <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh"><img src="BrowSync/Resources/Marketing/chrome-web-store-badge.png" height="28" alt="Available in the Chrome Web Store"></a>
+[![Download BrowSync](https://img.shields.io/badge/Download-Latest%20Release-blue?style=for-the-badge&logo=apple)](https://github.com/chentao1006/browsync/releases/latest) <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh"><img src="BrowSync/Resources/Marketing/chrome-web-store-badge.png" height="28" alt="Available in the Chrome Web Store"></a> <a href="https://addons.mozilla.org/en-US/firefox/addon/brow-sync/"><img src="https://img.shields.io/badge/Firefox_Add--on-FF7139?style=for-the-badge&logo=firefox&logoColor=white" height="28" alt="Get the Firefox Add-on"></a>
 
 ```bash
 brew install --cask chentao1006/tap/browsync
@@ -17,7 +17,7 @@ brew install --cask chentao1006/tap/browsync
 ## 🚀 Features
 
 - **URL Routing**: Register BrowSync as the default macOS browser to direct links to specific browsers based on domain, URL patterns, query strings, source application, or time of day.
-- **Bookmark Sync**: Sync bookmarks in real-time across Safari and all Chromium-based browsers.
+- **Bookmark Sync**: Sync bookmarks in real-time across Safari, all Chromium-based browsers, and Firefox.
 - **State Sync**: Sync Cookies, LocalStorage, and sessionStorage across supported browsers to maintain login states.
 - **Tab Sharing**: View active tabs across browsers. It filters out incognito tabs and non-HTTP(S) local pages, and deduplicates URLs.
 - **Sync Strategies**: Supports unidirectional (master-slave), last-write-wins (based on access time), and bidirectional merging.
@@ -87,6 +87,10 @@ Then in Xcode:
 You can install the BrowSync extension directly from the Chrome Web Store:
 [Install from Chrome Web Store](https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh)
 
+**Firefox**:
+You can install the BrowSync extension directly from Firefox Add-ons:
+[Install from Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/brow-sync/)
+
 **Safari**:
 The app includes a native Safari extension. After running the BrowSync app, you can enable it directly in Safari's Settings -> Extensions.
 
@@ -95,9 +99,9 @@ The app includes a native Safari extension. After running the BrowSync app, you 
 ### System Architecture
 
 ```text
-Safari Extension                Chromium Extension
-      │                                    │
-      └──────────── WebSocket ─────────────┘
+Safari Ext        Chromium Ext        Firefox Ext
+      │                  │                   │
+      └──────────────────┼───────────────────┘
                          │
                   BrowSync Daemon
               ws://127.0.0.1:62333
@@ -118,7 +122,7 @@ BrowSync/
 │   ├── Services/               # RulesEngine, SyncService, SettingsService
 │   └── Resources/              # Info.plist, Localizable.strings (en + zh-Hans)
 │
-├── BrowSyncExtension/          # Safari Web Extension target
+├── SafariExtension/            # Safari Web Extension target
 │   ├── SafariWebExtensionHandler.swift
 │   └── Resources/
 │       ├── manifest.json
@@ -139,6 +143,10 @@ BrowSync/
 │   └── _locales/
 │       ├── en/messages.json
 │       └── zh_CN/messages.json
+│
+├── FirefoxExtension/           # MV3 extension for Firefox
+│   ├── manifest.json           # Includes Firefox-specific CSP and settings
+│   └── (Same structure as ChromiumExtension)
 │
 ├── project.yml                 # XcodeGen configuration
 ├── BrowSync.entitlements       # App entitlements (Sandbox: NO)
@@ -197,7 +205,7 @@ BrowSync stores its data locally in your Application Support folder:
 | Cookie cross-browser sync | ✅ |
 | Real-time Tab Sharing (w/ deduplication & privacy filter) | ✅ |
 | Granular site sync control | ✅ |
-| Safari & Chromium MV3 Extensions | ✅ |
+| Safari, Chromium & Firefox MV3 Extensions | ✅ |
 | Dark/Light/System theme & EN/zh-Hans localization | ✅ |
 | iCloud Sync for rules and settings | ✅ |
 

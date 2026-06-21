@@ -1,0 +1,95 @@
+{
+  "extName": {
+    "message": "BrowSync"
+  },
+  "extDescription": {
+    "message": "macOS 기기 간에 브라우저 상태를 동기화합니다."
+  },
+  "appSubtitle": {
+    "message": "동기화"
+  },
+  "statusConnecting": {
+    "message": "연결 중..."
+  },
+  "statusConnected": {
+    "message": "허브에 연결됨"
+  },
+  "statusSyncing": {
+    "message": "동기화 중..."
+  },
+  "statusDisconnected": {
+    "message": "연결 끊김"
+  },
+  "btnVisitWebsite": {
+    "message": "공식 웹사이트 방문"
+  },
+  "btnOpenApp": {
+    "message": "앱 열기"
+  },
+  "settingRouterDefault": {
+    "message": "링크 라우터"
+  },
+  "settingBookmarkSync": {
+    "message": "북마크 동기화"
+  },
+  "settingStateSync": {
+    "message": "상태 동기화"
+  },
+  "btnSetDefault": {
+    "message": "기본값으로 설정"
+  },
+  "textIsDefault": {
+    "message": "기본 브라우저"
+  },
+  "btnMoreSettings": {
+    "message": "추가 설정"
+  },
+  "remoteTabs": {
+    "message": "공유 탭"
+  },
+  "btnRefresh": {
+    "message": "새로고침"
+  },
+  "currentWebsite": {
+    "message": "현재 웹사이트"
+  },
+  "btnSyncSiteNow": {
+    "message": "지금 동기화"
+  },
+  "syncStateForSite": {
+    "message": "상태 동기화"
+  },
+  "syncStrategy": {
+    "message": "전략"
+  },
+  "strategyDefault": {
+    "message": "기본 정책"
+  },
+  "strategyPrimaryWins": {
+    "message": "기본 브라우저 우선"
+  },
+  "strategyLatestWins": {
+    "message": "최신 우선"
+  },
+  "strategyMerge": {
+    "message": "양방향 병합"
+  },
+  "sourceBrowser": {
+    "message": "소스 브라우저"
+  },
+  "browserDefault": {
+    "message": "기본 브라우저"
+  },
+  "settingTabSharing": {
+    "message": "탭 공유"
+  },
+  "disabledByBlacklist": {
+    "message": "계정 보안을 위해 이 도메인의 동기화가 비활성화되었습니다."
+  },
+  "addToSafari": {
+    "message": "Safari에 추가"
+  },
+  "addingToSafari": {
+    "message": "추가 중…"
+  }
+}

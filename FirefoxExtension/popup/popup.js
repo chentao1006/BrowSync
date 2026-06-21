@@ -184,6 +184,7 @@ async function loadSettings() {
         const browserNames = {
           'safari': 'Safari',
           'chrome': 'Chrome',
+          'firefox': 'Firefox',
           'arc': 'Arc',
           'edge': 'Edge',
           'brave': 'Brave'

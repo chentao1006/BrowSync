@@ -20,15 +20,7 @@ if [ -d "${BUILD_DIR}" ]; then
     # rm -rf "${BUILD_DIR}"
 fi
 
-# 2. Sync Extension Files
-echo "🔄 Syncing extension files to Safari..."
-cp "${PROJECT_ROOT}/ChromiumExtension/popup/"* "${PROJECT_ROOT}/BrowSyncExtension/Resources/"
-cp "${PROJECT_ROOT}/ChromiumExtension/background/service-worker.js" "${PROJECT_ROOT}/BrowSyncExtension/Resources/background.js"
-cp "${PROJECT_ROOT}/ChromiumExtension/content/content-script.js" "${PROJECT_ROOT}/BrowSyncExtension/Resources/content.js"
-cp -a "${PROJECT_ROOT}/ChromiumExtension/icons" "${PROJECT_ROOT}/BrowSyncExtension/Resources/"
-cp -a "${PROJECT_ROOT}/ChromiumExtension/_locales" "${PROJECT_ROOT}/BrowSyncExtension/Resources/"
-
-# 3. Run compilation
+# 2. Run compilation
 echo "🏗️ Compiling Release version..."
 xcodebuild -project "${PROJECT_ROOT}/BrowSync.xcodeproj" \
            -scheme "BrowSync" \
@@ -96,4 +88,3 @@ echo "🎉 Installation complete!"
 echo "🧹 Cleaning up all built apps in build directories to prevent duplicate Safari extensions..."
 find "${PROJECT_ROOT}/build" -type d -name "${APP_NAME}" -exec rm -rf {} + 2>/dev/null || true
 find ~/Library/Developer/Xcode/DerivedData/BrowSync-* -type d -name "${APP_NAME}" -exec rm -rf {} + 2>/dev/null || true
-

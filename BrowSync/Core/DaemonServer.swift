@@ -354,7 +354,7 @@ final class DaemonServer: ObservableObject {
             }) else { return }
             client.lastSeen = Date()
             delegate?.daemonServer(self, didReceiveOpenSettingsFrom: client.id)
-            
+
         case .disconnect:
             removeConnection(connection)
             
@@ -515,7 +515,42 @@ final class GlobalStateStore {
                     key = "\(category)_\(bm.id)"
                 }
             }
-            if let data = try? JSONEncoder().encode(message) {
+            
+            var msgToSave = message
+            
+            if let existingData = self.stateCache[key],
+               let existingMsg = try? JSONDecoder().decode(WSMessage.self, from: existingData),
+               let existingPayload = existingMsg.payload,
+               let newPayload = message.payload {
+                
+                var mergedPayload = newPayload
+                
+                switch (existingPayload, newPayload) {
+                case (.cookies(let existingCookies), .cookies(let newCookies)):
+                    var dict = [String: SyncCookie]()
+                    for c in existingCookies { dict["\(c.name)_\(c.domain)_\(c.path)"] = c }
+                    for c in newCookies { dict["\(c.name)_\(c.domain)_\(c.path)"] = c }
+                    mergedPayload = .cookies(Array(dict.values))
+                    
+                case (.localStorage(let existingItems), .localStorage(let newItems)):
+                    var dict = [String: StorageItem]()
+                    for item in existingItems { dict[item.key] = item }
+                    for item in newItems { dict[item.key] = item }
+                    mergedPayload = .localStorage(Array(dict.values))
+                    
+                case (.sessionStorage(let existingItems), .sessionStorage(let newItems)):
+                    var dict = [String: StorageItem]()
+                    for item in existingItems { dict[item.key] = item }
+                    for item in newItems { dict[item.key] = item }
+                    mergedPayload = .sessionStorage(Array(dict.values))
+                    
+                default:
+                    break
+                }
+                msgToSave.payload = mergedPayload
+            }
+
+            if let data = try? JSONEncoder().encode(msgToSave) {
                 self.stateCache[key] = data
                 self.persist()
             }

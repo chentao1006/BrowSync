@@ -1,0 +1,95 @@
+{
+  "extName": {
+    "message": "BrowSync"
+  },
+  "extDescription": {
+    "message": "Keep your browser state in sync across macOS devices."
+  },
+  "appSubtitle": {
+    "message": "Sync"
+  },
+  "statusConnecting": {
+    "message": "Connecting..."
+  },
+  "statusConnected": {
+    "message": "Connected to Hub"
+  },
+  "statusSyncing": {
+    "message": "Syncing..."
+  },
+  "statusDisconnected": {
+    "message": "Disconnected"
+  },
+  "btnVisitWebsite": {
+    "message": "Visit Official Website"
+  },
+  "btnOpenApp": {
+    "message": "Open BrowSync App"
+  },
+  "settingRouterDefault": {
+    "message": "Link Router"
+  },
+  "settingBookmarkSync": {
+    "message": "Bookmark Sync"
+  },
+  "settingStateSync": {
+    "message": "State Sync"
+  },
+  "btnSetDefault": {
+    "message": "Set as Default"
+  },
+  "textIsDefault": {
+    "message": "Default Browser"
+  },
+  "btnMoreSettings": {
+    "message": "More Settings"
+  },
+  "remoteTabs": {
+    "message": "Shared Tabs"
+  },
+  "btnRefresh": {
+    "message": "Refresh"
+  },
+  "currentWebsite": {
+    "message": "Current Website"
+  },
+  "btnSyncSiteNow": {
+    "message": "Sync Now"
+  },
+  "syncStateForSite": {
+    "message": "Sync State"
+  },
+  "syncStrategy": {
+    "message": "Strategy"
+  },
+  "strategyDefault": {
+    "message": "Default Policy"
+  },
+  "strategyPrimaryWins": {
+    "message": "Primary Wins"
+  },
+  "strategyLatestWins": {
+    "message": "Latest Wins"
+  },
+  "strategyMerge": {
+    "message": "Two-way Merge"
+  },
+  "sourceBrowser": {
+    "message": "Source Browser"
+  },
+  "browserDefault": {
+    "message": "Default Browser"
+  },
+  "settingTabSharing": {
+    "message": "Tab Sharing"
+  },
+  "disabledByBlacklist": {
+    "message": "Sync is disabled for this domain to protect your account security."
+  },
+  "addToSafari": {
+    "message": "Add to Safari"
+  },
+  "addingToSafari": {
+    "message": "Adding…"
+  }
+}

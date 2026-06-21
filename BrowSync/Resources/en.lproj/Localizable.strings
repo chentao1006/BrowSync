@@ -161,6 +161,17 @@
 "Link Router" = "Link Router";
 "Select an item" = "Select an item";
 
+/* Extension compatibility */
+"Extension Compatibility" = "Extension Compatibility";
+"Install Chrome extensions for use in Safari. This experimental feature currently supports a limited selection." = "Install Chrome extensions for use in Safari. This experimental feature currently supports a limited selection.";
+"Open Chrome Web Store" = "Open Chrome Web Store";
+"No Chrome Extensions" = "No Chrome Extensions";
+"Visit a Chrome Web Store extension page in Safari and choose Add to Safari." = "Visit a Chrome Web Store extension page in Safari and choose Add to Safari.";
+"Ready in Safari" = "Ready in Safari";
+"Saved — adapter not available yet" = "Saved — adapter not available yet";
+"Extension Installation Failed" = "Extension Installation Failed";
+"Installing…" = "Installing…";
+
 /* BrowsersTabView */
 "Installed Browsers" = "Installed Browsers";
 "Default System" = "(System Default)";

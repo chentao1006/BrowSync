@@ -1,0 +1,95 @@
+{
+  "extName": {
+    "message": "BrowSync"
+  },
+  "extDescription": {
+    "message": "Synchronisez l'état de votre navigateur sur vos appareils macOS."
+  },
+  "appSubtitle": {
+    "message": "Sync"
+  },
+  "statusConnecting": {
+    "message": "Connexion..."
+  },
+  "statusConnected": {
+    "message": "Connecté à Hub"
+  },
+  "statusSyncing": {
+    "message": "Synchronisation..."
+  },
+  "statusDisconnected": {
+    "message": "Déconnecté"
+  },
+  "btnVisitWebsite": {
+    "message": "Visiter le site web officiel"
+  },
+  "btnOpenApp": {
+    "message": "Ouvrir l'application"
+  },
+  "settingRouterDefault": {
+    "message": "Link Router"
+  },
+  "settingBookmarkSync": {
+    "message": "Bookmark Sync"
+  },
+  "settingStateSync": {
+    "message": "State Sync"
+  },
+  "btnSetDefault": {
+    "message": "Set as Default"
+  },
+  "textIsDefault": {
+    "message": "Default Browser"
+  },
+  "btnMoreSettings": {
+    "message": "Plus de paramètres"
+  },
+  "remoteTabs": {
+    "message": "Onglets partagés"
+  },
+  "btnRefresh": {
+    "message": "Actualiser"
+  },
+  "currentWebsite": {
+    "message": "Site Web Actuel"
+  },
+  "btnSyncSiteNow": {
+    "message": "Synchroniser maintenant"
+  },
+  "syncStateForSite": {
+    "message": "Synchroniser l'état"
+  },
+  "syncStrategy": {
+    "message": "Stratégie"
+  },
+  "strategyDefault": {
+    "message": "Politique par défaut"
+  },
+  "strategyPrimaryWins": {
+    "message": "Navigateur principal prioritaire"
+  },
+  "strategyLatestWins": {
+    "message": "Le plus récent"
+  },
+  "strategyMerge": {
+    "message": "Fusion bidirectionnelle"
+  },
+  "sourceBrowser": {
+    "message": "Navigateur source"
+  },
+  "browserDefault": {
+    "message": "Navigateur par défaut"
+  },
+  "settingTabSharing": {
+    "message": "Partage d'onglets"
+  },
+  "disabledByBlacklist": {
+    "message": "La synchronisation est désactivée pour ce domaine afin de protéger la sécurité de votre compte."
+  },
+  "addToSafari": {
+    "message": "Ajouter à Safari"
+  },
+  "addingToSafari": {
+    "message": "Ajout en cours…"
+  }
+}
