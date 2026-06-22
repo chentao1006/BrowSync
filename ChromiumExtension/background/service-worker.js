@@ -395,8 +395,8 @@ async function sendStorageSnapshot(storageType, site) {
       if (!allItemsMap.has(mapKey)) {
         allItemsMap.set(mapKey, item);
       }
-    } else if (key.startsWith(`sync_${storageType}_`)) {
-      // It's a live cached item
+    } else if (key.startsWith(`sync_${storageType}_`) || key.startsWith(`backup_${storageType}_`)) {
+      // It's a live cached item (or passively accumulated backup)
       const items = Array.isArray(value) ? value : [];
       for (const item of items) {
         if (site && !item.origin.includes(site)) continue;

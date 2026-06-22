@@ -37,8 +37,8 @@ targets:
     info:
       path: BrowSync/Resources/Info.plist
       properties:
-        CFBundleShortVersionString: "1.1.0"
-        CFBundleVersion: "24"
+        CFBundleShortVersionString: "1.1.1"
+        CFBundleVersion: "25"
         CFBundleURLTypes:
           - CFBundleURLName: com.ct106.browsync
             CFBundleURLSchemes:
@@ -100,8 +100,8 @@ targets:
         CFBundleIdentifier: com.ct106.browsync.extension
         CFBundleName: SafariExtension
         CFBundleDisplayName: BrowSync Extension
-        CFBundleShortVersionString: "1.1.0"
-        CFBundleVersion: "24"
+        CFBundleShortVersionString: "1.1.1"
+        CFBundleVersion: "25"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.Safari.web-extension
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SafariWebExtensionHandler

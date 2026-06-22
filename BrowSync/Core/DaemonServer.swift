@@ -314,7 +314,24 @@ final class DaemonServer: ObservableObject {
             }
             
             if message.category != "bookmarks" {
-                let payloads = GlobalStateStore.shared.pull(site: message.site, category: message.category)
+                let categoriesToPull: [String]
+                if message.category == "browserData" {
+                    categoriesToPull = ["cookies", "localStorage", "sessionStorage"]
+                } else if let cat = message.category {
+                    categoriesToPull = [cat]
+                } else {
+                    categoriesToPull = []
+                }
+                
+                var payloads: [Data] = []
+                if categoriesToPull.isEmpty {
+                    payloads = GlobalStateStore.shared.pull(site: message.site, category: nil)
+                } else {
+                    for cat in categoriesToPull {
+                        payloads.append(contentsOf: GlobalStateStore.shared.pull(site: message.site, category: cat))
+                    }
+                }
+                
                 for payloadData in payloads {
                     // Strip tombstones before sending cached cookie state.
                     // Tombstones in GlobalState are stale remnants from previous syncs.
