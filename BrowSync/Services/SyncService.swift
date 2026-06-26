@@ -51,11 +51,15 @@ final class SyncService: ObservableObject {
     private var lastNetworkSyncTime: Date = Date.distantPast
 
     init() {
+#if !APP_STORE
         SafariCleanup.cleanDirtyBookmarks()
+#endif
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         dataDir = appSupport.appendingPathComponent("BrowSync")
         createDataDirectories()
+#if !APP_STORE
         startSafariBookmarkMonitor()
+#endif
     }
     
     deinit {
@@ -147,7 +151,11 @@ final class SyncService: ObservableObject {
         log("Starting manual sync... Connected clients: \(connectedClients)")
 
         let targetCategories = categories ?? settings.enabledCategories
+#if APP_STORE
+        let preSyncSafariBookmarks: [SyncBookmark] = []
+#else
         let preSyncSafariBookmarks = targetCategories.contains(.bookmarks) ? safariBookmarks.readBookmarks() : []
+#endif
         for category in SyncCategory.allCases where targetCategories.contains(category) {
             await syncCategory(category)
         }
@@ -162,6 +170,9 @@ final class SyncService: ObservableObject {
         lastSyncDate = Date()
         isSyncing = false
         if targetCategories.contains(.bookmarks) {
+#if APP_STORE
+            currentManualSyncStats.bookmarks = 0
+#else
             let postSyncSafariBookmarks = safariBookmarks.readBookmarks()
             currentManualSyncStats.bookmarks = postSyncSafariBookmarks.count
             
@@ -182,6 +193,7 @@ final class SyncService: ObservableObject {
                     currentManualSyncStats.bookmarksDeleted += 1
                 }
             }
+#endif
         }
         log("Sync complete (Bookmarks: \(currentManualSyncStats.bookmarks), Cookies: \(currentManualSyncStats.cookies), LocalStorage: \(currentManualSyncStats.localStorage), SessionStorage: \(currentManualSyncStats.sessionStorage))")
         return currentManualSyncStats
@@ -195,7 +207,11 @@ final class SyncService: ObservableObject {
 
         if category == .bookmarks {
             // Determine if we should push Safari to others
+#if APP_STORE
+            let shouldPushSafari = false
+#else
             let shouldPushSafari = (strategy == .twoWayMerge || (strategy == .oneWay && sourceBrowser == .safari)) && settings.bookmarkParticipatingBrowsers.contains(.safari)
+#endif
             
             if shouldPushSafari {
                 let safariBms = safariBookmarks.readBookmarks()
@@ -745,6 +761,9 @@ final class SyncService: ObservableObject {
             
             // Also write natively into Safari if the source is a Chromium browser, AND the category is an actual sync (not a backup)
             if category != "bookmark_backup" && !clientId.lowercased().contains("safari") && settings.bookmarkParticipatingBrowsers.contains(.safari) {
+#if APP_STORE
+                log("Skipping native Safari bookmark write in App Store build")
+#else
                 // Ensure strategy allows it (oneWay from Safari should not accept writes)
                 let strategy = settings.bookmarkSyncStrategy
                 let sourceBrowser = settings.bookmarkSourceBrowser
@@ -776,6 +795,7 @@ final class SyncService: ObservableObject {
                         log("Safari is running. Exported HTML for manual import instead.")
                     }
                 }
+#endif
             }
         case .history(let entries):
             let histDir = dataDir.appendingPathComponent("history")

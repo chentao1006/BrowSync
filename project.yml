@@ -2,7 +2,7 @@ name: BrowSync
 options:
   bundleIdPrefix: com.ct106
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "13.0"
   defaultConfig: Debug
   xcodeVersion: "15"
   generateEmptyDirectories: true
@@ -17,7 +17,7 @@ packages:
 
 settings:
   SWIFT_VERSION: "5.10"
-  MACOSX_DEPLOYMENT_TARGET: "14.0"
+  MACOSX_DEPLOYMENT_TARGET: "13.0"
   ENABLE_HARDENED_RUNTIME: YES
   SWIFT_STRICT_CONCURRENCY: minimal
 
@@ -32,7 +32,7 @@ targets:
   BrowSync:
     type: application
     platform: macOS
-    deploymentTarget: "14.0"
+    deploymentTarget: "13.0"
 
     info:
       path: BrowSync/Resources/Info.plist
@@ -46,13 +46,15 @@ targets:
               - http
               - https
         CFBundleDocumentTypes:
-          - CFBundleTypeRole: Viewer
+          - CFBundleTypeName: Web Document
+            CFBundleTypeRole: Viewer
             LSHandlerRank: Default
             LSItemContentTypes:
               - public.html
               - public.url
         NSUserActivityTypes:
           - NSUserActivityTypeBrowsingWeb
+        LSApplicationCategoryType: public.app-category.utilities
         SUFeedURL: https://browsync.ct106.com/appcast.xml
         SUPublicEDKey: T9d+4vUpmrkAXNcwSOu7/MzSO6tIKr8JbVhYe4j0jaE=
         SUEnableAutomaticChecks: true
@@ -62,12 +64,14 @@ targets:
       - path: BrowSync
         excludes:
           - "Resources/Info.plist"
+          - "Resources/InfoAppStore.plist"
           - "Resources/Design"
 
     resources:
       - path: BrowSync/Resources
         excludes:
           - "Info.plist"
+          - "InfoAppStore.plist"
           - "Design"
 
     settings:
@@ -87,12 +91,73 @@ targets:
       - package: Sparkle
       - package: Aptabase
 
+  # ─── Mac App Store App ──────────────────────────────────────────────────────
+
+  BrowSyncAppStore:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+
+    info:
+      path: BrowSync/Resources/InfoAppStore.plist
+      properties:
+        CFBundleShortVersionString: "1.1.2"
+        CFBundleVersion: "26"
+        CFBundleURLTypes:
+          - CFBundleURLName: com.ct106.browsync
+            CFBundleURLSchemes:
+              - browsync
+              - http
+              - https
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Web Document
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Default
+            LSItemContentTypes:
+              - public.html
+              - public.url
+        NSUserActivityTypes:
+          - NSUserActivityTypeBrowsingWeb
+        LSApplicationCategoryType: public.app-category.utilities
+        LSUIElement: true
+
+    sources:
+      - path: BrowSync
+        excludes:
+          - "Resources/Info.plist"
+          - "Resources/InfoAppStore.plist"
+          - "Resources/Design"
+
+    resources:
+      - path: BrowSync/Resources
+        excludes:
+          - "Info.plist"
+          - "InfoAppStore.plist"
+          - "Design"
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ct106.browsync
+        PRODUCT_NAME: BrowSync
+        INFOPLIST_FILE: BrowSync/Resources/InfoAppStore.plist
+        CODE_SIGN_ENTITLEMENTS: BrowSyncAppStore.entitlements
+        DEVELOPMENT_TEAM: "U2NEAJ73J2"
+        CODE_SIGN_STYLE: Automatic
+        APPLICATION_EXTENSION_API_ONLY: NO
+        SWIFT_EMIT_LOC_STRINGS: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        OTHER_SWIFT_FLAGS: "$(inherited) -D APP_STORE"
+
+    dependencies:
+      - target: SafariExtensionAppStore
+      - package: Aptabase
+
   # ─── Safari Web Extension ────────────────────────────────────────────────────
 
   SafariExtension:
     type: app-extension
     platform: macOS
-    deploymentTarget: "14.0"
+    deploymentTarget: "13.0"
 
     info:
       path: SafariExtension/Info.plist
@@ -106,7 +171,7 @@ targets:
           NSExtensionPointIdentifier: com.apple.Safari.web-extension
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SafariWebExtensionHandler
         NSHumanReadableCopyright: "© 2026 BrowSync"
-        LSMinimumSystemVersion: "14.0"
+        LSMinimumSystemVersion: "13.0"
 
     sources:
       - SafariExtension/SafariWebExtensionHandler.swift
@@ -129,11 +194,65 @@ targets:
         CODE_SIGN_STYLE: Automatic
         SWIFT_EMIT_LOC_STRINGS: YES
 
+  # ─── Mac App Store Safari Web Extension ─────────────────────────────────────
+
+  SafariExtensionAppStore:
+    type: app-extension
+    platform: macOS
+    deploymentTarget: "13.0"
+
+    info:
+      path: SafariExtension/InfoAppStore.plist
+      properties:
+        CFBundleIdentifier: com.ct106.browsync.extension
+        CFBundleName: SafariExtension
+        CFBundleDisplayName: BrowSync Extension
+        CFBundleShortVersionString: "1.1.2"
+        CFBundleVersion: "26"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.Safari.web-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SafariWebExtensionHandler
+        NSHumanReadableCopyright: "© 2026 BrowSync"
+        LSMinimumSystemVersion: "13.0"
+
+    sources:
+      - SafariExtension/SafariWebExtensionHandler.swift
+      - SafariExtension/Resources/manifest.json
+      - SafariExtension/Resources/background.js
+      - SafariExtension/Resources/content.js
+      - SafariExtension/Resources/popup.html
+      - SafariExtension/Resources/popup.js
+      - path: SafariExtension/Resources/icons
+        type: folder
+      - path: SafariExtension/Resources/_locales
+        type: folder
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ct106.browsync.extension
+        CODE_SIGN_ENTITLEMENTS: SafariExtensionAppStore.entitlements
+        DEVELOPMENT_TEAM: "U2NEAJ73J2"
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_EMIT_LOC_STRINGS: YES
+        OTHER_SWIFT_FLAGS: "$(inherited) -D APP_STORE"
+
 schemes:
   BrowSync:
     build:
       targets:
         BrowSync: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    archive:
+      config: Release
+    analyze:
+      config: Debug
+  BrowSyncAppStore:
+    build:
+      targets:
+        BrowSyncAppStore: all
     run:
       config: Debug
     test:

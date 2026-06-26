@@ -136,6 +136,7 @@ struct BookmarkSyncTabView: View {
                         }
                         .pickerStyle(.menu)
                         
+#if !APP_STORE
                         if syncSettings.bookmarkSourceBrowser.wrappedValue == .safari && !appState.hasFullDiskAccess {
                             VStack(alignment: .leading, spacing: 10) {
                                 HStack {
@@ -175,10 +176,12 @@ struct BookmarkSyncTabView: View {
                             .cornerRadius(8)
                             .padding(.vertical, 4)
                         }
+#endif
                     }
                     
                     Toggle(String(localized: "Real-time Auto Sync", bundle: langBundle.bundle), isOn: syncSettings.bookmarkAutoSync)
                 }
+#if !APP_STORE
                 if (syncSettings.bookmarkSyncStrategy.wrappedValue == .twoWayMerge || 
                    (syncSettings.bookmarkSyncStrategy.wrappedValue == .oneWay && syncSettings.bookmarkSourceBrowser.wrappedValue == .safari)) 
                    && !appState.hasFullDiskAccess {
@@ -215,6 +218,7 @@ struct BookmarkSyncTabView: View {
                         .padding(.vertical, 4)
                     }
                 }
+#endif
                 
                 Section(String(localized: "Deleted Bookmarks (Trash Bin)", bundle: langBundle.bundle)) {
                     if backupService.deletedBookmarks.isEmpty {
@@ -327,6 +331,9 @@ struct BookmarkSyncTabView: View {
     }
 
     private func restoreAllBookmarks() {
+#if APP_STORE
+        return
+#else
         let safariSvc = SafariBookmarkService()
         var currentSafariBookmarks = safariSvc.readBookmarks()
         
@@ -374,9 +381,13 @@ struct BookmarkSyncTabView: View {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             showSuccess = false
         }
+#endif
     }
 
     private func restoreBookmark(_ item: DeletedBookmark) {
+#if APP_STORE
+        return
+#else
         let safariSvc = SafariBookmarkService()
         var currentSafariBookmarks = safariSvc.readBookmarks()
         
@@ -418,5 +429,6 @@ struct BookmarkSyncTabView: View {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             showSuccess = false
         }
+#endif
     }
 }

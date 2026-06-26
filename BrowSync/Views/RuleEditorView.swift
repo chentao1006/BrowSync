@@ -244,7 +244,7 @@ struct ConditionRow: View {
             }
             .labelsHidden()
             .frame(width: 120)
-            .onChange(of: condition.field) { _, newField in
+            .onChange(of: condition.field) { newField in
                 if newField == .sourceApp || newField == .scheme {
                     if condition.operator != .equals && condition.operator != .notEquals {
                         condition.operator = .equals

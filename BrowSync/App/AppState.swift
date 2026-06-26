@@ -87,8 +87,12 @@ final class AppState: ObservableObject {
     }
     
     func checkFullDiskAccess() {
+#if APP_STORE
+        hasFullDiskAccess = false
+#else
         let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Safari/Bookmarks.plist")
         hasFullDiskAccess = FileManager.default.isReadableFile(atPath: url.path)
+#endif
     }
 
     // MARK: - Startup
@@ -407,6 +411,9 @@ extension AppState: DaemonServerDelegate {
             var currentSafariBms: [SyncBookmark] = []
             
             if sourceBrowser == .safari {
+#if APP_STORE
+                return
+#else
                 let safariSvc = SafariBookmarkService()
                 currentSafariBms = safariSvc.readBookmarks()
                 if !currentSafariBms.isEmpty {
@@ -414,6 +421,7 @@ extension AppState: DaemonServerDelegate {
                         Bookmark(id: b.id, title: b.title, url: b.url, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
                     }
                 }
+#endif
             } else {
                 if let snapshot = self.backupService.getSnapshot(sourceBrowser: sourceBrowser.rawValue) {
                     bookmarksToSend = snapshot

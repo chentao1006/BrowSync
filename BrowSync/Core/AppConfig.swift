@@ -9,4 +9,9 @@ struct AppConfig {
     
     /// The extension ID used by the BrowSync Chromium extension
     static let chromiumExtensionID = "nahmlhblgjnkkcmaiicngaepeepofpkh"
+
+    /// The bundled Safari Web Extension identifier differs between distribution channels.
+    static var safariExtensionBundleIdentifier: String {
+        return "com.ct106.browsync.extension"
+    }
 }

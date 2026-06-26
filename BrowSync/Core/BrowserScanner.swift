@@ -72,7 +72,7 @@ final class BrowserScanner: ObservableObject {
     private func checkSafariExtensionStatus() async -> ExtensionStatus {
         return await withCheckedContinuation { continuation in
             SFSafariExtensionManager.getStateOfSafariExtension(
-                withIdentifier: "com.ct106.browsync.extension"
+                withIdentifier: AppConfig.safariExtensionBundleIdentifier
             ) { state, error in
                 if error != nil {
                     continuation.resume(returning: .extensionRequired)

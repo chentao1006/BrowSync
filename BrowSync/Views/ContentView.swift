@@ -125,11 +125,12 @@ struct AboutTabView: View {
                     .padding(.vertical)
                 }
                 
+#if !APP_STORE
                 Section(String(localized: "Updates", bundle: langBundle.bundle)) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Toggle(String(localized: "Check for updates automatically", bundle: langBundle.bundle), isOn: settings.autoUpdate)
-                                .onChange(of: settings.autoUpdate.wrappedValue) { _, newValue in
+                                .onChange(of: settings.autoUpdate.wrappedValue) { newValue in
                                     AppDelegate.shared.updaterController.updater.automaticallyChecksForUpdates = newValue
                                 }
                         }
@@ -139,6 +140,7 @@ struct AboutTabView: View {
                         AppDelegate.shared.updaterController.checkForUpdates(nil)
                     }
                 }
+#endif
                 
                 Section(String(localized: "Diagnostics", bundle: langBundle.bundle)) {
                     Button(String(localized: "View Logs", bundle: langBundle.bundle)) {
@@ -153,7 +155,7 @@ struct AboutTabView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Toggle(String(localized: "Send Anonymous Usage Statistics", bundle: langBundle.bundle), isOn: settings.analyticsEnabled)
-                                .onChange(of: settings.analyticsEnabled.wrappedValue) { _, newValue in
+                                .onChange(of: settings.analyticsEnabled.wrappedValue) { newValue in
                                     appState.settingsService.general.analyticsOptInPrompted = true
                                     appState.settingsService.save()
                                     if newValue {

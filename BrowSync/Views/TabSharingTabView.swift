@@ -31,7 +31,7 @@ struct TabSharingTabView: View {
                 
                 Toggle(String(localized: "Enable Tab Sharing", bundle: langBundle.bundle), isOn: syncSettings.tabSharingEnabled)
                     .toggleStyle(.switch)
-                    .onChange(of: syncSettings.tabSharingEnabled.wrappedValue) {
+                    .onChange(of: syncSettings.tabSharingEnabled.wrappedValue) { _ in
                         appState.broadcastSettings()
                         if syncSettings.tabSharingEnabled.wrappedValue {
                             appState.requestTabSharingPull()
@@ -128,8 +128,8 @@ struct TabSharingTabView: View {
             .onAppear {
                 appState.requestTabSharingPull()
             }
-            .onChange(of: scenePhase) {
-                if scenePhase == .active && syncSettings.tabSharingEnabled.wrappedValue {
+            .onChange(of: scenePhase) { newPhase in
+                if newPhase == .active && syncSettings.tabSharingEnabled.wrappedValue {
                     appState.requestTabSharingPull()
                 }
             }

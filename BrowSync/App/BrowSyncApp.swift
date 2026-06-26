@@ -3,7 +3,9 @@
 
 import SwiftUI
 import AppKit
+#if !APP_STORE
 import Sparkle
+#endif
 
 @main
 struct BrowSyncApp: App {
@@ -34,7 +36,7 @@ struct BrowSyncApp: App {
                     appDelegate.settingsWindowDidAppear()
                     langBundle.apply(language: appState.settingsService.general.language)
                 }
-                .onChange(of: appState.settingsService.general.language) { _, newLang in
+                .onChange(of: appState.settingsService.general.language) { newLang in
                     langBundle.apply(language: newLang)
                 }
         }
@@ -64,13 +66,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static private(set) var shared: AppDelegate!
     
     var appState: AppState { AppState.shared }
+#if !APP_STORE
     let updaterController: SPUStandardUpdaterController
+#endif
     private var shouldShowSettingsWindow = false
     private var pendingURLRequests: [(url: URL, sourceAppBundleId: String?)] = []
     private var lastActiveAppBundleId: String?
 
     override init() {
+#if !APP_STORE
         updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+#endif
         super.init()
         AppDelegate.shared = self
     }
@@ -117,8 +123,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         
+#if !APP_STORE
         // Sparkle Auto Update
         updaterController.updater.automaticallyChecksForUpdates = settingsService.general.autoUpdate
+#endif
         
         // Analytics
         AnalyticsManager.shared.initialize()
@@ -535,10 +543,12 @@ struct MenuBarView: View {
             NSApp.activate(ignoringOtherApps: true)
         }
 
+#if !APP_STORE
         Button(String(localized: "Check for Updates...", bundle: langBundle.bundle)) {
             NSApp.activate(ignoringOtherApps: true)
             AppDelegate.shared.updaterController.checkForUpdates(nil)
         }
+#endif
 
         Divider()
 

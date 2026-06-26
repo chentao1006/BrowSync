@@ -54,7 +54,7 @@ struct GeneralView: View {
                             Text(theme.displayName).tag(theme)
                         }
                     }
-                    .onChange(of: settings.theme.wrappedValue) { _, newTheme in
+                    .onChange(of: settings.theme.wrappedValue) { newTheme in
                         applyTheme(newTheme)
                     }
                 }
@@ -68,7 +68,7 @@ struct GeneralView: View {
                     } label: {
                         Text(verbatim: String(localized: "Language", bundle: LanguageBundle.systemBundle))
                     }
-                    .onChange(of: settings.language.wrappedValue) { _, newLang in
+                    .onChange(of: settings.language.wrappedValue) { newLang in
                         UserDefaults.standard.set(
                             newLang == .system ? nil : [newLang.rawValue],
                             forKey: "AppleLanguages"

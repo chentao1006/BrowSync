@@ -171,7 +171,7 @@ struct StateSyncTabView: View {
                             TextField("", text: $site.domain, prompt: Text(String(localized: "Domain (e.g. example.com)", bundle: langBundle.bundle)))
                                 .textFieldStyle(.roundedBorder)
                                 .labelsHidden()
-                                .onChange(of: $site.domain.wrappedValue) { _, newValue in
+                                .onChange(of: $site.domain.wrappedValue) { newValue in
                                     let lower = newValue.lowercased()
                                     if WebsiteSyncSetting.syncDisabledDomains.contains(where: { lower == $0 || lower.hasSuffix(".\($0)") }) {
                                         disabledDomainAttempted = newValue
@@ -188,7 +188,7 @@ struct StateSyncTabView: View {
                             }
                             .labelsHidden()
                             .pickerStyle(.menu)
-                            .onChange(of: $site.strategy.wrappedValue) { _, newValue in
+                            .onChange(of: $site.strategy.wrappedValue) { newValue in
                                 if newValue == .primaryWins && syncSettings.browserDataSyncStrategy.wrappedValue != .primaryWins {
                                     if $site.sourceBrowser.wrappedValue == nil {
                                         let firstInstalled = appState.browserInfos.first(where: { $0.isInstalled })?.browser ?? .safari

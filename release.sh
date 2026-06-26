@@ -5,6 +5,12 @@
 # do not support gpg.format = ssh and will fail to parse ~/.gitconfig.
 export PATH="/opt/homebrew/bin:$PATH"
 PLIST_PATH="BrowSync/Resources/Info.plist"
+VERSIONED_PLISTS=(
+    "BrowSync/Resources/Info.plist"
+    "BrowSync/Resources/InfoAppStore.plist"
+    "SafariExtension/Info.plist"
+    "SafariExtension/InfoAppStore.plist"
+)
 PROJECT_YML="project.yml"
 RESULT_DIR="./dist"
 
@@ -16,6 +22,12 @@ get_current_version() {
 # Helper function to get current build
 get_current_build() {
     grep -A 1 "CFBundleVersion" "$PLIST_PATH" | grep "<string>" | sed -E 's/.*<string>(.*)<\/string>.*/\1/'
+}
+
+update_plist_version() {
+    local plist_path="$1"
+    sed -i '' -E "/<key>CFBundleShortVersionString<\/key>/{n;s/<string>.*<\/string>/<string>$NEW_VERSION<\/string>/;}" "$plist_path"
+    sed -i '' -E "/<key>CFBundleVersion<\/key>/{n;s/<string>.*<\/string>/<string>$NEW_BUILD<\/string>/;}" "$plist_path"
 }
 
 CURRENT_VERSION=$(get_current_version)
@@ -66,8 +78,9 @@ else
     echo "🚀 Preparing local release $NEW_VERSION (Build $NEW_BUILD)..."
 
     # 1. Update Version Files
-    sed -i '' -E "/<key>CFBundleShortVersionString<\/key>/{n;s/<string>.*<\/string>/<string>$NEW_VERSION<\/string>/;}" "$PLIST_PATH"
-    sed -i '' -E "/<key>CFBundleVersion<\/key>/{n;s/<string>.*<\/string>/<string>$NEW_BUILD<\/string>/;}" "$PLIST_PATH"
+    for plist_path in "${VERSIONED_PLISTS[@]}"; do
+        update_plist_version "$plist_path"
+    done
     
     sed -i '' "s/CFBundleShortVersionString: .*/CFBundleShortVersionString: \"$NEW_VERSION\"/" "$PROJECT_YML"
     sed -i '' "s/CFBundleVersion: .*/CFBundleVersion: \"$NEW_BUILD\"/" "$PROJECT_YML"
