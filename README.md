@@ -4,7 +4,7 @@
 
 **BrowSync** is a cross-browser routing and sync hub for macOS. It unites Safari, all Chromium-based browsers, and Firefox, intelligently routing links and syncing bookmarks and sessions in real-time.
 
-[![Download BrowSync](https://img.shields.io/badge/Download-Latest%20Release-blue?style=for-the-badge&logo=apple)](https://github.com/chentao1006/browsync/releases/latest) <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh"><img src="BrowSync/Resources/Marketing/chrome-web-store-badge.png" height="28" alt="Available in the Chrome Web Store"></a> <a href="https://addons.mozilla.org/en-US/firefox/addon/brow-sync/"><img src="https://img.shields.io/badge/Firefox_Add--on-FF7139?style=for-the-badge&logo=firefox&logoColor=white" height="28" alt="Get the Firefox Add-on"></a>
+<a href="https://apps.apple.com/cn/app/id6784604835?mt=12"><img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83" height="40" alt="Download on the App Store"></a> <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh"><img src="BrowSync/Resources/Marketing/chrome-web-store-badge.png" height="40" alt="Available in the Chrome Web Store"></a> <a href="https://addons.mozilla.org/en-US/firefox/addon/brow-sync/"><img src="https://img.shields.io/badge/Firefox_Add--on-FF7139?style=for-the-badge&logo=firefox&logoColor=white" height="40" alt="Get the Firefox Add-on"></a>
 
 ```bash
 brew install --cask chentao1006/tap/browsync
@@ -47,9 +47,12 @@ brew install --cask chentao1006/tap/browsync
 | Homebrew | Latest |
 | XcodeGen | 2.40+ |
 
-### 2. Homebrew Cask
+### 2. App Store
 
-You can install BrowSync with Homebrew:
+You can download BrowSync from the Mac App Store:
+[Download on the App Store](https://apps.apple.com/cn/app/id6784604835?mt=12)
+
+Alternatively, you can install BrowSync with Homebrew:
 
 ```bash
 brew install --cask chentao1006/tap/browsync

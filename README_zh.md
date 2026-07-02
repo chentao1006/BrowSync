@@ -4,7 +4,7 @@
 
 **同览 (BrowSync)** 是一款 macOS 原生的跨浏览器分流与同步中枢。它打通 Safari、所有 Chromium 内核浏览器与 Firefox，智能分流链接并实时同步数据，为您统一浏览体验。
 
-[![下载 同览](https://img.shields.io/badge/同览-最新版本-blue?style=for-the-badge&logo=apple)](https://github.com/chentao1006/browsync/releases/latest) <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh"><img src="BrowSync/Resources/Marketing/chrome-web-store-badge.png" height="28" alt="Available in the Chrome Web Store"></a> <a href="https://addons.mozilla.org/zh-CN/firefox/addon/brow-sync/"><img src="https://img.shields.io/badge/Firefox_Add--on-FF7139?style=for-the-badge&logo=firefox&logoColor=white" height="28" alt="获取 Firefox 附加组件"></a>
+<a href="https://apps.apple.com/cn/app/id6784604835?mt=12"><img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/zh-cn?size=250x83" height="40" alt="从 App Store 下载"></a> <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh"><img src="BrowSync/Resources/Marketing/chrome-web-store-badge.png" height="40" alt="Available in the Chrome Web Store"></a> <a href="https://addons.mozilla.org/zh-CN/firefox/addon/brow-sync/"><img src="https://img.shields.io/badge/Firefox_Add--on-FF7139?style=for-the-badge&logo=firefox&logoColor=white" height="40" alt="获取 Firefox 附加组件"></a>
 
 ```bash
 brew install --cask chentao1006/tap/browsync
@@ -47,9 +47,12 @@ brew install --cask chentao1006/tap/browsync
 | Homebrew | 最新版 |
 | XcodeGen | 2.40+ |
 
-### 2. Homebrew Cask 安装
+### 2. App Store 安装
 
-您可以使用 Homebrew 安装同览 (BrowSync)：
+您可以从 Mac App Store 下载同览 (BrowSync)：
+[从 App Store 下载](https://apps.apple.com/cn/app/id6784604835?mt=12)
+
+您也可以使用 Homebrew 安装同览 (BrowSync)：
 
 ```bash
 brew install --cask chentao1006/tap/browsync
