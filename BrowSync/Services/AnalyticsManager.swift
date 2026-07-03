@@ -4,10 +4,14 @@ import Aptabase
 @MainActor
 final class AnalyticsManager {
     static let shared = AnalyticsManager()
+    private var isInitialized = false
     
     private init() {}
     
     func initialize() {
+        guard !isInitialized else { return }
+        isInitialized = true
+
         // We initialize Aptabase. It doesn't send events unless trackEvent is called.
         Aptabase.shared.initialize(appKey: "A-US-7527250881")
         
@@ -34,5 +38,9 @@ final class AnalyticsManager {
         } else {
             Aptabase.shared.trackEvent(eventName)
         }
+
+        // The SDK normally flushes on its active-state timer, but menu-bar apps
+        // can initialize after that notification has already fired.
+        Aptabase.shared.flush()
     }
 }

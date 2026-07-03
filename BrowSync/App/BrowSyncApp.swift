@@ -13,6 +13,10 @@ struct BrowSyncApp: App {
     @StateObject private var appState = AppState.shared
     @StateObject private var langBundle = LanguageBundle(language: .system)
 
+    init() {
+        AnalyticsManager.shared.initialize()
+    }
+
     var body: some Scene {
         // Menu Bar Extra (macOS 13+)
         MenuBarExtra {
@@ -127,9 +131,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Sparkle Auto Update
         updaterController.updater.automaticallyChecksForUpdates = settingsService.general.autoUpdate
 #endif
-        
-        // Analytics
-        AnalyticsManager.shared.initialize()
         
         if settingsService.general.firstLaunchDate == nil {
             settingsService.general.firstLaunchDate = Date()
