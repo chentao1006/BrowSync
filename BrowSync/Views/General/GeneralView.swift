@@ -6,6 +6,7 @@ import SwiftUI
 struct GeneralView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var langBundle: LanguageBundle
+    @State private var showUpgradeAlert = false
 
     private var settings: Binding<GeneralSettings> {
         Binding(
@@ -35,7 +36,22 @@ struct GeneralView: View {
 
                     Toggle(String(localized: "Hide Window on Startup", bundle: langBundle.bundle), isOn: settings.hideWindowOnStartup)
                     
-                    Toggle(String(localized: "iCloud Sync", bundle: langBundle.bundle), isOn: settings.iCloudSync)
+                    Toggle(isOn: Binding(
+                        get: { appState.purchaseService.isProUnlocked && settings.iCloudSync.wrappedValue },
+                        set: { enabled in
+                            guard appState.purchaseService.isProUnlocked else {
+                                showUpgradeAlert = true
+                                settings.iCloudSync.wrappedValue = false
+                                return
+                            }
+                            settings.iCloudSync.wrappedValue = enabled
+                        }
+                    )) {
+                        HStack(spacing: 6) {
+                            Text(String(localized: "iCloud Sync", bundle: langBundle.bundle))
+                            ProBadge()
+                        }
+                    }
                     Text(String(localized: "Synchronize all settings, rules, and open tabs across your Mac devices using iCloud.", bundle: langBundle.bundle))
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -86,6 +102,11 @@ struct GeneralView: View {
 
             }
             .formStyle(.grouped)
+            .alert(String(localized: "Professional Required", bundle: langBundle.bundle), isPresented: $showUpgradeAlert) {
+                Button(String(localized: "OK", bundle: langBundle.bundle), role: .cancel) {}
+            } message: {
+                Text(String(localized: "iCloud Sync is available in Professional.", bundle: langBundle.bundle))
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }

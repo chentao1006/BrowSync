@@ -13,6 +13,7 @@ struct BookmarkSyncTabView: View {
     @State private var showingDeleteConfirmation = false
     @State private var showingClearAllConfirmation = false
     @State private var showingRestoreAllConfirmation = false
+    @State private var showUpgradeAlert = false
     
     private var syncSettings: Binding<SyncSettings> {
         Binding(
@@ -81,6 +82,11 @@ struct BookmarkSyncTabView: View {
                                     get: { syncSettings.bookmarkParticipatingBrowsers.wrappedValue.contains(info.browser) },
                                     set: { isParticipating in
                                         if isParticipating {
+                                            guard appState.purchaseService.isProUnlocked ||
+                                                    syncSettings.wrappedValue.bookmarkParticipatingBrowsers.count < ProLimits.freeSyncBrowserCount else {
+                                                showUpgradeAlert = true
+                                                return
+                                            }
                                             syncSettings.wrappedValue.bookmarkParticipatingBrowsers.insert(info.browser)
                                         } else {
                                             syncSettings.wrappedValue.bookmarkParticipatingBrowsers.remove(info.browser)
@@ -99,6 +105,11 @@ struct BookmarkSyncTabView: View {
                                                 .frame(width: 16, height: 16)
                                         }
                                         Text(info.displayName)
+                                        if !appState.purchaseService.isProUnlocked &&
+                                            !syncSettings.bookmarkParticipatingBrowsers.wrappedValue.contains(info.browser) &&
+                                            syncSettings.bookmarkParticipatingBrowsers.wrappedValue.count >= ProLimits.freeSyncBrowserCount {
+                                            ProBadge()
+                                        }
                                     }
                                 }
                                 .toggleStyle(.checkbox)
@@ -179,7 +190,22 @@ struct BookmarkSyncTabView: View {
 #endif
                     }
                     
-                    Toggle(String(localized: "Real-time Auto Sync", bundle: langBundle.bundle), isOn: syncSettings.bookmarkAutoSync)
+                    Toggle(isOn: Binding(
+                        get: { appState.purchaseService.isProUnlocked && syncSettings.bookmarkAutoSync.wrappedValue },
+                        set: { enabled in
+                            guard appState.purchaseService.isProUnlocked else {
+                                showUpgradeAlert = true
+                                syncSettings.bookmarkAutoSync.wrappedValue = false
+                                return
+                            }
+                            syncSettings.bookmarkAutoSync.wrappedValue = enabled
+                        }
+                    )) {
+                        HStack(spacing: 6) {
+                            Text(String(localized: "Real-time Auto Sync", bundle: langBundle.bundle))
+                            ProBadge()
+                        }
+                    }
                 }
 #if !APP_STORE
                 if (syncSettings.bookmarkSyncStrategy.wrappedValue == .twoWayMerge || 
@@ -316,6 +342,11 @@ struct BookmarkSyncTabView: View {
                 Button(String(localized: "Cancel", bundle: langBundle.bundle), role: .cancel) {}
             } message: {
                 Text(String(localized: "Are you sure you want to restore all bookmarks from the trash bin?", bundle: langBundle.bundle))
+            }
+            .alert(String(localized: "Professional Required", bundle: langBundle.bundle), isPresented: $showUpgradeAlert) {
+                Button(String(localized: "OK", bundle: langBundle.bundle), role: .cancel) {}
+            } message: {
+                Text(String(format: String(localized: "Free version supports up to %d sync browsers. Unlock Professional for unlimited browsers.", bundle: langBundle.bundle), ProLimits.freeSyncBrowserCount))
             }
         }
     }

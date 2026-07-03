@@ -47,6 +47,16 @@ struct TabSharingTabView: View {
                         .foregroundStyle(.secondary)
                         .padding(.bottom, 4)
 
+                    HStack(spacing: 6) {
+                        Text(String(localized: appState.purchaseService.isProUnlocked ? "Professional shares all open tabs." : "Free version shares only the current active tab.", bundle: langBundle.bundle))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if !appState.purchaseService.isProUnlocked {
+                            ProBadge()
+                        }
+                    }
+                    .padding(.bottom, 4)
+
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 16) {
                             ForEach(appState.browserInfos.filter { $0.isInstalled }) { info in

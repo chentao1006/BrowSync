@@ -27,6 +27,7 @@ xcodebuild -project "${PROJECT_ROOT}/BrowSync.xcodeproj" \
            -configuration "Release" \
            -destination "platform=macOS,arch=arm64" \
            -derivedDataPath "${DERIVED_DATA_DIR}" \
+           SWIFT_ACTIVE_COMPILATION_CONDITIONS="\$(inherited) LOCAL_PRO_TEST" \
            build > /dev/null
 
 if [ $? -eq 0 ]; then

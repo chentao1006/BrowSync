@@ -33,7 +33,19 @@ final class SyncService: ObservableObject {
     var daemon: DaemonServer?
     var settingsService: SettingsService?
     var settings: SyncSettings {
-        settingsService?.syncSettings ?? SyncSettings()
+        var current = settingsService?.syncSettings ?? SyncSettings()
+        guard !AppState.shared.purchaseService.isProUnlocked else { return current }
+
+        current.bookmarkParticipatingBrowsers = Set(Browser.allCases.filter {
+            current.bookmarkParticipatingBrowsers.contains($0)
+        }.prefix(ProLimits.freeSyncBrowserCount))
+        current.stateParticipatingBrowsers = Set(Browser.allCases.filter {
+            current.stateParticipatingBrowsers.contains($0)
+        }.prefix(ProLimits.freeSyncBrowserCount))
+        current.websiteSettings = ProLimits.limitedWebsiteSettings(current.websiteSettings, isProUnlocked: false)
+        current.bookmarkAutoSync = false
+        current.automaticSync = false
+        return current
     }
     var backupService: BackupService?
     private let safariBookmarks = SafariBookmarkService()
@@ -424,6 +436,11 @@ final class SyncService: ObservableObject {
                 filteredMessage.payload = .sessionStorage(filtered)
             default: break
             }
+        }
+
+        if category == "tabSharing", case .tabs(let tabs) = filteredMessage.payload {
+            let limitedTabs = ProLimits.limitedTabsForSharing(tabs, isProUnlocked: AppState.shared.purchaseService.isProUnlocked)
+            filteredMessage.payload = .tabs(limitedTabs)
         }
         
         var countStr = ""

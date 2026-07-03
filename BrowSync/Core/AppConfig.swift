@@ -4,6 +4,12 @@
 import Foundation
 
 struct AppConfig {
+    /// Mac App Store URL for the Store-distributed build.
+    static let macAppStoreURL = "https://apps.apple.com/cn/app/id6784604835?mt=12"
+
+    /// Placeholder StoreKit product ID for the one-time Pro unlock.
+    static let proProductID = "com.ct106.browsync.pro"
+
     /// Chrome extension Web Store URL.
     static let chromiumExtensionWebStoreURL = "https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh"
     

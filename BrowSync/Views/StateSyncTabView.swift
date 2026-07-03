@@ -10,6 +10,7 @@ struct StateSyncTabView: View {
     @State private var showSuccess = false
     @State private var siteToDelete: WebsiteSyncSetting?
     @State private var showDisabledDomainAlert = false
+    @State private var showUpgradeAlert = false
     @State private var disabledDomainAttempted = ""
     
     private var syncSettings: Binding<SyncSettings> {
@@ -94,6 +95,11 @@ struct StateSyncTabView: View {
                                     get: { syncSettings.stateParticipatingBrowsers.wrappedValue.contains(info.browser) },
                                     set: { isParticipating in
                                         if isParticipating {
+                                            guard appState.purchaseService.isProUnlocked ||
+                                                    syncSettings.wrappedValue.stateParticipatingBrowsers.count < ProLimits.freeSyncBrowserCount else {
+                                                showUpgradeAlert = true
+                                                return
+                                            }
                                             syncSettings.wrappedValue.stateParticipatingBrowsers.insert(info.browser)
                                         } else {
                                             syncSettings.wrappedValue.stateParticipatingBrowsers.remove(info.browser)
@@ -112,6 +118,11 @@ struct StateSyncTabView: View {
                                                 .frame(width: 16, height: 16)
                                         }
                                         Text(info.displayName)
+                                        if !appState.purchaseService.isProUnlocked &&
+                                            !syncSettings.stateParticipatingBrowsers.wrappedValue.contains(info.browser) &&
+                                            syncSettings.stateParticipatingBrowsers.wrappedValue.count >= ProLimits.freeSyncBrowserCount {
+                                            ProBadge()
+                                        }
                                     }
                                 }
                                 .toggleStyle(.checkbox)
@@ -151,7 +162,22 @@ struct StateSyncTabView: View {
                     }
                     .pickerStyle(.menu)
                     
-                    Toggle(String(localized: "Real-time Auto Sync", bundle: langBundle.bundle), isOn: syncSettings.automaticSync)
+                    Toggle(isOn: Binding(
+                        get: { appState.purchaseService.isProUnlocked && syncSettings.automaticSync.wrappedValue },
+                        set: { enabled in
+                            guard appState.purchaseService.isProUnlocked else {
+                                showUpgradeAlert = true
+                                syncSettings.automaticSync.wrappedValue = false
+                                return
+                            }
+                            syncSettings.automaticSync.wrappedValue = enabled
+                        }
+                    )) {
+                        HStack(spacing: 6) {
+                            Text(String(localized: "Real-time Auto Sync", bundle: langBundle.bundle))
+                            ProBadge()
+                        }
+                    }
                         .padding(.vertical, 4)
                     
                     HStack {
@@ -159,9 +185,20 @@ struct StateSyncTabView: View {
                             .font(.headline)
                         Spacer()
                         Button {
+                            guard appState.purchaseService.isProUnlocked ||
+                                    syncSettings.websiteSettings.wrappedValue.count < ProLimits.freeWebsiteRuleCount else {
+                                showUpgradeAlert = true
+                                return
+                            }
                             syncSettings.websiteSettings.wrappedValue.append(WebsiteSyncSetting(domain: "", strategy: nil))
                         } label: {
-                            Image(systemName: "plus")
+                            HStack(spacing: 4) {
+                                Image(systemName: "plus")
+                                if !appState.purchaseService.isProUnlocked &&
+                                    syncSettings.websiteSettings.wrappedValue.count >= ProLimits.freeWebsiteRuleCount {
+                                    ProBadge()
+                                }
+                            }
                         }
                     }
                     .padding(.top, 4)
@@ -244,6 +281,11 @@ struct StateSyncTabView: View {
                 Button(String(localized: "OK", bundle: langBundle.bundle), role: .cancel) {}
             } message: {
                 Text(String(format: String(localized: "The domain '%@' cannot be synced because of its security and authentication mechanisms.", bundle: langBundle.bundle), disabledDomainAttempted))
+            }
+            .alert(String(localized: "Professional Required", bundle: langBundle.bundle), isPresented: $showUpgradeAlert) {
+                Button(String(localized: "OK", bundle: langBundle.bundle), role: .cancel) {}
+            } message: {
+                Text(String(format: String(localized: "Free version supports up to %d sync browsers and %d website rules. Unlock Professional for unlimited sync.", bundle: langBundle.bundle), ProLimits.freeSyncBrowserCount, ProLimits.freeWebsiteRuleCount))
             }
         }
     }

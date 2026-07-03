@@ -268,16 +268,18 @@ final class DaemonServer: ObservableObject {
                 broadcast(requestMessage, excluding: client.id)
                 
                 // ALSO send the currently cached tabs (including iCloud remote tabs) to the requester
+                let isProUnlocked = AppState.shared.purchaseService.isProUnlocked
                 for (browser, tabs) in AppState.shared.remoteTabsCache {
                     let purelyLocalTabs = tabs.filter { !$0.id.hasPrefix("icloud_") }
                     let icloudTabs = tabs.filter { $0.id.hasPrefix("icloud_") }
+                    let localTabsToSend = ProLimits.limitedTabsForSharing(purelyLocalTabs, isProUnlocked: isProUnlocked)
                     
-                    if browser != client.browser && !purelyLocalTabs.isEmpty {
+                    if browser != client.browser && !localTabsToSend.isEmpty {
                         let cacheMessage = WSMessage(
                             type: .sync,
                             browser: browser.rawValue,
                             category: "tabSharing",
-                            payload: .tabs(purelyLocalTabs),
+                            payload: .tabs(localTabsToSend),
                             messageId: UUID().uuidString,
                             timestamp: Date().timeIntervalSince1970
                         )
@@ -291,6 +293,9 @@ final class DaemonServer: ObservableObject {
                     }
                     
                     for (device, deviceTabs) in grouped {
+                        let deviceTabsToSend = ProLimits.limitedTabsForSharing(deviceTabs, isProUnlocked: isProUnlocked)
+                        guard !deviceTabsToSend.isEmpty else { continue }
+
                         // Use a composite browser ID to prevent Chrome extension from dropping tabs that match its own browser ID,
                         // and to prevent overwriting tabs from multiple devices.
                         let sendBrowserId = "\(browser.rawValue)_\(device)"
@@ -299,7 +304,7 @@ final class DaemonServer: ObservableObject {
                             type: .sync,
                             browser: sendBrowserId,
                             category: "tabSharing",
-                            payload: .tabs(deviceTabs),
+                            payload: .tabs(deviceTabsToSend),
                             messageId: UUID().uuidString,
                             timestamp: Date().timeIntervalSince1970
                         )

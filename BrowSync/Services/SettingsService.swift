@@ -250,8 +250,8 @@ final class ICloudSyncManager: ObservableObject {
     func setup(settingsService: SettingsService) {
         self.settingsService = settingsService
         
-        if settingsService.general.iCloudSync {
-            Task { @MainActor in
+        Task { @MainActor in
+            if settingsService.general.iCloudSync && AppState.shared.purchaseService.isProUnlocked {
                 downloadSettings()
                 downloadRemoteTabs()
                 uploadSettings(from: settingsService)
@@ -263,6 +263,7 @@ final class ICloudSyncManager: ObservableObject {
     
     func uploadSettings(from service: SettingsService) {
         guard service.general.iCloudSync else { return }
+        guard AppState.shared.purchaseService.isProUnlocked else { return }
         guard !isDownloadingSettings else { return }
         
         do {
@@ -287,12 +288,15 @@ final class ICloudSyncManager: ObservableObject {
     
     func uploadTabs(_ tabsCache: [Browser: [BrowserTab]]) {
         guard let service = settingsService, service.general.iCloudSync else { return }
+        guard AppState.shared.purchaseService.isProUnlocked else { return }
         guard !isDownloadingRemoteTabs else { return }
         
         // Only upload truly local tabs, filter out remote iCloud tabs
         var localTabsToUpload: [Browser: [BrowserTab]] = [:]
+        let isProUnlocked = AppState.shared.purchaseService.isProUnlocked
         for (browser, tabs) in tabsCache {
-            localTabsToUpload[browser] = tabs.filter { !$0.id.hasPrefix("icloud_") }
+            let localTabs = tabs.filter { !$0.id.hasPrefix("icloud_") }
+            localTabsToUpload[browser] = ProLimits.limitedTabsForSharing(localTabs, isProUnlocked: isProUnlocked)
         }
         
         let key = tabsPrefix + deviceID
@@ -319,6 +323,7 @@ final class ICloudSyncManager: ObservableObject {
     @objc private func storeDidChange(_ notification: Notification) {
         Task { @MainActor in
             guard let service = settingsService, service.general.iCloudSync else { return }
+            guard AppState.shared.purchaseService.isProUnlocked else { return }
             
             guard let userInfo = notification.userInfo else { return }
             guard let reasonForChange = userInfo[NSUbiquitousKeyValueStoreChangeReasonKey] as? Int else { return }
@@ -340,6 +345,7 @@ final class ICloudSyncManager: ObservableObject {
     
     private func downloadSettings() {
         guard let service = settingsService else { return }
+        guard AppState.shared.purchaseService.isProUnlocked else { return }
         guard let data = kvStore.data(forKey: settingsKey) else { return }
         
         do {
@@ -405,6 +411,7 @@ final class ICloudSyncManager: ObservableObject {
     
     func downloadRemoteTabs() {
         guard let service = settingsService, service.general.iCloudSync else { return }
+        guard AppState.shared.purchaseService.isProUnlocked else { return }
         
         let allKeys = kvStore.dictionaryRepresentation.keys.filter { $0.hasPrefix(tabsPrefix) && $0 != tabsPrefix + deviceID }
         

@@ -29,6 +29,9 @@ struct ContentView: View {
                 NavigationLink(value: AppTab.general) {
                     Label(String(localized: "General", bundle: langBundle.bundle), systemImage: "gearshape")
                 }
+                NavigationLink(value: AppTab.pro) {
+                    Label(String(localized: "Professional", bundle: langBundle.bundle), systemImage: "sparkles")
+                }
                 NavigationLink(value: AppTab.about) {
                     Label(String(localized: "About", bundle: langBundle.bundle), systemImage: "info.circle")
                 }
@@ -50,6 +53,8 @@ struct ContentView: View {
                     RouterTabView()
                 case .general:
                     GeneralView()
+                case .pro:
+                    ProTabView()
                 case .about:
                     AboutTabView()
                 }
@@ -63,7 +68,7 @@ struct ContentView: View {
 }
 
 enum AppTab: Hashable {
-    case browsers, router, stateSync, bookmarkSync, tabSharing, general, about
+    case browsers, router, stateSync, bookmarkSync, tabSharing, general, pro, about
 }
 
 // MARK: - About Tab View

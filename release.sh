@@ -7,9 +7,7 @@ export PATH="/opt/homebrew/bin:$PATH"
 PLIST_PATH="BrowSync/Resources/Info.plist"
 VERSIONED_PLISTS=(
     "BrowSync/Resources/Info.plist"
-    "BrowSync/Resources/InfoAppStore.plist"
     "SafariExtension/Info.plist"
-    "SafariExtension/InfoAppStore.plist"
 )
 PROJECT_YML="project.yml"
 RESULT_DIR="./dist"
@@ -90,8 +88,8 @@ else
     sed -i '' -E "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" "FirefoxExtension/manifest.json"
     sed -i '' -E "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" "SafariExtension/Resources/manifest.json"
 
-    echo "✅ Local configuration updated. Regenerating project..."
-    xcodegen > /dev/null
+    echo "✅ Local configuration updated."
+    # xcodegen > /dev/null (Removed: to allow manual Xcode settings to be preserved)
 
     # 2. Run Local Build
     chmod +x package.sh

@@ -7,6 +7,7 @@ struct SyncView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var langBundle: LanguageBundle
     @State private var isSyncing = false
+    @State private var showUpgradeAlert = false
 
     private var syncSettings: Binding<SyncSettings> {
         Binding(
@@ -132,10 +133,21 @@ struct SyncView: View {
                                     .font(.subheadline.bold())
                                 Spacer()
                                 Button {
+                                    guard appState.purchaseService.isProUnlocked ||
+                                            syncSettings.websiteSettings.wrappedValue.count < ProLimits.freeWebsiteRuleCount else {
+                                        showUpgradeAlert = true
+                                        return
+                                    }
                                     syncSettings.websiteSettings.wrappedValue.append(WebsiteSyncSetting(domain: "", strategy: nil))
                                     appState.settingsService.save()
                                 } label: {
-                                    Image(systemName: "plus")
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "plus")
+                                        if !appState.purchaseService.isProUnlocked &&
+                                            syncSettings.websiteSettings.wrappedValue.count >= ProLimits.freeWebsiteRuleCount {
+                                            ProBadge()
+                                        }
+                                    }
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -211,6 +223,11 @@ struct SyncView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .alert(String(localized: "Professional Required", bundle: langBundle.bundle), isPresented: $showUpgradeAlert) {
+            Button(String(localized: "OK", bundle: langBundle.bundle), role: .cancel) {}
+        } message: {
+            Text(String(format: String(localized: "Free version supports up to %d website rules. Unlock Professional for unlimited websites.", bundle: langBundle.bundle), ProLimits.freeWebsiteRuleCount))
+        }
     }
 }
 
@@ -279,13 +296,7 @@ struct ProFeatureRow: View {
                     Text(title)
                         .font(.headline)
                         .foregroundStyle(.secondary)
-                    Text("PRO")
-                        .font(.caption2.bold())
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.purple.opacity(0.15))
-                        .foregroundStyle(.purple)
-                        .clipShape(Capsule())
+                    ProBadge()
                 }
                 Text(description)
                     .font(.caption)

@@ -6,6 +6,11 @@ struct RouterTabView: View {
     @State private var editingRule: RouterRule?
     @State private var installedApps: [InstalledAppInfo] = []
     @State private var ruleToDelete: RouterRule?
+    @State private var showUpgradeAlert = false
+
+    private var canAddRule: Bool {
+        appState.purchaseService.isProUnlocked || appState.routerRules.count < ProLimits.freeRouterRuleCount
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -77,12 +82,16 @@ struct RouterTabView: View {
                                 .padding(.horizontal, 32)
                             
                             Button(action: {
-                                let newRule = RouterRule()
-                                editingRule = newRule
+                                addRuleOrShowUpgrade()
                             }) {
-                                Label(String(localized: "Add First Rule", bundle: langBundle.bundle), systemImage: "plus")
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
+                                HStack(spacing: 6) {
+                                    Label(String(localized: "Add First Rule", bundle: langBundle.bundle), systemImage: "plus")
+                                    if !canAddRule {
+                                        ProBadge()
+                                    }
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
                             }
                             .buttonStyle(.borderedProminent)
                             .controlSize(.large)
@@ -115,10 +124,14 @@ struct RouterTabView: View {
                     // Bottom Action Bar
                     HStack {
                         Button(action: {
-                            let newRule = RouterRule()
-                            editingRule = newRule
+                            addRuleOrShowUpgrade()
                         }) {
-                            Label(String(localized: "Add Rule", bundle: langBundle.bundle), systemImage: "plus")
+                            HStack(spacing: 6) {
+                                Label(String(localized: "Add Rule", bundle: langBundle.bundle), systemImage: "plus")
+                                if !canAddRule {
+                                    ProBadge()
+                                }
+                            }
                         }
                         Spacer()
                     }
@@ -133,6 +146,10 @@ struct RouterTabView: View {
                 if let index = appState.routerRules.firstIndex(where: { $0.id == updatedRule.id }) {
                     appState.routerRules[index] = updatedRule
                 } else {
+                    guard canAddRule else {
+                        showUpgradeAlert = true
+                        return
+                    }
                     appState.routerRules.append(updatedRule)
                 }
                 editingRule = nil
@@ -153,10 +170,23 @@ struct RouterTabView: View {
         } message: { rule in
             Text(String(format: String(localized: "Delete router rule message", bundle: langBundle.bundle), rule.name))
         }
+        .alert(String(localized: "Professional Required", bundle: langBundle.bundle), isPresented: $showUpgradeAlert) {
+            Button(String(localized: "OK", bundle: langBundle.bundle), role: .cancel) {}
+        } message: {
+            Text(String(format: String(localized: "Free version supports up to %d routing rules. Unlock Professional for unlimited rules.", bundle: langBundle.bundle), ProLimits.freeRouterRuleCount))
+        }
         .onAppear {
             appState.checkDefaultBrowser()
             loadInstalledApps()
         }
+    }
+
+    private func addRuleOrShowUpgrade() {
+        guard canAddRule else {
+            showUpgradeAlert = true
+            return
+        }
+        editingRule = RouterRule()
     }
 
     private func loadInstalledApps() {

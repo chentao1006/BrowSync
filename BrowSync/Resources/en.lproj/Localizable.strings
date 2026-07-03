@@ -5,6 +5,7 @@
 "Rules" = "Rules";
 "Sync" = "Sync";
 "General" = "General";
+"Pro" = "Pro";
 "About" = "About";
 
 /* Browser status */
@@ -385,3 +386,75 @@
 "Protocol" = "Protocol";
 "Select Protocol" = "Select Protocol";
 "Currently Open Tab Count" = "Currently Open Tab Count";
+
+/* Pro */
+"BrowSync Pro" = "BrowSync Pro";
+"Pro Unlocked" = "Pro Unlocked";
+"Free" = "Free";
+"One-time purchase" = "One-time purchase";
+"Unlock BrowSync Pro once and keep the Pro features available on your Mac." = "Unlock BrowSync Pro once and keep the Pro features available on your Mac.";
+"Included in Pro" = "Included in Pro";
+"Advanced Rules" = "Advanced Rules";
+"Create more powerful routing rules for daily browser workflows." = "Create more powerful routing rules for daily browser workflows.";
+"Unlimited Sync" = "Unlimited Sync";
+"Keep browser data, bookmarks, and state sync available without free-tier limits." = "Keep browser data, bookmarks, and state sync available without free-tier limits.";
+"Synchronize settings, rules, and open tabs across your Macs using iCloud." = "Synchronize settings, rules, and open tabs across your Macs using iCloud.";
+"Share active tabs between supported browsers through BrowSync extensions." = "Share active tabs between supported browsers through BrowSync extensions.";
+"Restore Purchases" = "Restore Purchases";
+"This build also uses the free limits. To unlock Pro, install the App Store version and purchase Pro there." = "This build also uses the free limits. To unlock Pro, install the App Store version and purchase Pro there.";
+"Open App Store Version" = "Open App Store Version";
+"Unlocked" = "Unlocked";
+"Purchasing..." = "Purchasing...";
+"Unlock Pro - %@" = "Unlock Pro - %@";
+"Unlock Pro" = "Unlock Pro";
+"Could not verify the purchase." = "Could not verify the purchase.";
+"Pro purchase is not configured yet." = "Pro purchase is not configured yet.";
+"Could not load Pro purchase." = "Could not load Pro purchase.";
+"BrowSync Pro is unlocked." = "BrowSync Pro is unlocked.";
+"Purchase completed, but Pro is not active yet." = "Purchase completed, but Pro is not active yet.";
+"Purchase is pending approval." = "Purchase is pending approval.";
+"Purchase could not be completed." = "Purchase could not be completed.";
+"No Pro purchase was found." = "No Pro purchase was found.";
+"Could not restore purchases." = "Could not restore purchases.";
+
+/* Professional */
+"Professional" = "Professional";
+"BrowSync Professional" = "BrowSync Professional";
+"Professional Unlocked" = "Professional Unlocked";
+"Unlock BrowSync Professional once and keep the professional features available on your Mac." = "Unlock BrowSync Professional once and keep the professional features available on your Mac.";
+"Feature Comparison" = "Feature Comparison";
+"Feature" = "Feature";
+"Routing Rules" = "Routing Rules";
+"Up to 3 rules" = "Up to 3 rules";
+"Unlimited rules" = "Unlimited rules";
+"Sync Browsers" = "Sync Browsers";
+"Up to 2 browsers" = "Up to 2 browsers";
+"Unlimited browsers" = "Unlimited browsers";
+"Site Sync Rules" = "Site Sync Rules";
+"Up to 3 websites" = "Up to 3 websites";
+"Unlimited websites" = "Unlimited websites";
+"Current active tab only" = "Current active tab only";
+"All open tabs" = "All open tabs";
+"Manual sync" = "Manual sync";
+"Real-time automatic sync" = "Real-time automatic sync";
+"Not included" = "Not included";
+"Included" = "Included";
+"Configure independent sync policies for unlimited websites." = "Configure independent sync policies for unlimited websites.";
+"Share all open tabs between supported browsers through BrowSync extensions." = "Share all open tabs between supported browsers through BrowSync extensions.";
+"Unlock Professional - %@" = "Unlock Professional - %@";
+"Unlock Professional" = "Unlock Professional";
+"Professional Required" = "Professional Required";
+"Free version supports up to %d routing rules. Unlock Professional for unlimited rules." = "Free version supports up to %d routing rules. Unlock Professional for unlimited rules.";
+"Free version supports up to %d sync browsers. Unlock Professional for unlimited browsers." = "Free version supports up to %d sync browsers. Unlock Professional for unlimited browsers.";
+"Free version supports up to %d website rules. Unlock Professional for unlimited websites." = "Free version supports up to %d website rules. Unlock Professional for unlimited websites.";
+"Free version supports up to %d sync browsers and %d website rules. Unlock Professional for unlimited sync." = "Free version supports up to %d sync browsers and %d website rules. Unlock Professional for unlimited sync.";
+"Professional purchase is not configured yet." = "Professional purchase is not configured yet.";
+"Could not load Professional purchase." = "Could not load Professional purchase.";
+"BrowSync Professional is unlocked." = "BrowSync Professional is unlocked.";
+"Purchase completed, but Professional is not active yet." = "Purchase completed, but Professional is not active yet.";
+"No Professional purchase was found." = "No Professional purchase was found.";
+"Included in Professional" = "Included in Professional";
+"This build also uses the free limits. To unlock Professional, install the App Store version and purchase Professional there." = "This build also uses the free limits. To unlock Professional, install the App Store version and purchase Professional there.";
+"Free version shares only the current active tab." = "Free version shares only the current active tab.";
+"Professional shares all open tabs." = "Professional shares all open tabs.";
+"iCloud Sync is available in Professional." = "iCloud Sync is available in Professional.";

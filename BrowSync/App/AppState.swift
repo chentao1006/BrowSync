@@ -16,6 +16,7 @@ final class AppState: ObservableObject {
     let notificationService = NotificationService()
     let backupService = BackupService()
     let iCloudSyncManager = ICloudSyncManager()
+    let purchaseService = PurchaseService()
 
     private var cancellables = Set<AnyCancellable>()
     
@@ -82,6 +83,7 @@ final class AppState: ObservableObject {
 
             
         iCloudSyncManager.setup(settingsService: settingsService)
+        purchaseService.start()
         
         checkFullDiskAccess()
     }
@@ -174,7 +176,8 @@ final class AppState: ObservableObject {
             return
         }
         
-        for rule in routerRules {
+        let rulesToEvaluate = purchaseService.isProUnlocked ? routerRules : Array(routerRules.prefix(ProLimits.freeRouterRuleCount))
+        for rule in rulesToEvaluate {
             if rule.evaluate(url: url, sourceAppBundleId: sourceAppBundleId) {
                 if let targetId = rule.targetBrowserId,
                    let targetAppURL = appURL(forBrowserId: targetId) {
@@ -491,7 +494,11 @@ extension AppState: DaemonServerDelegate {
             
             if let stateSync = raw["stateSync"]?.value as? Bool {
                 if stateSync {
-                    self.settingsService.syncSettings.stateParticipatingBrowsers.insert(browser)
+                    if self.purchaseService.isProUnlocked ||
+                        self.settingsService.syncSettings.stateParticipatingBrowsers.contains(browser) ||
+                        self.settingsService.syncSettings.stateParticipatingBrowsers.count < ProLimits.freeSyncBrowserCount {
+                        self.settingsService.syncSettings.stateParticipatingBrowsers.insert(browser)
+                    }
                 } else {
                     self.settingsService.syncSettings.stateParticipatingBrowsers.remove(browser)
                 }
@@ -500,7 +507,11 @@ extension AppState: DaemonServerDelegate {
             
             if let bookmarkSync = raw["bookmarkSync"]?.value as? Bool {
                 if bookmarkSync {
-                    self.settingsService.syncSettings.bookmarkParticipatingBrowsers.insert(browser)
+                    if self.purchaseService.isProUnlocked ||
+                        self.settingsService.syncSettings.bookmarkParticipatingBrowsers.contains(browser) ||
+                        self.settingsService.syncSettings.bookmarkParticipatingBrowsers.count < ProLimits.freeSyncBrowserCount {
+                        self.settingsService.syncSettings.bookmarkParticipatingBrowsers.insert(browser)
+                    }
                 } else {
                     self.settingsService.syncSettings.bookmarkParticipatingBrowsers.remove(browser)
                 }
@@ -531,7 +542,10 @@ extension AppState: DaemonServerDelegate {
                 
                 if shouldBeInList {
                     if !self.settingsService.syncSettings.websiteSettings.contains(where: { $0.domain == domain }) {
-                        self.settingsService.syncSettings.websiteSettings.append(WebsiteSyncSetting(domain: domain, strategy: nil))
+                        if self.purchaseService.isProUnlocked ||
+                            self.settingsService.syncSettings.websiteSettings.count < ProLimits.freeWebsiteRuleCount {
+                            self.settingsService.syncSettings.websiteSettings.append(WebsiteSyncSetting(domain: domain, strategy: nil))
+                        }
                     }
                 } else {
                     self.settingsService.syncSettings.websiteSettings.removeAll(where: { $0.domain == domain })
@@ -546,7 +560,10 @@ extension AppState: DaemonServerDelegate {
                 if let idx = self.settingsService.syncSettings.websiteSettings.firstIndex(where: { $0.domain == domain }) {
                     self.settingsService.syncSettings.websiteSettings[idx].strategy = strat
                 } else {
-                    self.settingsService.syncSettings.websiteSettings.append(WebsiteSyncSetting(domain: domain, strategy: strat))
+                    if self.purchaseService.isProUnlocked ||
+                        self.settingsService.syncSettings.websiteSettings.count < ProLimits.freeWebsiteRuleCount {
+                        self.settingsService.syncSettings.websiteSettings.append(WebsiteSyncSetting(domain: domain, strategy: strat))
+                    }
                 }
                 changed = true
             }
@@ -558,7 +575,10 @@ extension AppState: DaemonServerDelegate {
                 if let idx = self.settingsService.syncSettings.websiteSettings.firstIndex(where: { $0.domain == domain }) {
                     self.settingsService.syncSettings.websiteSettings[idx].sourceBrowser = browser
                 } else {
-                    self.settingsService.syncSettings.websiteSettings.append(WebsiteSyncSetting(domain: domain, strategy: nil, sourceBrowser: browser))
+                    if self.purchaseService.isProUnlocked ||
+                        self.settingsService.syncSettings.websiteSettings.count < ProLimits.freeWebsiteRuleCount {
+                        self.settingsService.syncSettings.websiteSettings.append(WebsiteSyncSetting(domain: domain, strategy: nil, sourceBrowser: browser))
+                    }
                 }
                 changed = true
             }
@@ -571,8 +591,9 @@ extension AppState: DaemonServerDelegate {
     }
 
     func broadcastSettings(to client: ConnectedClient? = nil) {
-        let isStateSync = settingsService.syncSettings.stateParticipatingBrowsers
-        let isBookmarkSync = settingsService.syncSettings.bookmarkParticipatingBrowsers
+        let isProUnlocked = purchaseService.isProUnlocked
+        let isStateSync = effectiveSyncBrowsers(settingsService.syncSettings.stateParticipatingBrowsers, isProUnlocked: isProUnlocked)
+        let isBookmarkSync = effectiveSyncBrowsers(settingsService.syncSettings.bookmarkParticipatingBrowsers, isProUnlocked: isProUnlocked)
         let isTabSharing = settingsService.syncSettings.tabSharingParticipatingBrowsers
         let routerDefault = fallbackBrowserId
         var payload: [String: AnyCodable] = [
@@ -598,7 +619,8 @@ extension AppState: DaemonServerDelegate {
         payload["bookmarkParticipatingBrowsers"] = AnyCodable(bookmarkMap)
         payload["tabSharingParticipatingBrowsers"] = AnyCodable(tabSharingMap)
         
-        if let data = try? JSONEncoder().encode(settingsService.syncSettings.websiteSettings),
+        let effectiveWebsiteSettings = ProLimits.limitedWebsiteSettings(settingsService.syncSettings.websiteSettings, isProUnlocked: isProUnlocked)
+        if let data = try? JSONEncoder().encode(effectiveWebsiteSettings),
            let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
             payload["websiteSettings"] = AnyCodable(array)
         }
@@ -617,5 +639,11 @@ extension AppState: DaemonServerDelegate {
         } else {
             daemon.broadcast(msg)
         }
+    }
+
+    private func effectiveSyncBrowsers(_ browsers: Set<Browser>, isProUnlocked: Bool) -> Set<Browser> {
+        guard !isProUnlocked else { return browsers }
+        let ordered = Browser.allCases.filter { browsers.contains($0) }
+        return Set(ordered.prefix(ProLimits.freeSyncBrowserCount))
     }
 }

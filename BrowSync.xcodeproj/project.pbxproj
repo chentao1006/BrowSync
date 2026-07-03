@@ -12,6 +12,7 @@
 		0A63D7EDCF55B55E811CB8EE /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 2F278BFDA3B2DF653CD4E4A2 /* Localizable.strings */; };
 		0CB37CF6BCB9021523F734DF /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4BE22F2B94BE5B640CCDB1E /* SafariWebExtensionHandler.swift */; };
 		0F5CB5937AE876460E91A93C /* RuleEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B56E2AFB07CC6CA3A5582028 /* RuleEditorView.swift */; };
+		10E9805314E7BF727FB2C9C4 /* download-on-app-store-en.svg in Resources */ = {isa = PBXBuildFile; fileRef = C1AF1FEF2387E709571DAA19 /* download-on-app-store-en.svg */; };
 		1150700A20301EFB81B57837 /* GeneralView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8449AE30421FC5A59FC77934 /* GeneralView.swift */; };
 		13C5A394060BB3FAA4E0F25B /* BackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F4144B8AE085C797A52208 /* BackupService.swift */; };
 		1E4AB9EFC1355B9B65F0D1C3 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 5385B997A76CEA70148BB576 /* InfoPlist.strings */; };
@@ -55,10 +56,13 @@
 		8DFBC220F863CB4B7D9E8740 /* LanguageBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE5BEE879CB61212F2D3F082 /* LanguageBundle.swift */; };
 		90AA9E3F85F8EBE9680C40AC /* Aptabase in Frameworks */ = {isa = PBXBuildFile; productRef = 8F7CD436B796A8A5DD5D5E09 /* Aptabase */; };
 		92CF9CBD095891F47E181064 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFF4219B6E285A9B3E623F49 /* AppState.swift */; };
+		9A7148BBC58A82A87E8FC6EC /* download-on-app-store-zh.svg in Resources */ = {isa = PBXBuildFile; fileRef = AE14E33E1DC4DFF3B54CA551 /* download-on-app-store-zh.svg */; };
 		9F1D0E4D4AF2BA3FA1137D30 /* RouterModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 005114DBA010E2061038E501 /* RouterModels.swift */; };
 		A2237BEECD683C66D5B399AC /* WSMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1108A1B4B7AA8CF05488F9C /* WSMessage.swift */; };
+		A283D2829821EEE72D9A6049 /* download-on-app-store-zh.svg in Resources */ = {isa = PBXBuildFile; fileRef = AE14E33E1DC4DFF3B54CA551 /* download-on-app-store-zh.svg */; };
 		A2FE9A8C0FC5C40F58163D5C /* WSMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1108A1B4B7AA8CF05488F9C /* WSMessage.swift */; };
 		A3575734508D3D0F3326CF47 /* Aptabase in Frameworks */ = {isa = PBXBuildFile; productRef = AE143AD59F66BFD216353310 /* Aptabase */; };
+		A4096B01B61185CCB4D29180 /* download-on-app-store-en.svg in Resources */ = {isa = PBXBuildFile; fileRef = C1AF1FEF2387E709571DAA19 /* download-on-app-store-en.svg */; };
 		A4E8C83C16645BEA33AE8648 /* DaemonServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3528BFE980A1D1244B97800E /* DaemonServer.swift */; };
 		A6CC9B5D62478695376AD519 /* SyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82D553C4CA2861D50758366B /* SyncView.swift */; };
 		A7205BB2D9125ABE1C4DA63A /* SafariBookmarkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DC990238C2CD5EC343B5DF5 /* SafariBookmarkService.swift */; };
@@ -74,13 +78,18 @@
 		BFE57D536478C567B7922537 /* BrowSync-Promo-1280x800.png in Resources */ = {isa = PBXBuildFile; fileRef = C4B27D5A9D28D813C2D50EC6 /* BrowSync-Promo-1280x800.png */; };
 		C201C81EC56982F0C635B7D1 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91206874B5D1B45C9D05A911 /* AppConfig.swift */; };
 		C30EE96DFF76B037BDEF411A /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFF4219B6E285A9B3E623F49 /* AppState.swift */; };
+		C620B3A62FF7AB3500A405C7 /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C620B3A52FF7AB3500A405C7 /* StoreKit.framework */; };
 		C7046B24359CF5FB86A8E512 /* Browser.swift in Sources */ = {isa = PBXBuildFile; fileRef = C137716E2FEA5232D824F358 /* Browser.swift */; };
 		CBCEAC4D22958D09E0E94828 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 2F278BFDA3B2DF653CD4E4A2 /* Localizable.strings */; };
 		CD7AEA663AEB1076953EE55C /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = E315605267BB5B97A246FF33 /* manifest.json */; };
+		CF2F2CF7440740C3597CD43D /* PurchaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B566A48A5DE6CA3BE9EDE03 /* PurchaseService.swift */; };
+		D3DF97242134DAD60339ADA3 /* ProTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D809DBD34AA9B22059033C6 /* ProTabView.swift */; };
+		D4BC03033AA7016DF316BA2B /* ProTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D809DBD34AA9B22059033C6 /* ProTabView.swift */; };
 		DF53807D9D68A6FB20610F1B /* popup.js in Resources */ = {isa = PBXBuildFile; fileRef = 9057E94AC94248B5CE65CF31 /* popup.js */; };
 		E1CD59F47876A3FB53D94328 /* SyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A471324A48AEDB45FF4BA73 /* SyncModels.swift */; };
 		F136DCF3DE2C0E19DC8A7743 /* SyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E94CB565A48E6F14B1C0821 /* SyncService.swift */; };
 		F18EAA6DAF0C0B0A4358E3FB /* TabSharingTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97ACC9858254F5F021C00B89 /* TabSharingTabView.swift */; };
+		F2E4FA4F49AED8BC5CAB16AC /* PurchaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B566A48A5DE6CA3BE9EDE03 /* PurchaseService.swift */; };
 		F2EB1E0274B9ADAF8C9B9620 /* BrowSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6BFEB07402A67F5BB319D14 /* BrowSyncApp.swift */; };
 		F305BEDD3C3CF4EAB82BB3BA /* BrowsersTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46F4DE424609A3662449C730 /* BrowsersTabView.swift */; };
 		F7042BF2C7EA6202AE1EADD0 /* SettingsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93D2A20D8B97836960D5A19A /* SettingsService.swift */; };
@@ -137,8 +146,10 @@
 		01878D8F3BC20991BBF106DD /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/Localizable.strings; sourceTree = "<group>"; };
 		10F52E8BB62D4BA5E32CD492 /* RouterTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouterTabView.swift; sourceTree = "<group>"; };
 		11E0FCE05A6FAB3580A7C607 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
-		135917D41EF6D52AAB8D0A18 /* BrowSyncAppStore.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BrowSyncAppStore.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		135917D41EF6D52AAB8D0A18 /* BrowSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BrowSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		15B3A304B12C6D6F76DFE2B6 /* SafariExtensionAppStore.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SafariExtensionAppStore.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		1B566A48A5DE6CA3BE9EDE03 /* PurchaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PurchaseService.swift; sourceTree = "<group>"; };
+		1D809DBD34AA9B22059033C6 /* ProTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProTabView.swift; sourceTree = "<group>"; };
 		2332B7DC4ABFCC9469A81DA4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		2A1DD27FFC2EB5AD2E32B10B /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/Localizable.strings; sourceTree = "<group>"; };
 		2AF71F0DA64453CD967B49F2 /* BrowserScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserScanner.swift; sourceTree = "<group>"; };
@@ -167,6 +178,7 @@
 		9F1C6061070A3577FA35F5EF /* background.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = background.js; sourceTree = "<group>"; };
 		A4BE22F2B94BE5B640CCDB1E /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
 		A871D9385C69C6022679A1A6 /* StateSyncTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateSyncTabView.swift; sourceTree = "<group>"; };
+		AE14E33E1DC4DFF3B54CA551 /* download-on-app-store-zh.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = "download-on-app-store-zh.svg"; sourceTree = "<group>"; };
 		AFA7ED2885F5600F25B63D2D /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		B1108A1B4B7AA8CF05488F9C /* WSMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WSMessage.swift; sourceTree = "<group>"; };
 		B4F4144B8AE085C797A52208 /* BackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupService.swift; sourceTree = "<group>"; };
@@ -175,7 +187,9 @@
 		BE5BEE879CB61212F2D3F082 /* LanguageBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageBundle.swift; sourceTree = "<group>"; };
 		BFF4219B6E285A9B3E623F49 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		C137716E2FEA5232D824F358 /* Browser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Browser.swift; sourceTree = "<group>"; };
+		C1AF1FEF2387E709571DAA19 /* download-on-app-store-en.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = "download-on-app-store-en.svg"; sourceTree = "<group>"; };
 		C4B27D5A9D28D813C2D50EC6 /* BrowSync-Promo-1280x800.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "BrowSync-Promo-1280x800.png"; sourceTree = "<group>"; };
+		C620B3A52FF7AB3500A405C7 /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
 		C6BFEB07402A67F5BB319D14 /* BrowSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowSyncApp.swift; sourceTree = "<group>"; };
 		C92E6B86E06DBA3FAF458AA8 /* content.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = content.js; sourceTree = "<group>"; };
 		E2B2655588572D19F7C9C320 /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -200,6 +214,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				90AA9E3F85F8EBE9680C40AC /* Aptabase in Frameworks */,
+				C620B3A62FF7AB3500A405C7 /* StoreKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -211,6 +226,8 @@
 			children = (
 				C4B27D5A9D28D813C2D50EC6 /* BrowSync-Promo-1280x800.png */,
 				49E626438C2CF8808FB8CE0B /* chrome-web-store-badge.png */,
+				C1AF1FEF2387E709571DAA19 /* download-on-app-store-en.svg */,
+				AE14E33E1DC4DFF3B54CA551 /* download-on-app-store-zh.svg */,
 			);
 			path = Marketing;
 			sourceTree = "<group>";
@@ -295,6 +312,7 @@
 				FD017512DDEC9AE8140DEF5A /* BookmarkSyncTabView.swift */,
 				46F4DE424609A3662449C730 /* BrowsersTabView.swift */,
 				2332B7DC4ABFCC9469A81DA4 /* ContentView.swift */,
+				1D809DBD34AA9B22059033C6 /* ProTabView.swift */,
 				10F52E8BB62D4BA5E32CD492 /* RouterTabView.swift */,
 				B56E2AFB07CC6CA3A5582028 /* RuleEditorView.swift */,
 				A871D9385C69C6022679A1A6 /* StateSyncTabView.swift */,
@@ -313,6 +331,14 @@
 			path = Sync;
 			sourceTree = "<group>";
 		};
+		C620B3A42FF7AB3500A405C7 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				C620B3A52FF7AB3500A405C7 /* StoreKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		CDFD277E2BFDC5553C9BE04F = {
 			isa = PBXGroup;
 			children = (
@@ -321,6 +347,7 @@
 				6AE3195C9D56F2B984A7F464 /* BrowSync */,
 				56D52BA27A38815657A008A1 /* Resources */,
 				4D9786C7E57F68A263CB969A /* SafariExtension */,
+				C620B3A42FF7AB3500A405C7 /* Frameworks */,
 				E245A1B0EFBD21BA2E413CF5 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -338,7 +365,7 @@
 			isa = PBXGroup;
 			children = (
 				705139BD1CAEFD064FC5E472 /* BrowSync.app */,
-				135917D41EF6D52AAB8D0A18 /* BrowSyncAppStore.app */,
+				135917D41EF6D52AAB8D0A18 /* BrowSync.app */,
 				F826A3DB0A5214F8A2CB7597 /* SafariExtension.appex */,
 				15B3A304B12C6D6F76DFE2B6 /* SafariExtensionAppStore.appex */,
 			);
@@ -352,6 +379,7 @@
 				B4F4144B8AE085C797A52208 /* BackupService.swift */,
 				BE5BEE879CB61212F2D3F082 /* LanguageBundle.swift */,
 				3FA75D3B7E887B29E30DDBDE /* NotificationService.swift */,
+				1B566A48A5DE6CA3BE9EDE03 /* PurchaseService.swift */,
 				3DC990238C2CD5EC343B5DF5 /* SafariBookmarkService.swift */,
 				93D2A20D8B97836960D5A19A /* SettingsService.swift */,
 				5E94CB565A48E6F14B1C0821 /* SyncService.swift */,
@@ -399,7 +427,7 @@
 				8F7CD436B796A8A5DD5D5E09 /* Aptabase */,
 			);
 			productName = BrowSyncAppStore;
-			productReference = 135917D41EF6D52AAB8D0A18 /* BrowSyncAppStore.app */;
+			productReference = 135917D41EF6D52AAB8D0A18 /* BrowSync.app */;
 			productType = "com.apple.product-type.application";
 		};
 		968EC202F2BA87A207E0429D /* SafariExtensionAppStore */ = {
@@ -513,6 +541,8 @@
 				1E4AB9EFC1355B9B65F0D1C3 /* InfoPlist.strings in Resources */,
 				CBCEAC4D22958D09E0E94828 /* Localizable.strings in Resources */,
 				89232C9DCCB327E8228DAE9A /* chrome-web-store-badge.png in Resources */,
+				A4096B01B61185CCB4D29180 /* download-on-app-store-en.svg in Resources */,
+				9A7148BBC58A82A87E8FC6EC /* download-on-app-store-zh.svg in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -553,6 +583,8 @@
 				7DE05CB0C0717AE68DF19152 /* InfoPlist.strings in Resources */,
 				0A63D7EDCF55B55E811CB8EE /* Localizable.strings in Resources */,
 				6275CEA83CD26B823FFA51D9 /* chrome-web-store-badge.png in Resources */,
+				10E9805314E7BF727FB2C9C4 /* download-on-app-store-en.svg in Resources */,
+				A283D2829821EEE72D9A6049 /* download-on-app-store-zh.svg in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -577,6 +609,8 @@
 				1150700A20301EFB81B57837 /* GeneralView.swift in Sources */,
 				8DFBC220F863CB4B7D9E8740 /* LanguageBundle.swift in Sources */,
 				89B2FBA2DA46EBD47142C310 /* NotificationService.swift in Sources */,
+				D3DF97242134DAD60339ADA3 /* ProTabView.swift in Sources */,
+				CF2F2CF7440740C3597CD43D /* PurchaseService.swift in Sources */,
 				32705BB7B9B3DD1FAC405E50 /* RouterModels.swift in Sources */,
 				09C7E842D5114B27B18A86DB /* RouterTabView.swift in Sources */,
 				0F5CB5937AE876460E91A93C /* RuleEditorView.swift in Sources */,
@@ -609,6 +643,8 @@
 				60A3DD21B1DFD5A712F82F34 /* GeneralView.swift in Sources */,
 				42B08D8BB34FC99CDC1E51D9 /* LanguageBundle.swift in Sources */,
 				700AB5DA444624B2028F8FED /* NotificationService.swift in Sources */,
+				D4BC03033AA7016DF316BA2B /* ProTabView.swift in Sources */,
+				F2E4FA4F49AED8BC5CAB16AC /* PurchaseService.swift in Sources */,
 				9F1D0E4D4AF2BA3FA1137D30 /* RouterModels.swift in Sources */,
 				FBA2BBA70C6B7C1FCC3F5312 /* RouterTabView.swift in Sources */,
 				3BFC42816BF86AFFDAE82773 /* RuleEditorView.swift in Sources */,
@@ -808,14 +844,17 @@
 				CODE_SIGN_ENTITLEMENTS = SafariExtensionAppStore.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 27;
 				DEVELOPMENT_TEAM = U2NEAJ73J2;
 				INFOPLIST_FILE = SafariExtension/InfoAppStore.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = BrowSync;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.1.3;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D APP_STORE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync.extension;
 				SDKROOT = macosx;
@@ -831,13 +870,17 @@
 				CODE_SIGN_ENTITLEMENTS = BrowSyncAppStore.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 27;
 				DEVELOPMENT_TEAM = U2NEAJ73J2;
 				INFOPLIST_FILE = BrowSync/Resources/InfoAppStore.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = BrowSync;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.1.3;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D APP_STORE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync;
 				PRODUCT_NAME = BrowSync;
@@ -874,14 +917,17 @@
 				CODE_SIGN_ENTITLEMENTS = SafariExtensionAppStore.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 27;
 				DEVELOPMENT_TEAM = U2NEAJ73J2;
 				INFOPLIST_FILE = SafariExtension/InfoAppStore.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = BrowSync;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.1.3;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D APP_STORE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync.extension;
 				SDKROOT = macosx;
@@ -962,13 +1008,17 @@
 				CODE_SIGN_ENTITLEMENTS = BrowSyncAppStore.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 27;
 				DEVELOPMENT_TEAM = U2NEAJ73J2;
 				INFOPLIST_FILE = BrowSync/Resources/InfoAppStore.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = BrowSync;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.1.3;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D APP_STORE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync;
 				PRODUCT_NAME = BrowSync;
