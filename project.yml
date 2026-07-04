@@ -37,8 +37,8 @@ targets:
     info:
       path: BrowSync/Resources/Info.plist
       properties:
-        CFBundleShortVersionString: "1.1.3"
-        CFBundleVersion: "27"
+        CFBundleShortVersionString: "1.1.5"
+        CFBundleVersion: "28"
         CFBundleURLTypes:
           - CFBundleURLName: com.ct106.browsync
             CFBundleURLSchemes:
