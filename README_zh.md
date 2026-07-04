@@ -6,9 +6,7 @@
 
 <a href="https://apps.apple.com/cn/app/id6784604835?mt=12"><img src="BrowSync/Resources/Marketing/download-on-app-store-zh.svg" height="40" alt="从 App Store 下载"></a> <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh"><img src="BrowSync/Resources/Marketing/chrome-web-store-badge.png" height="40" alt="Available in the Chrome Web Store"></a> <a href="https://addons.mozilla.org/zh-CN/firefox/addon/brow-sync/"><img src="https://img.shields.io/badge/Firefox_Add--on-FF7139?style=for-the-badge&logo=firefox&logoColor=white" height="40" alt="获取 Firefox 附加组件"></a>
 
-```bash
-brew install --cask chentao1006/tap/browsync
-```
+
 
 > [!IMPORTANT]
 > **本地运行**
@@ -25,6 +23,27 @@ brew install --cask chentao1006/tap/browsync
 - **本地网络**：通信通过本地 WebSocket 守护进程 (`ws://127.0.0.1:62333`) 进行，不依赖外部服务器。
 - **原生 macOS 应用**：使用 SwiftUI 构建，支持深色/浅色主题、菜单栏集成和登录时启动。
 - **iCloud 同步**：通过 iCloud 在您的所有 Mac 设备之间自动同步分流规则、偏好设置和站点配置。
+
+## 🌐 支持的浏览器
+
+同览 (BrowSync) 开箱即支持多种主流浏览器，并允许您手动添加几乎任何基于 Chromium 内核的浏览器。
+
+**原生支持的浏览器：**
+- Safari
+- Google Chrome
+- Arc
+- Microsoft Edge
+- Brave
+- Firefox
+- Vivaldi
+- Opera
+- Yandex Browser
+- Orion
+- Helium
+- BrowserOS
+
+**自定义浏览器：**
+如果您最喜欢的 Chromium 浏览器不在列表中，您可以轻松添加它！只需进入应用中的“浏览器”选项卡，点击底部 **"Add Custom Browser..."** 按钮，然后在 Applications（应用程序）文件夹中选择您的浏览器 `.app` 文件即可。
 
 ## 📸 界面截图
 
@@ -52,18 +71,7 @@ brew install --cask chentao1006/tap/browsync
 您可以从 Mac App Store 下载同览 (BrowSync)：
 [从 App Store 下载](https://apps.apple.com/cn/app/id6784604835?mt=12)
 
-您也可以使用 Homebrew 安装同览 (BrowSync)：
 
-```bash
-brew install --cask chentao1006/tap/browsync
-```
-
-或者先添加 tap 仓库：
-
-```bash
-brew tap chentao1006/tap
-brew install --cask browsync
-```
 
 ### 3. 源码编译构建
 

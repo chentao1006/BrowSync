@@ -62,8 +62,8 @@ struct WSMessage: Codable {
         )
     }
 
-    static func ack(messageId: String) -> WSMessage {
-        WSMessage(type: .ack, messageId: messageId, timestamp: Date().timeIntervalSince1970)
+    static func ack(messageId: String, browserId: String? = nil) -> WSMessage {
+        WSMessage(type: .ack, browser: browserId, messageId: messageId, timestamp: Date().timeIntervalSince1970)
     }
 
     static func pull(site: String? = nil, category: String? = nil) -> WSMessage {

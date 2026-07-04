@@ -29,8 +29,11 @@ struct GeneralSettings: Codable, Equatable {
     // Sync
     var iCloudSync: Bool = false
     
+    // Custom Browsers
+    var customBrowsers: [Browser] = []
+    
     private enum CodingKeys: String, CodingKey {
-        case launchAtLogin, hideWindowOnStartup, menuBarMode, theme, language, notifySyncComplete, notifyBrowserConnected, autoUpdate, analyticsEnabled, analyticsOptInPrompted, firstLaunchDate, iCloudSync
+        case launchAtLogin, hideWindowOnStartup, menuBarMode, theme, language, notifySyncComplete, notifyBrowserConnected, autoUpdate, analyticsEnabled, analyticsOptInPrompted, firstLaunchDate, iCloudSync, customBrowsers
     }
 
     init() {}
@@ -49,6 +52,7 @@ struct GeneralSettings: Codable, Equatable {
         analyticsOptInPrompted = try container.decodeIfPresent(Bool.self, forKey: .analyticsOptInPrompted) ?? false
         firstLaunchDate = try container.decodeIfPresent(Date.self, forKey: .firstLaunchDate)
         iCloudSync = try container.decodeIfPresent(Bool.self, forKey: .iCloudSync) ?? false
+        customBrowsers = try container.decodeIfPresent([Browser].self, forKey: .customBrowsers) ?? []
     }
 }
 

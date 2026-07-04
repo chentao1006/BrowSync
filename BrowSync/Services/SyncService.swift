@@ -354,6 +354,9 @@ final class SyncService: ObservableObject {
         if category == "bookmarks" || category == "bookmark_incremental" || category == "bookmarks_removed" || category == "bookmark_backup" || category == "tabSharing" {
             let browserId = clientId.components(separatedBy: "-").first ?? clientId
             if let browser = Browser(rawValue: browserId) {
+                // Ensure the message carries the verified true sender ID
+                filteredMessage.browser = browserId
+                
                 let participating = category == "tabSharing" ? settings.tabSharingParticipatingBrowsers : settings.bookmarkParticipatingBrowsers
                 if !participating.contains(browser) {
                     log("Ignored \(category) data from [\(clientId)] because it is not participating in sync.")
@@ -517,7 +520,9 @@ final class SyncService: ObservableObject {
                 
                 if !autoStats.isEmpty {
                     var categories: [SyncCategory] = []
-                    if autoStats.bookmarks > 0 { categories.append(.bookmarks) }
+                    if autoStats.bookmarksAdded > 0 || autoStats.bookmarksDeleted > 0 || autoStats.bookmarksModified > 0 {
+                        categories.append(.bookmarks)
+                    }
                     if autoStats.stateItems > 0 { categories.append(.browserData) }
                     
                     if !categories.isEmpty {

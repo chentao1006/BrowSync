@@ -28,7 +28,6 @@ async function updateStatus() {
 }
 
 updateStatus();
-setInterval(updateStatus, 1500);
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
@@ -39,18 +38,54 @@ const btnSetRouterDefault = document.getElementById('btnSetRouterDefault');
 const textIsRouterDefault = document.getElementById('textIsRouterDefault');
 const btnMoreSettings = document.getElementById('btnMoreSettings');
 const browserNames = {
-  'safari': 'Safari',
-  'chrome': 'Chrome',
-  'firefox': 'Firefox',
-  'arc': 'Arc',
-  'edge': 'Edge',
-  'brave': 'Brave'
+  safari: 'Safari',
+  chrome: 'Chrome',
+  edge: 'Edge',
+  brave: 'Brave',
+  firefox: 'Firefox',
+  vivaldi: 'Vivaldi',
+  opera: 'Opera',
+  yandex: 'Yandex',
+  arc: 'Arc',
+  orion: 'Orion',
+  helium: 'Helium',
+  browseros: 'BrowserOS'
 };
+
+const iconUrls = {
+  safari: 'https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/safari/safari_128x128.png',
+  chrome: 'https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/chrome/chrome_128x128.png',
+  edge: 'https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/edge/edge_128x128.png',
+  brave: 'https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/brave/brave_128x128.png',
+  firefox: 'https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/firefox/firefox_128x128.png',
+  vivaldi: 'https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/vivaldi/vivaldi_128x128.png',
+  opera: 'https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/opera/opera_128x128.png',
+  yandex: 'https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/yandex/yandex_128x128.png',
+  arc: 'https://www.google.com/s2/favicons?domain=arc.net&sz=64',
+  orion: 'https://www.google.com/s2/favicons?domain=browser.kagi.com&sz=64',
+  helium: 'https://www.google.com/s2/favicons?domain=helium.computer&sz=64',
+  browseros: 'https://www.google.com/s2/favicons?domain=browseros.app&sz=64'
+};
+
+function getRemoteIconUrl(browserId) {
+  const b = browserId.toLowerCase();
+  if (iconUrls[b]) return iconUrls[b];
+  return `https://www.google.com/s2/favicons?domain=${b}.com&sz=64`;
+}
+
+const localIcons = ['chrome', 'edge', 'firefox', 'safari'];
 
 function detectCurrentBrowserId() {
   const ua = navigator.userAgent.toLowerCase();
   if (ua.includes('firefox/')) return 'firefox';
   if (ua.includes('edg/')) return 'edge';
+  if (ua.includes('opr/') || ua.includes('opera/')) return 'opera';
+  if (ua.includes('vivaldi/')) return 'vivaldi';
+  if (ua.includes('yabrowser/')) return 'yandex';
+  if (ua.includes('brave/') || navigator.brave) return 'brave';
+  if (ua.includes('orion/')) return 'orion';
+  if (ua.includes('helium/')) return 'helium';
+  if (ua.includes('browseros/')) return 'browseros';
   if (ua.includes('safari/') && !ua.includes('chrome/') && !ua.includes('chromium/')) return 'safari';
   return 'chrome';
 }
@@ -87,9 +122,19 @@ function renderOpenInBrowsers(installedBrowsers, currentBrowserId, currentUrl) {
     });
 
     const icon = document.createElement('img');
-    icon.src = `../icons/${browser}.png`;
+    const lowerBrowser = browser.toLowerCase();
+    
+    if (localIcons.includes(lowerBrowser)) {
+      icon.src = `../icons/${lowerBrowser}.png`;
+    } else {
+      icon.src = getRemoteIconUrl(browser);
+    }
+    
     icon.alt = '';
-    icon.onerror = () => { icon.src = '../icons/icon16.png'; };
+    icon.onerror = () => { 
+      icon.onerror = null;
+      icon.src = '../icons/icon16.png'; 
+    };
 
     button.appendChild(icon);
     list.appendChild(button);
@@ -349,7 +394,6 @@ if (btnSyncSiteNow) {
 }
 
 loadSettings();
-setInterval(loadSettings, 1000);
 
 // ─── Tab Sharing ──────────────────────────────────────────────────────────────
 
@@ -394,8 +438,18 @@ async function renderRemoteTabs() {
 
       const icon = document.createElement('img');
       icon.className = 'remote-tab-icon';
-      icon.src = `../icons/${browser.toLowerCase()}.png`;
-      icon.onerror = () => { icon.src = '../icons/icon16.png'; };
+      const lowerBrowser = browser.toLowerCase();
+      
+      if (localIcons.includes(lowerBrowser)) {
+        icon.src = `../icons/${lowerBrowser}.png`;
+      } else {
+        icon.src = getRemoteIconUrl(browser);
+      }
+      
+      icon.onerror = () => { 
+        icon.onerror = null;
+        icon.src = '../icons/icon16.png'; 
+      };
 
       const tabTitle = document.createElement('div');
       tabTitle.className = 'remote-tab-title';
@@ -418,8 +472,16 @@ if (btnRefreshTabs) {
 }
 
 chrome.storage.onChanged.addListener((changes, namespace) => {
-  if (namespace === 'local' && changes.remoteTabs) {
-    renderRemoteTabs();
+  if (namespace === 'local') {
+    if (changes.remoteTabs) {
+      renderRemoteTabs();
+    }
+    if (changes.appSettings || changes.currentBrowserId) {
+      loadSettings();
+    }
+    if (changes.wsState || changes.isWorking) {
+      updateStatus();
+    }
   }
 });
 

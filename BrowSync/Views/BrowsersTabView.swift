@@ -3,6 +3,7 @@
 
 import SwiftUI
 import SafariServices
+import UniformTypeIdentifiers
 
 struct BrowsersTabView: View {
     @EnvironmentObject var appState: AppState
@@ -14,10 +15,72 @@ struct BrowsersTabView: View {
                 .font(.title2.bold())
                 .padding()
 
-            List(appState.browserInfos.filter { $0.isInstalled }) { info in
-                BrowserRow(info: info)
+            List {
+                ForEach(appState.browserInfos.filter { $0.isInstalled }) { info in
+                    BrowserRow(info: info)
+                }
+                
+                Button(action: addCustomBrowser) {
+                    HStack {
+                        Image(systemName: "plus.circle")
+                        Text(String(localized: "Add Custom Browser...", bundle: langBundle.bundle))
+                    }
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 12)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
+                .onHover { hovering in
+                    if hovering {
+                        NSCursor.pointingHand.push()
+                    } else {
+                        NSCursor.pop()
+                    }
+                }
             }
             .listStyle(.inset)
+        }
+    }
+    
+    private func addCustomBrowser() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        if #available(macOS 11.0, *) {
+            panel.allowedContentTypes = [.applicationBundle]
+        } else {
+            panel.allowedFileTypes = ["app"]
+        }
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        
+        if panel.runModal() == .OK, let url = panel.url {
+            guard let bundle = Bundle(url: url),
+                  let bundleIdentifier = bundle.bundleIdentifier else { return }
+            
+            let displayName = (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String) ?? 
+                              (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String) ??
+                              url.deletingPathExtension().lastPathComponent
+                              
+            // Only add if it's not already standard or custom
+            if !Browser.standardBrowsers.contains(where: { $0.bundleIdentifier == bundleIdentifier }) &&
+               !appState.settingsService.general.customBrowsers.contains(where: { $0.bundleIdentifier == bundleIdentifier }) {
+                
+                let newBrowser = Browser(
+                    id: bundleIdentifier,
+                    displayName: displayName,
+                    bundleIdentifier: bundleIdentifier,
+                    sfSymbol: "macwindow",
+                    extensionBasePath: displayName, // Guessed fallback path
+                    isCustom: true
+                )
+                
+                appState.settingsService.general.customBrowsers.append(newBrowser)
+                appState.settingsService.save()
+                Task {
+                    await appState.refreshBrowsers()
+                }
+            }
         }
     }
 }

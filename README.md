@@ -6,9 +6,7 @@
 
 <a href="https://apps.apple.com/cn/app/id6784604835?mt=12"><img src="BrowSync/Resources/Marketing/download-on-app-store-en.svg" height="40" alt="Download on the App Store"></a> <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh"><img src="BrowSync/Resources/Marketing/chrome-web-store-badge.png" height="40" alt="Available in the Chrome Web Store"></a> <a href="https://addons.mozilla.org/en-US/firefox/addon/brow-sync/"><img src="https://img.shields.io/badge/Firefox_Add--on-FF7139?style=for-the-badge&logo=firefox&logoColor=white" height="40" alt="Get the Firefox Add-on"></a>
 
-```bash
-brew install --cask chentao1006/tap/browsync
-```
+
 
 > [!IMPORTANT]
 > **Local Execution**
@@ -25,6 +23,27 @@ brew install --cask chentao1006/tap/browsync
 - **Local Network**: Communication is handled locally via a WebSocket daemon (`ws://127.0.0.1:62333`). No external servers are used.
 - **Native macOS App**: Built with SwiftUI. Supports Dark/Light themes, Menu Bar integration, and Launch at Login.
 - **iCloud Sync**: Automatically sync your routing rules, settings, and site preferences across all your Mac devices via iCloud.
+
+## 🌐 Supported Browsers
+
+BrowSync supports a wide range of browsers out of the box, and allows you to add virtually any Chromium-based browser manually.
+
+**Natively Supported:**
+- Safari
+- Google Chrome
+- Arc
+- Microsoft Edge
+- Brave
+- Firefox
+- Vivaldi
+- Opera
+- Yandex Browser
+- Orion
+- Helium
+- BrowserOS
+
+**Custom Browsers:**
+If your favorite Chromium-based browser is not on the list, you can easily add it! Simply go to the "Browsers" tab in the app, click **"Add Custom Browser..."**, and select your browser's `.app` file from the Applications folder.
 
 ## 📸 Screenshots
 
@@ -52,18 +71,7 @@ brew install --cask chentao1006/tap/browsync
 You can download BrowSync from the Mac App Store:
 [Download on the App Store](https://apps.apple.com/cn/app/id6784604835?mt=12)
 
-Alternatively, you can install BrowSync with Homebrew:
 
-```bash
-brew install --cask chentao1006/tap/browsync
-```
-
-Or tap the repository first:
-
-```bash
-brew tap chentao1006/tap
-brew install --cask browsync
-```
 
 ### 3. Build from Source
 

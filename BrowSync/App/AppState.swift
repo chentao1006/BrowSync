@@ -229,7 +229,8 @@ final class AppState: ObservableObject {
 
     func refreshBrowsers() async {
         isScanning = true
-        let infos = await scanner.scanAll()
+        let allBrowsers = Browser.standardBrowsers + settingsService.general.customBrowsers
+        let infos = await scanner.scanAll(browsers: allBrowsers)
 
         // Overlay connection status from daemon
         browserInfos = infos.map { info in

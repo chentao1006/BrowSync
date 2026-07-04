@@ -15,9 +15,9 @@ final class BrowserScanner: ObservableObject {
 
     // MARK: - Scan All Browsers
 
-    func scanAll() async -> [BrowserInfo] {
+    func scanAll(browsers: [Browser] = Browser.allCases) async -> [BrowserInfo] {
         var results: [BrowserInfo] = []
-        for browser in Browser.allCases {
+        for browser in browsers {
             let info = await scan(browser)
             results.append(info)
         }

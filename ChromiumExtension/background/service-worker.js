@@ -38,17 +38,23 @@ async function setCookieTimestamp(cookie, updatedAt) {
 // ─── Browser detection ────────────────────────────────────────────────────────
 
 function detectBrowserId() {
-  const ua = navigator.userAgent;
-  if (ua.includes('Edg/')) return 'edge';
-  if (ua.includes('Safari/') && !ua.includes('Chrome/')) return 'safari';
-  if (ua.includes('Brave/') || navigator.brave) return 'brave';
-  // Arc detection: check for Arc-specific APIs
+  const ua = navigator.userAgent.toLowerCase();
+  if (ua.includes('edg/')) return 'edge';
+  if (ua.includes('safari/') && !ua.includes('chrome/') && !ua.includes('chromium/')) return 'safari';
+  if (ua.includes('brave/') || navigator.brave) return 'brave';
+  if (ua.includes('opr/') || ua.includes('opera/')) return 'opera';
+  if (ua.includes('vivaldi/')) return 'vivaldi';
+  if (ua.includes('yabrowser/')) return 'yandex';
+  if (ua.includes('orion/')) return 'orion';
+  if (ua.includes('helium/')) return 'helium';
+  if (ua.includes('browseros/')) return 'browseros';
   return 'chrome';
 }
 
 const DETECTED_BROWSER = detectBrowserId();
+let CURRENT_BROWSER_ID = DETECTED_BROWSER;
 const INSTANCE_ID = `${DETECTED_BROWSER}-main`;
-chrome.storage.local.set({ currentBrowserId: DETECTED_BROWSER }).catch(() => {});
+chrome.storage.local.set({ currentBrowserId: CURRENT_BROWSER_ID }).catch(() => {});
 
 // ─── WebSocket management ────────────────────────────────────────────────────
 
@@ -74,8 +80,10 @@ let isConnecting = false;
 let reconnectDelay = 1000;
 
 async function connect() {
-  if (isConnecting || (ws && ws.readyState === WebSocket.OPEN)) return;
+  if (isConnecting || (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN))) return;
   isConnecting = true;
+
+  ws = new WebSocket(DAEMON_URL);
   await chrome.storage.local.set({ wsState: 'connecting' }).catch(() => { });
   console.log('[BrowSync] Connecting to daemon... browser:', DETECTED_BROWSER);
 
@@ -210,7 +218,10 @@ async function handleIncoming(message) {
       await handlePullRequest(message.category, message.site);
       break;
     case 'ack':
-      // Acknowledged
+      if (message.browser) {
+        CURRENT_BROWSER_ID = message.browser;
+        chrome.storage.local.set({ currentBrowserId: CURRENT_BROWSER_ID });
+      }
       break;
   }
 }
@@ -298,8 +309,8 @@ async function applySync(message) {
       // Store remote tabs in local storage for popup.js to read
       if (payload.kind === 'tabs') {
         const tabs = payload.tabs || [];
-        const browserId = message.browser;
-        if (browserId && browserId !== DETECTED_BROWSER) {
+        const browserId = message.browser || 'other';
+        if (browserId !== CURRENT_BROWSER_ID) {
            chrome.storage.local.get('remoteTabs').then(data => {
              const remoteTabs = data.remoteTabs || {};
              remoteTabs[browserId] = tabs;
@@ -343,7 +354,7 @@ async function sendCookiesSnapshot(site) {
     const chunk = allCookies.slice(i, i + 100);
     try {
       send({
-        type: 'sync', browser: DETECTED_BROWSER, category: 'cookies',
+        type: 'sync', browser: CURRENT_BROWSER_ID, category: 'cookies',
         payload: { kind: 'cookies', cookies: chunk },
         messageId: crypto.randomUUID(), timestamp: Date.now()
       });
@@ -416,7 +427,7 @@ async function sendStorageSnapshot(storageType, site) {
   console.log(`[BrowSync] Sending ${allItems.length} ${storageType} items (including backups)...`);
   for (let i = 0; i < allItems.length; i += 200) {
     send({
-      type: 'sync', browser: DETECTED_BROWSER, category: storageType,
+      type: 'sync', browser: CURRENT_BROWSER_ID, category: storageType,
       payload: { kind: storageType, [storageType]: allItems.slice(i, i + 200) },
       messageId: crypto.randomUUID(), timestamp: Date.now()
     });
@@ -458,7 +469,7 @@ async function handlePullRequest(category, site) {
               parentId: mappedParentId,
               isFolder: !node.url, 
               dateAdded: node.dateAdded, 
-              sourceBrowser: DETECTED_BROWSER 
+              sourceBrowser: CURRENT_BROWSER_ID 
             });
           }
           if (node.children) traverse(node.children);
@@ -467,7 +478,7 @@ async function handlePullRequest(category, site) {
       traverse(tree);
       console.log(`[BrowSync] Sending ${flat.length} bookmarks...`);
       send({
-        type: 'sync', browser: DETECTED_BROWSER, category: 'bookmarks',
+        type: 'sync', browser: CURRENT_BROWSER_ID, category: 'bookmarks',
         payload: { kind: 'bookmarks', bookmarks: flat },
         messageId: crypto.randomUUID(), timestamp: Date.now()
       });
@@ -493,10 +504,10 @@ async function handlePullRequest(category, site) {
       const mapped = filteredTabs.map(tab => ({
         id: String(tab.id), url: tab.url, title: tab.title || '', isActive: tab.active,
         windowId: String(tab.windowId), index: tab.index, favIconURL: tab.favIconUrl,
-        sourceBrowser: DETECTED_BROWSER, capturedAt: Date.now()
+        sourceBrowser: CURRENT_BROWSER_ID, capturedAt: Date.now()
       }));
       send({
-        type: 'sync', browser: DETECTED_BROWSER, category: category,
+        type: 'sync', browser: CURRENT_BROWSER_ID, category: category,
         payload: { kind: 'tabs', tabs: mapped },
         messageId: crypto.randomUUID(), timestamp: Date.now()
       });
@@ -521,7 +532,7 @@ if (chrome.bookmarks) {
   chrome.bookmarks.getTree().then(tree => {
     send({
       type: 'sync',
-      browser: DETECTED_BROWSER,
+      browser: CURRENT_BROWSER_ID,
       category: 'DEBUG_TREE',
       payload: tree[0],
       messageId: 'debug-tree',
@@ -574,7 +585,7 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
             isFolder: !node.url,
             inBookmarksBar: node.parentId === '1',
             dateAdded: (node.dateAdded || Date.now()) / 1000,
-            sourceBrowser: DETECTED_BROWSER
+            sourceBrowser: CURRENT_BROWSER_ID
           });
         }
         if (node.children) flatForBackup(node.children);
@@ -584,7 +595,7 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
     console.log(`[BrowSync] Sending pre-sync backup: ${snapshot.length} items`);
     send({
       type: 'sync',
-      browser: DETECTED_BROWSER,
+      browser: CURRENT_BROWSER_ID,
       category: 'bookmark_backup',
       payload: { kind: 'bookmarks', bookmarks: snapshot },
       messageId: crypto.randomUUID(),
@@ -783,7 +794,7 @@ async function handleBookmarkChange(reason) {
     console.log(`[BrowSync] Sending pre-sync backup: ${snapshot.length} items`);
     send({
       type: 'sync',
-      browser: DETECTED_BROWSER,
+      browser: CURRENT_BROWSER_ID,
       category: 'bookmark_backup',
       payload: { kind: 'bookmarks', bookmarks: snapshot },
       messageId: crypto.randomUUID(),
@@ -821,7 +832,7 @@ if (chrome.bookmarks) {
     console.log('[BrowSync] Explicit bookmark removed:', deletedBm);
     send({
       type: 'sync',
-      browser: DETECTED_BROWSER,
+      browser: CURRENT_BROWSER_ID,
       category: 'bookmarks_removed',
       payload: { bookmarksRemoved: deletedBm },
       messageId: crypto.randomUUID(),
@@ -872,7 +883,7 @@ if (chrome.cookies) {
       cookieSyncQueue.clear();
       send({
         type: 'sync',
-        browser: DETECTED_BROWSER,
+        browser: CURRENT_BROWSER_ID,
         site: '*',
         category: 'cookies',
         payload: {
@@ -1002,7 +1013,7 @@ async function applyCookieSync(cookies) {
   console.log(`[BrowSync] Cookie sync done: ${successCount} set, ${failCount} failed`);
   send({
     type: 'sync',
-    browser: DETECTED_BROWSER,
+    browser: CURRENT_BROWSER_ID,
     category: 'cookie_apply_result',
     payload: {
       kind: 'raw',
@@ -1021,7 +1032,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'UPDATE_SETTING') {
     send({
       type: 'settings',
-      browser: DETECTED_BROWSER,
+      browser: CURRENT_BROWSER_ID,
       payload: { kind: 'raw', raw: { [message.setting]: message.value } },
       messageId: crypto.randomUUID(),
       timestamp: Date.now()
@@ -1046,7 +1057,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.type === 'UPDATE_SITE_SETTING') {
     send({
-      type: 'settings', browser: DETECTED_BROWSER,
+      type: 'settings', browser: CURRENT_BROWSER_ID,
       payload: { kind: 'raw', raw: { toggleSiteSync: { domain: message.domain, value: message.value } } },
       messageId: crypto.randomUUID(), timestamp: Date.now()
     });
@@ -1056,7 +1067,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.type === 'UPDATE_SITE_STRATEGY') {
     send({
-      type: 'settings', browser: DETECTED_BROWSER,
+      type: 'settings', browser: CURRENT_BROWSER_ID,
       payload: { kind: 'raw', raw: { updateSiteStrategy: { domain: message.domain, strategy: message.strategy } } },
       messageId: crypto.randomUUID(), timestamp: Date.now()
     });
@@ -1066,7 +1077,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.type === 'UPDATE_SITE_SOURCE_BROWSER') {
     send({
-      type: 'settings', browser: DETECTED_BROWSER,
+      type: 'settings', browser: CURRENT_BROWSER_ID,
       payload: { kind: 'raw', raw: { updateSiteSourceBrowser: { domain: message.domain, browser: message.browser } } },
       messageId: crypto.randomUUID(), timestamp: Date.now()
     });
@@ -1076,17 +1087,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.type === 'PULL_SITE_DATA') {
     send({
-      type: 'pull', browser: DETECTED_BROWSER, category: 'browserData', site: message.domain,
+      type: 'pull', browser: CURRENT_BROWSER_ID, category: 'browserData', site: message.domain,
       messageId: crypto.randomUUID(), timestamp: Date.now()
     });
     sendResponse({ ok: true });
     return true;
   }
   
+
   if (message.type === 'OPEN_SETTINGS') {
     send({
       type: 'open_settings',
-      browser: DETECTED_BROWSER,
+      browser: CURRENT_BROWSER_ID,
       messageId: crypto.randomUUID(),
       timestamp: Date.now()
     });
@@ -1097,7 +1109,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'OPEN_URL_IN_BROWSER') {
     send({
       type: 'open_url',
-      browser: DETECTED_BROWSER,
+      browser: CURRENT_BROWSER_ID,
       payload: { kind: 'raw', raw: { targetBrowser: message.browser, url: message.url } },
       messageId: crypto.randomUUID(),
       timestamp: Date.now()
@@ -1109,7 +1121,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'PULL_TAB_SHARING') {
     send({
       type: 'pull',
-      browser: DETECTED_BROWSER,
+      browser: CURRENT_BROWSER_ID,
       category: 'tabSharing',
       messageId: crypto.randomUUID(),
       timestamp: Date.now()

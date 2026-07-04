@@ -5,6 +5,7 @@
 import Foundation
 import Network
 import os.log
+import AppKit
 
 // MARK: - Connected Client
 
@@ -396,14 +397,24 @@ final class DaemonServer: ObservableObject {
     // MARK: - Register
 
     private func handleRegister(_ message: WSMessage, connection: NWConnection) {
-        guard
-            let browserRaw = message.browser,
-            let browser = Browser(rawValue: browserRaw),
-            let instanceId = message.instanceId
-        else {
+        guard let browserRaw = message.browser, let originalInstanceId = message.instanceId else {
             logger.warning("Invalid register message: \(String(describing: message))")
             return
         }
+        
+        var realBrowserId = browserRaw
+        if let inferredId = inferBrowserId(from: connection) {
+            logger.info("Daemon: Inferred real browser ID: \(inferredId) (client reported: \(browserRaw))")
+            realBrowserId = inferredId
+        }
+        
+        let allBrowsers = Browser.standardBrowsers + AppState.shared.settingsService.general.customBrowsers
+        guard let browser = allBrowsers.first(where: { $0.id == realBrowserId }) else {
+            logger.warning("Unknown browser id: \(realBrowserId)")
+            return
+        }
+        
+        let instanceId = originalInstanceId.replacingOccurrences(of: browserRaw, with: realBrowserId)
 
         // Disconnect existing client with same instanceId (reconnect)
         if let existing = clients[instanceId] {
@@ -422,11 +433,97 @@ final class DaemonServer: ObservableObject {
 
         // ACK the registration
         if let msgId = message.messageId {
-            sendWSMessage(WSMessage.ack(messageId: msgId), to: client)
+            sendWSMessage(WSMessage.ack(messageId: msgId, browserId: realBrowserId), to: client)
         }
 
         // Continue receiving
         receiveNextMessage(on: connection)
+    }
+
+    // MARK: - Native Browser Inference
+    
+    private func inferBrowserId(from connection: NWConnection) -> String? {
+        guard case .hostPort(_, let port) = connection.endpoint else { return nil }
+        let clientPort = port.rawValue
+        
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        process.arguments = ["-nP", "-iTCP:\(clientPort)", "-sTCP:ESTABLISHED"]
+        
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        
+        do {
+            try process.run()
+            process.waitUntilExit()
+            
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            guard let output = String(data: data, encoding: .utf8) else { return nil }
+            
+            let myBundleId = Bundle.main.bundleIdentifier ?? "com.ct106.browsync"
+            let lines = output.components(separatedBy: .newlines)
+            
+            for line in lines {
+                let columns = line.split(separator: " ", omittingEmptySubsequences: true)
+                if columns.count >= 2, let pid = pid_t(String(columns[1])) {
+                    logger.info("Daemon: Found PID \(pid, privacy: .public) for port \(clientPort, privacy: .public)")
+                    if let app = NSRunningApplication(processIdentifier: pid) {
+                        let appBundleId = app.bundleIdentifier
+                        logger.info("Daemon: Checking app with PID \(pid, privacy: .public), bundle ID: \(appBundleId ?? "nil", privacy: .public)")
+                        if let appBundleId = appBundleId, appBundleId != myBundleId {
+                            let allBrowsers = Browser.standardBrowsers + AppState.shared.settingsService.general.customBrowsers
+                            if let browser = allBrowsers.first(where: { 
+                                appBundleId == $0.bundleIdentifier || appBundleId.hasPrefix($0.bundleIdentifier + ".") 
+                            }) {
+                                logger.info("Daemon: App matched: \(browser.id, privacy: .public) for bundle: \(appBundleId, privacy: .public)")
+                                return browser.id
+                            }
+                        }
+                    } else {
+                        logger.warning("Daemon: NSRunningApplication returned nil for PID \(pid, privacy: .public). Trying ps fallback...")
+                        let psProcess = Process()
+                        psProcess.executableURL = URL(fileURLWithPath: "/bin/ps")
+                        psProcess.arguments = ["-p", "\(pid)", "-o", "comm="]
+                        let psPipe = Pipe()
+                        psProcess.standardOutput = psPipe
+                        try? psProcess.run()
+                        psProcess.waitUntilExit()
+                        
+                        if let data = try? psPipe.fileHandleForReading.readToEnd(),
+                           let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                           !path.isEmpty {
+                            logger.info("Daemon: ps path is \(path, privacy: .public)")
+                            var currentURL = URL(fileURLWithPath: path)
+                            var fallbackBundleId: String? = nil
+                            while currentURL.path != "/" && currentURL.path.count > 1 {
+                                if currentURL.pathExtension == "app" {
+                                    if let bId = Bundle(url: currentURL)?.bundleIdentifier {
+                                        fallbackBundleId = bId
+                                        break
+                                    }
+                                }
+                                currentURL = currentURL.deletingLastPathComponent()
+                            }
+                            
+                            logger.info("Daemon: fallbackBundleId is \(fallbackBundleId ?? "nil", privacy: .public)")
+                            if let appBundleId = fallbackBundleId, appBundleId != myBundleId {
+                                let allBrowsers = Browser.standardBrowsers + AppState.shared.settingsService.general.customBrowsers
+                                if let browser = allBrowsers.first(where: { 
+                                    appBundleId == $0.bundleIdentifier || appBundleId.hasPrefix($0.bundleIdentifier + ".") 
+                                }) {
+                                    logger.info("Daemon: App matched via ps fallback: \(browser.id, privacy: .public)")
+                                    return browser.id
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch {
+            logger.warning("Failed to run lsof for inference: \(error.localizedDescription)")
+        }
+        return nil
     }
 
     // MARK: - WebSocket Send
