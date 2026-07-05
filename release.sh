@@ -8,6 +8,8 @@ PLIST_PATH="BrowSync/Resources/Info.plist"
 VERSIONED_PLISTS=(
     "BrowSync/Resources/Info.plist"
     "SafariExtension/Info.plist"
+    "BrowSync/Resources/InfoAppStore.plist"
+    "SafariExtension/InfoAppStore.plist"
 )
 RESULT_DIR="./dist"
 
