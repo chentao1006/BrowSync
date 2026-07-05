@@ -19,7 +19,15 @@ struct BrowSyncApp: App {
 
     var body: some Scene {
         // Menu Bar Extra (macOS 13+)
-        MenuBarExtra {
+        MenuBarExtra(isInserted: Binding(
+            get: {
+                switch appState.settingsService.general.menuBarMode {
+                case .alwaysVisible: return true
+                case .hidden: return false
+                }
+            },
+            set: { _ in }
+        )) {
             MenuBarView()
                 .environmentObject(appState)
                 .environmentObject(langBundle)
@@ -236,6 +244,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               isSettingsWindow(window)
         else { return }
         showDockIcon()
+        
+        Task {
+            await appState.refreshBrowsers()
+        }
     }
 
     private var settingsWindow: NSWindow? {

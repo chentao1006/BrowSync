@@ -11,9 +11,21 @@ struct BrowsersTabView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(String(localized: "Installed Browsers", bundle: langBundle.bundle))
-                .font(.title2.bold())
-                .padding()
+            HStack {
+                Text(String(localized: "Installed Browsers", bundle: langBundle.bundle))
+                    .font(.title2.bold())
+                Spacer()
+                Button(action: {
+                    Task { await appState.refreshBrowsers() }
+                }) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(appState.isScanning ? Color.secondary : Color.primary)
+                .disabled(appState.isScanning)
+                .help(String(localized: "Refresh", bundle: langBundle.bundle))
+            }
+            .padding()
 
             List {
                 ForEach(appState.browserInfos.filter { $0.isInstalled }) { info in

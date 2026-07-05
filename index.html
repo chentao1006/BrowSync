@@ -705,16 +705,12 @@
       .cta-group {
         gap: 16px;
         flex-direction: column;
-        align-items: stretch;
+        align-items: center;
         white-space: normal;
       }
 
       .store-badge {
         justify-content: center;
-      }
-
-      .store-badge img {
-        height: 42px;
       }
 
       .btn-icon {
@@ -764,21 +760,23 @@
         <p data-i18n="hero.lead">打通 Safari、所有 Chromium 内核浏览器与 Firefox。根据规则智能分流链接，并实时同步书签与登录状态。纯本地运行，捍卫您的隐私。</p>
         <div class="cta-container">
           <div class="cta-group">
-            <a href="https://github.com/chentao1006/browsync/releases/latest" target="_blank" rel="noopener"
-              class="btn-primary">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
-              </svg>
-              <span data-i18n="hero.cta">免费下载 macOS 版</span>
-            </a>
-            <a href="https://apps.apple.com/cn/app/id6784604835?mt=12" target="_blank" rel="noopener"
-              class="store-badge app-store-badge">
-              <img data-app-store-badge src="BrowSync/Resources/Marketing/download-on-app-store-zh.svg"
-                alt="从 App Store 下载">
-            </a>
+            <div class="main-downloads" style="display: flex; gap: 16px; align-items: center; justify-content: center; flex-wrap: wrap;">
+              <a href="https://github.com/chentao1006/browsync/releases/latest" target="_blank" rel="noopener"
+                class="btn-primary">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span data-i18n="hero.cta">免费下载 macOS 版</span>
+              </a>
+              <a href="https://apps.apple.com/cn/app/id6784604835?mt=12" target="_blank" rel="noopener"
+                class="store-badge app-store-badge">
+                <img data-app-store-badge src="BrowSync/Resources/Marketing/download-on-app-store-zh.svg"
+                  alt="从 App Store 下载">
+              </a>
+            </div>
             <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0;">
               <span style="color: var(--muted); font-size: 0.95rem; margin-left: 8px;"
                 data-i18n="install.extensions">浏览器扩展：</span>

@@ -66,7 +66,6 @@ struct RouterSettings: Codable, Equatable {
 
 enum MenuBarMode: String, CaseIterable, Codable, Identifiable {
     case alwaysVisible = "always_visible"
-    case hideWhenConnected = "hide_when_connected"
     case hidden = "hidden"
 
     var id: String { rawValue }
@@ -74,7 +73,6 @@ enum MenuBarMode: String, CaseIterable, Codable, Identifiable {
     var displayName: LocalizedStringResource {
         switch self {
         case .alwaysVisible: return "Always Visible"
-        case .hideWhenConnected: return "Hide When Connected"
         case .hidden: return "Hidden"
         }
     }
