@@ -348,6 +348,7 @@
 
 "Routing Fallback" = "分流默认";
 
+
 /* Added for Menu Bar */
 "Settings..." = "设置...";
 "Turn on Bookmark Sync" = "打开书签同步";
@@ -488,3 +489,9 @@
 "Professional shares all open tabs." = "专业版共享所有打开的标签页。";
 "iCloud Sync is available in Professional." = "iCloud 同步需要专业版。";
 "Add Custom Browser..." = "添加自定义浏览器...";
+
+"Remove Browser" = "移除浏览器";
+
+"Grant Access" = "授权访问";
+"Please select the Safari folder to grant BrowSync access for syncing." = "请选择 Safari 文件夹以授予 BrowSync 同步权限。";
+"Safari requires folder access due to Sandbox restrictions." = "由于沙盒限制，Safari 同步需要您手动授权目录访问权限。";

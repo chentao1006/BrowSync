@@ -83,7 +83,7 @@ final class PurchaseService: ObservableObject {
 #elseif LOCAL_PRO_TEST
     @Published private(set) var isProUnlocked = true
 #else
-    @Published private(set) var isProUnlocked = false
+    @Published private(set) var isProUnlocked = true
 #endif
     @Published private(set) var isLoading = false
     @Published private(set) var isPurchasing = false
@@ -156,7 +156,7 @@ final class PurchaseService: ObservableObject {
         isProUnlocked = true
         statusMessage = "Development build - Professional unlocked."
 #else
-        isProUnlocked = false
+        isProUnlocked = true
         statusMessage = nil
 #endif
     }

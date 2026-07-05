@@ -418,3 +418,10 @@
 "Free version shares only the current active tab." = "Die kostenlose Version teilt nur den aktuell aktiven Tab.";
 "Professional shares all open tabs." = "Professional teilt alle offenen Tabs.";
 "iCloud Sync is available in Professional." = "iCloud-Synchronisierung ist in Professional verfuegbar.";
+
+
+
+"Grant Access" = "Grant Access";
+"Please select the Safari folder to grant BrowSync access for syncing." = "Please select the Safari folder to grant BrowSync access for syncing.";
+"Safari requires folder access due to Sandbox restrictions." = "Safari requires folder access due to Sandbox restrictions.";
+

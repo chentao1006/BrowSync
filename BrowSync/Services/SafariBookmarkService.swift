@@ -32,64 +32,66 @@ final class SafariBookmarkService {
     /// Returns the number of bookmarks applied or staged.
     @discardableResult
     func applyBookmarks(_ bookmarks: [SyncBookmark], from sourceBrowser: String, isFullMirror: Bool = false) -> Int {
-        guard let url = bookmarksURL else {
-            logger.warning("Safari Bookmarks.plist not found, skipping")
-            return 0
-        }
-
-        fileMonitor?.setEventHandler { [weak self] in
-            guard let self = self else { return }
-            if self.isWritingInternally {
-                self.logger.debug("Ignoring Bookmarks.plist change because it was triggered by a sync write")
-                return
-            }
-            print("[\(Date().ISO8601Format())] Safari Bookmarks.plist changed! Triggering auto-sync...")
-            NotificationCenter.default.post(name: NSNotification.Name("SafariBookmarksChanged"), object: nil)
-        }
-        
-        do {
-            let data = try Data(contentsOf: url)
-            guard var plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
-                logger.warning("Could not parse Bookmarks.plist")
+        return SandboxAccessManager.shared.withSafariAccess {
+            guard let url = bookmarksURL else {
+                logger.warning("Safari Bookmarks.plist not found, skipping")
                 return 0
             }
 
-            let added = insertBookmarks(bookmarks, into: &plist, sourceBrowser: sourceBrowser, isFullMirror: isFullMirror)
-            if added == 0 && !isFullMirror {
-                logger.info("No new bookmarks to add from \(sourceBrowser)")
-                return 0
-            }
-
-            let writeBlock = {
-                do {
-                    self.isWritingInternally = true
-                    let newData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
-                    try newData.write(to: url, options: .atomic)
-                    self.logger.info("Wrote \(added) bookmarks to Safari Bookmarks.plist from \(sourceBrowser)")
-                    
-                    // Reset the flag after a delay to allow file system events to clear
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                        self.isWritingInternally = false
-                    }
-                } catch {
-                    self.logger.error("Failed to write Safari bookmarks: \(error)")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                        self.isWritingInternally = false
-                    }
+            fileMonitor?.setEventHandler { [weak self] in
+                guard let self = self else { return }
+                if self.isWritingInternally {
+                    self.logger.debug("Ignoring Bookmarks.plist change because it was triggered by a sync write")
+                    return
                 }
-            }
-
-            // Generate HTML backup as a fallback just in case
-            if let html = exportHTML(bookmarks, from: sourceBrowser) {
-                logger.info("HTML exported to \(html.path) as fallback.")
+                print("[\(Date().ISO8601Format())] Safari Bookmarks.plist changed! Triggering auto-sync...")
+                NotificationCenter.default.post(name: NSNotification.Name("SafariBookmarksChanged"), object: nil)
             }
             
-            // macOS automatically reloads Bookmarks.plist even when Safari is running
-            writeBlock()
-            return added
-        } catch {
-            logger.error("Failed to process Safari bookmarks: \(error)")
-            return 0
+            do {
+                let data = try Data(contentsOf: url)
+                guard var plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
+                    logger.warning("Could not parse Bookmarks.plist")
+                    return 0
+                }
+
+                let added = insertBookmarks(bookmarks, into: &plist, sourceBrowser: sourceBrowser, isFullMirror: isFullMirror)
+                if added == 0 && !isFullMirror {
+                    logger.info("No new bookmarks to add from \(sourceBrowser)")
+                    return 0
+                }
+
+                let writeBlock = {
+                    do {
+                        self.isWritingInternally = true
+                        let newData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+                        try newData.write(to: url, options: .atomic)
+                        self.logger.info("Wrote \(added) bookmarks to Safari Bookmarks.plist from \(sourceBrowser)")
+                        
+                        // Reset the flag after a delay to allow file system events to clear
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            self.isWritingInternally = false
+                        }
+                    } catch {
+                        self.logger.error("Failed to write Safari bookmarks: \(error)")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            self.isWritingInternally = false
+                        }
+                    }
+                }
+
+                // Generate HTML backup as a fallback just in case
+                if let html = exportHTML(bookmarks, from: sourceBrowser) {
+                    logger.info("HTML exported to \(html.path) as fallback.")
+                }
+                
+                // macOS automatically reloads Bookmarks.plist even when Safari is running
+                writeBlock()
+                return added
+            } catch {
+                logger.error("Failed to process Safari bookmarks: \(error)")
+                return 0
+            }
         }
     }
 
@@ -342,61 +344,63 @@ final class SafariBookmarkService {
     // MARK: - Read Safari Bookmarks
 
     func readBookmarks() -> [SyncBookmark] {
-        guard let url = bookmarksURL else { return [] }
-        do {
-            let data = try Data(contentsOf: url)
-            guard let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-                  let children = plist["Children"] as? [[String: Any]] else {
-                return []
-            }
+        return SandboxAccessManager.shared.withSafariAccess {
+            guard let url = bookmarksURL else { return [] }
+            do {
+                let data = try Data(contentsOf: url)
+                guard let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                      let children = plist["Children"] as? [[String: Any]] else {
+                    return []
+                }
 
-            var result: [SyncBookmark] = []
-            
-            func traverse(nodes: [[String: Any]], parentId: String?, rootChromeId: String?) {
-                for child in nodes {
-                    let isFolder = (child["WebBookmarkType"] as? String) == "WebBookmarkTypeList"
-                    let titleDict = child["URIDictionary"] as? [String: Any]
-                    let titleStr = titleDict?["title"] as? String ?? child["Title"] as? String ?? child["URLString"] as? String ?? "Untitled"
-                    let urlStr = child["URLString"] as? String
-                    let id = (child["WebBookmarkUUID"] as? String) ?? UUID().uuidString
-                    
-                    let effectiveParentId = parentId ?? rootChromeId
-                    
-                    result.append(SyncBookmark(id: id, title: titleStr, url: urlStr, parentId: effectiveParentId, isFolder: isFolder, inBookmarksBar: effectiveParentId == "1"))
-                    
-                    if isFolder, let subChildren = child["Children"] as? [[String: Any]] {
-                        traverse(nodes: subChildren, parentId: id, rootChromeId: rootChromeId)
+                var result: [SyncBookmark] = []
+                
+                func traverse(nodes: [[String: Any]], parentId: String?, rootChromeId: String?) {
+                    for child in nodes {
+                        let isFolder = (child["WebBookmarkType"] as? String) == "WebBookmarkTypeList"
+                        let titleDict = child["URIDictionary"] as? [String: Any]
+                        let titleStr = titleDict?["title"] as? String ?? child["Title"] as? String ?? child["URLString"] as? String ?? "Untitled"
+                        let urlStr = child["URLString"] as? String
+                        let id = (child["WebBookmarkUUID"] as? String) ?? UUID().uuidString
+                        
+                        let effectiveParentId = parentId ?? rootChromeId
+                        
+                        result.append(SyncBookmark(id: id, title: titleStr, url: urlStr, parentId: effectiveParentId, isFolder: isFolder, inBookmarksBar: effectiveParentId == "1"))
+                        
+                        if isFolder, let subChildren = child["Children"] as? [[String: Any]] {
+                            traverse(nodes: subChildren, parentId: id, rootChromeId: rootChromeId)
+                        }
                     }
                 }
+                
+                if let barIdx = children.firstIndex(where: { ($0["Title"] as? String) == "BookmarksBar" }),
+                   let barChildren = children[barIdx]["Children"] as? [[String: Any]] {
+                    traverse(nodes: barChildren, parentId: nil, rootChromeId: "1")
+                }
+                
+                if let menuIdx = children.firstIndex(where: { ($0["Title"] as? String) == "BookmarksMenu" }),
+                   let menuChildren = children[menuIdx]["Children"] as? [[String: Any]] {
+                    traverse(nodes: menuChildren, parentId: nil, rootChromeId: "2")
+                }
+                
+                // Process any root-level bookmarks that are not system folders
+                let systemTitles = Set(["BookmarksBar", "BookmarksMenu", "History", "com.apple.ReadingList"])
+                let rootItems = children.filter { child in
+                    if let title = child["Title"] as? String, systemTitles.contains(title) { return false }
+                    if let isReadingList = child["ReadingListNonSync"] as? Bool, isReadingList { return false }
+                    // Check if it's a proxy or something we shouldn't sync
+                    if let type = child["WebBookmarkType"] as? String, type != "WebBookmarkTypeList" && type != "WebBookmarkTypeLeaf" { return false }
+                    return true
+                }
+                if !rootItems.isEmpty {
+                    traverse(nodes: rootItems, parentId: nil, rootChromeId: "2")
+                }
+                
+                return result
+            } catch {
+                logger.error("Failed to read Safari bookmarks: \(error)")
+                return []
             }
-            
-            if let barIdx = children.firstIndex(where: { ($0["Title"] as? String) == "BookmarksBar" }),
-               let barChildren = children[barIdx]["Children"] as? [[String: Any]] {
-                traverse(nodes: barChildren, parentId: nil, rootChromeId: "1")
-            }
-            
-            if let menuIdx = children.firstIndex(where: { ($0["Title"] as? String) == "BookmarksMenu" }),
-               let menuChildren = children[menuIdx]["Children"] as? [[String: Any]] {
-                traverse(nodes: menuChildren, parentId: nil, rootChromeId: "2")
-            }
-            
-            // Process any root-level bookmarks that are not system folders
-            let systemTitles = Set(["BookmarksBar", "BookmarksMenu", "History", "com.apple.ReadingList"])
-            let rootItems = children.filter { child in
-                if let title = child["Title"] as? String, systemTitles.contains(title) { return false }
-                if let isReadingList = child["ReadingListNonSync"] as? Bool, isReadingList { return false }
-                // Check if it's a proxy or something we shouldn't sync
-                if let type = child["WebBookmarkType"] as? String, type != "WebBookmarkTypeList" && type != "WebBookmarkTypeLeaf" { return false }
-                return true
-            }
-            if !rootItems.isEmpty {
-                traverse(nodes: rootItems, parentId: nil, rootChromeId: "2")
-            }
-            
-            return result
-        } catch {
-            logger.error("Failed to read Safari bookmarks: \(error)")
-            return []
         }
     }
 

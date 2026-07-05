@@ -18,6 +18,17 @@ struct BrowsersTabView: View {
             List {
                 ForEach(appState.browserInfos.filter { $0.isInstalled }) { info in
                     BrowserRow(info: info)
+                        .contextMenu {
+                            if appState.settingsService.general.customBrowsers.contains(where: { $0.bundleIdentifier == info.browser.bundleIdentifier }) {
+                                Button(role: .destructive) {
+                                    appState.settingsService.general.customBrowsers.removeAll { $0.bundleIdentifier == info.browser.bundleIdentifier }
+                                    appState.settingsService.save()
+                                    Task { await appState.refreshBrowsers() }
+                                } label: {
+                                    Label(String(localized: "Remove Browser", bundle: langBundle.bundle), systemImage: "trash")
+                                }
+                            }
+                        }
                 }
                 
                 Button(action: addCustomBrowser) {

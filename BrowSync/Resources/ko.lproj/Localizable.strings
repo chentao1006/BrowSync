@@ -352,6 +352,8 @@
 "Rule Name Placeholder" = "예: 업무 문서";
 "Powered by Sparkle" = "Sparkle 제공";
 "Routing Fallback" = "라우팅 대체 동작";
+
+
 "Tab Sharing" = "탭 공유";
 "Enable Tab Sharing" = "탭 공유 활성화";
 "Select browsers to share their active tabs. Shared tabs will appear in the popup of other extensions." = "활성 탭을 공유할 브라우저를 선택합니다. 공유된 탭은 다른 확장 프로그램의 팝업에 표시됩니다.";
@@ -420,3 +422,8 @@
 "Free version shares only the current active tab." = "무료 버전은 현재 활성 탭만 공유합니다.";
 "Professional shares all open tabs." = "프로페셔널은 열려 있는 모든 탭을 공유합니다.";
 "iCloud Sync is available in Professional." = "iCloud 동기화는 프로페셔널에서 사용할 수 있습니다.";
+
+"Grant Access" = "Grant Access";
+"Please select the Safari folder to grant BrowSync access for syncing." = "Please select the Safari folder to grant BrowSync access for syncing.";
+"Safari requires folder access due to Sandbox restrictions." = "Safari requires folder access due to Sandbox restrictions.";
+

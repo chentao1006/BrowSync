@@ -14,6 +14,9 @@ struct BookmarkSyncTabView: View {
     @State private var showingClearAllConfirmation = false
     @State private var showingRestoreAllConfirmation = false
     @State private var showUpgradeAlert = false
+    @State private var showSandboxAlert = false
+    
+    @StateObject private var sandboxManager = SandboxAccessManager.shared
     
     private var syncSettings: Binding<SyncSettings> {
         Binding(
@@ -24,6 +27,10 @@ struct BookmarkSyncTabView: View {
                 appState.settingsService.save()
             }
         )
+    }
+    
+    private var availableBrowsers: [BrowserInfo] {
+        return appState.browserInfos.filter { $0.isInstalled }
     }
 
     var body: some View {
@@ -77,7 +84,7 @@ struct BookmarkSyncTabView: View {
                 Section(String(localized: "Participating Browsers", bundle: langBundle.bundle)) {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
-                            ForEach(appState.browserInfos.filter { $0.isInstalled }) { info in
+                            ForEach(availableBrowsers) { info in
                                 Toggle(isOn: Binding(
                                     get: { syncSettings.bookmarkParticipatingBrowsers.wrappedValue.contains(info.browser) },
                                     set: { isParticipating in
@@ -110,6 +117,24 @@ struct BookmarkSyncTabView: View {
                                             syncSettings.bookmarkParticipatingBrowsers.wrappedValue.count >= ProLimits.freeSyncBrowserCount {
                                             ProBadge()
                                         }
+                                        if info.browser == .safari {
+#if APP_STORE
+                                            if !sandboxManager.hasSafariAccess {
+                                                Button(String(localized: "Grant Access", bundle: langBundle.bundle)) {
+                                                    sandboxManager.requestSafariAccess { granted in
+                                                        if granted {
+                                                            // Auto-enable Safari if granted successfully
+                                                            syncSettings.wrappedValue.bookmarkParticipatingBrowsers.insert(.safari)
+                                                            appState.settingsService.save()
+                                                            appState.broadcastSettings()
+                                                        }
+                                                    }
+                                                }
+                                                .buttonStyle(.borderedProminent)
+                                                .controlSize(.small)
+                                            }
+#endif
+                                        }
                                     }
                                 }
                                 .toggleStyle(.checkbox)
@@ -118,6 +143,15 @@ struct BookmarkSyncTabView: View {
                         .padding(.vertical, 8)
                         .padding(.horizontal, 4)
                     }
+#if APP_STORE
+                    if !sandboxManager.hasSafariAccess {
+                        Text(String(localized: "Safari requires folder access due to Sandbox restrictions.", bundle: langBundle.bundle))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                            .padding(.top, 2)
+                    }
+#endif
                 }
 
                 Section(String(localized: "Sync Strategy", bundle: langBundle.bundle)) {
@@ -136,7 +170,7 @@ struct BookmarkSyncTabView: View {
                 
                     if syncSettings.bookmarkSyncStrategy.wrappedValue == .oneWay {
                         Picker(String(localized: "Bookmark Source Browser", bundle: langBundle.bundle), selection: syncSettings.bookmarkSourceBrowser) {
-                            ForEach(appState.browserInfos.filter { $0.isInstalled }) { info in
+                            ForEach(availableBrowsers) { info in
                                 Label {
                                     Text(info.displayName)
                                 } icon: {

@@ -94,9 +94,10 @@ final class SyncService: ObservableObject {
     // MARK: - Safari Bookmark Monitor
     
     private func startSafariBookmarkMonitor() {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let url = home.appendingPathComponent("Library/Safari/Bookmarks.plist")
-        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        SandboxAccessManager.shared.withSafariAccess {
+            let home = FileManager.default.homeDirectoryForCurrentUser
+            let url = home.appendingPathComponent("Library/Safari/Bookmarks.plist")
+            guard FileManager.default.fileExists(atPath: url.path) else { return }
         
         safariMonitorFileDescriptor = open(url.path, O_EVTONLY)
         guard safariMonitorFileDescriptor != -1 else { return }
@@ -148,8 +149,9 @@ final class SyncService: ObservableObject {
             }
         }
         
-        safariMonitorSource?.resume()
-        log("Started Safari Bookmarks.plist monitor for real-time sync")
+            safariMonitorSource?.resume()
+            log("Started Safari Bookmarks.plist monitor for real-time sync")
+        }
     }
 
     // MARK: - Sync Now

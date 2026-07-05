@@ -9,7 +9,6 @@ VERSIONED_PLISTS=(
     "BrowSync/Resources/Info.plist"
     "SafariExtension/Info.plist"
 )
-PROJECT_YML="project.yml"
 RESULT_DIR="./dist"
 
 # Helper function to get current version
@@ -80,9 +79,6 @@ else
         update_plist_version "$plist_path"
     done
     
-    sed -i '' "s/CFBundleShortVersionString: .*/CFBundleShortVersionString: \"$NEW_VERSION\"/" "$PROJECT_YML"
-    sed -i '' "s/CFBundleVersion: .*/CFBundleVersion: \"$NEW_BUILD\"/" "$PROJECT_YML"
-
     # Update Extension manifests
     sed -i '' -E "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" "ChromiumExtension/manifest.json"
     sed -i '' -E "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" "FirefoxExtension/manifest.json"

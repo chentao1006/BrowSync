@@ -29,9 +29,11 @@ struct ContentView: View {
                 NavigationLink(value: AppTab.general) {
                     Label(String(localized: "General", bundle: langBundle.bundle), systemImage: "gearshape")
                 }
+#if APP_STORE
                 NavigationLink(value: AppTab.pro) {
                     Label(String(localized: "Professional", bundle: langBundle.bundle), systemImage: "sparkles")
                 }
+#endif
                 NavigationLink(value: AppTab.about) {
                     Label(String(localized: "About", bundle: langBundle.bundle), systemImage: "info.circle")
                 }
@@ -54,7 +56,11 @@ struct ContentView: View {
                 case .general:
                     GeneralView()
                 case .pro:
+#if APP_STORE
                     ProTabView()
+#else
+                    EmptyView()
+#endif
                 case .about:
                     AboutTabView()
                 }

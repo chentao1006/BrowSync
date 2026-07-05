@@ -5,6 +5,7 @@ import SwiftUI
 
 struct ProBadge: View {
     var body: some View {
+#if APP_STORE
         Text("PRO")
             .font(.caption2.bold())
             .padding(.horizontal, 6)
@@ -12,6 +13,7 @@ struct ProBadge: View {
             .background(Color.purple.opacity(0.15))
             .foregroundStyle(.purple)
             .clipShape(Capsule())
+#endif
     }
 }
 

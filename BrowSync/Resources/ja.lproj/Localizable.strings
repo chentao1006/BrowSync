@@ -420,3 +420,10 @@
 "Free version shares only the current active tab." = "無料版では現在のアクティブタブのみ共有します。";
 "Professional shares all open tabs." = "プロフェッショナルでは開いているすべてのタブを共有します。";
 "iCloud Sync is available in Professional." = "iCloud 同期はプロフェッショナルで利用できます。";
+
+
+
+"Grant Access" = "Grant Access";
+"Please select the Safari folder to grant BrowSync access for syncing." = "Please select the Safari folder to grant BrowSync access for syncing.";
+"Safari requires folder access due to Sandbox restrictions." = "Safari requires folder access due to Sandbox restrictions.";
+

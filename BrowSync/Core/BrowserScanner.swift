@@ -28,7 +28,9 @@ final class BrowserScanner: ObservableObject {
         var info = BrowserInfo.placeholder(for: browser)
 
         // 1. Check if installed
-        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: browser.bundleIdentifier) else {
+        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: browser.bundleIdentifier),
+              FileManager.default.fileExists(atPath: appURL.path),
+              !appURL.pathComponents.contains(".Trash") else {
             info.isInstalled = false
             info.extensionStatus = .notInstalled
             return info

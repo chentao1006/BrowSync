@@ -34,7 +34,9 @@
 		4C77B47951FD2837B0AC9C8A /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4BE22F2B94BE5B640CCDB1E /* SafariWebExtensionHandler.swift */; };
 		4D7F6E147E32081A73EC6A13 /* AnalyticsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877F489CC3C5152086D3B088 /* AnalyticsManager.swift */; };
 		50B07349BAD8F3A740432E15 /* StateSyncTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A871D9385C69C6022679A1A6 /* StateSyncTabView.swift */; };
+		535088B6CF3CECB8AE6CBA8E /* SandboxAccessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 054F9457E89B187A9B05FC45 /* SandboxAccessManager.swift */; };
 		551FD8318CB5FED685CB527C /* popup.js in Resources */ = {isa = PBXBuildFile; fileRef = 9057E94AC94248B5CE65CF31 /* popup.js */; };
+		58060EA5878EA28F574B7CE2 /* SandboxAccessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 054F9457E89B187A9B05FC45 /* SandboxAccessManager.swift */; };
 		5B4D9C6D628F3EFD607E130C /* BookmarkSyncTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD017512DDEC9AE8140DEF5A /* BookmarkSyncTabView.swift */; };
 		5D1DACFA24F7BF899ADAD5DD /* TabSharingTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97ACC9858254F5F021C00B89 /* TabSharingTabView.swift */; };
 		60A3DD21B1DFD5A712F82F34 /* GeneralView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8449AE30421FC5A59FC77934 /* GeneralView.swift */; };
@@ -78,7 +80,6 @@
 		BFE57D536478C567B7922537 /* BrowSync-Promo-1280x800.png in Resources */ = {isa = PBXBuildFile; fileRef = C4B27D5A9D28D813C2D50EC6 /* BrowSync-Promo-1280x800.png */; };
 		C201C81EC56982F0C635B7D1 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91206874B5D1B45C9D05A911 /* AppConfig.swift */; };
 		C30EE96DFF76B037BDEF411A /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFF4219B6E285A9B3E623F49 /* AppState.swift */; };
-		C620B3A62FF7AB3500A405C7 /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C620B3A52FF7AB3500A405C7 /* StoreKit.framework */; };
 		C7046B24359CF5FB86A8E512 /* Browser.swift in Sources */ = {isa = PBXBuildFile; fileRef = C137716E2FEA5232D824F358 /* Browser.swift */; };
 		CBCEAC4D22958D09E0E94828 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 2F278BFDA3B2DF653CD4E4A2 /* Localizable.strings */; };
 		CD7AEA663AEB1076953EE55C /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = E315605267BB5B97A246FF33 /* manifest.json */; };
@@ -144,6 +145,7 @@
 /* Begin PBXFileReference section */
 		005114DBA010E2061038E501 /* RouterModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouterModels.swift; sourceTree = "<group>"; };
 		01878D8F3BC20991BBF106DD /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/Localizable.strings; sourceTree = "<group>"; };
+		054F9457E89B187A9B05FC45 /* SandboxAccessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SandboxAccessManager.swift; sourceTree = "<group>"; };
 		10F52E8BB62D4BA5E32CD492 /* RouterTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouterTabView.swift; sourceTree = "<group>"; };
 		11E0FCE05A6FAB3580A7C607 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		135917D41EF6D52AAB8D0A18 /* BrowSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BrowSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -189,7 +191,6 @@
 		C137716E2FEA5232D824F358 /* Browser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Browser.swift; sourceTree = "<group>"; };
 		C1AF1FEF2387E709571DAA19 /* download-on-app-store-en.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = "download-on-app-store-en.svg"; sourceTree = "<group>"; };
 		C4B27D5A9D28D813C2D50EC6 /* BrowSync-Promo-1280x800.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "BrowSync-Promo-1280x800.png"; sourceTree = "<group>"; };
-		C620B3A52FF7AB3500A405C7 /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
 		C6BFEB07402A67F5BB319D14 /* BrowSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowSyncApp.swift; sourceTree = "<group>"; };
 		C92E6B86E06DBA3FAF458AA8 /* content.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = content.js; sourceTree = "<group>"; };
 		E2B2655588572D19F7C9C320 /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -214,7 +215,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				90AA9E3F85F8EBE9680C40AC /* Aptabase in Frameworks */,
-				C620B3A62FF7AB3500A405C7 /* StoreKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -331,14 +331,6 @@
 			path = Sync;
 			sourceTree = "<group>";
 		};
-		C620B3A42FF7AB3500A405C7 /* Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-				C620B3A52FF7AB3500A405C7 /* StoreKit.framework */,
-			);
-			name = Frameworks;
-			sourceTree = "<group>";
-		};
 		CDFD277E2BFDC5553C9BE04F = {
 			isa = PBXGroup;
 			children = (
@@ -347,7 +339,6 @@
 				6AE3195C9D56F2B984A7F464 /* BrowSync */,
 				56D52BA27A38815657A008A1 /* Resources */,
 				4D9786C7E57F68A263CB969A /* SafariExtension */,
-				C620B3A42FF7AB3500A405C7 /* Frameworks */,
 				E245A1B0EFBD21BA2E413CF5 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -381,6 +372,7 @@
 				3FA75D3B7E887B29E30DDBDE /* NotificationService.swift */,
 				1B566A48A5DE6CA3BE9EDE03 /* PurchaseService.swift */,
 				3DC990238C2CD5EC343B5DF5 /* SafariBookmarkService.swift */,
+				054F9457E89B187A9B05FC45 /* SandboxAccessManager.swift */,
 				93D2A20D8B97836960D5A19A /* SettingsService.swift */,
 				5E94CB565A48E6F14B1C0821 /* SyncService.swift */,
 			);
@@ -615,6 +607,7 @@
 				09C7E842D5114B27B18A86DB /* RouterTabView.swift in Sources */,
 				0F5CB5937AE876460E91A93C /* RuleEditorView.swift in Sources */,
 				3A13FFD185F493D6D340336C /* SafariBookmarkService.swift in Sources */,
+				535088B6CF3CECB8AE6CBA8E /* SandboxAccessManager.swift in Sources */,
 				B73BEA26F240001A92A704D8 /* SettingsService.swift in Sources */,
 				50B07349BAD8F3A740432E15 /* StateSyncTabView.swift in Sources */,
 				E1CD59F47876A3FB53D94328 /* SyncModels.swift in Sources */,
@@ -649,6 +642,7 @@
 				FBA2BBA70C6B7C1FCC3F5312 /* RouterTabView.swift in Sources */,
 				3BFC42816BF86AFFDAE82773 /* RuleEditorView.swift in Sources */,
 				A7205BB2D9125ABE1C4DA63A /* SafariBookmarkService.swift in Sources */,
+				58060EA5878EA28F574B7CE2 /* SandboxAccessManager.swift in Sources */,
 				F7042BF2C7EA6202AE1EADD0 /* SettingsService.swift in Sources */,
 				35990744963633AE665BBF5C /* StateSyncTabView.swift in Sources */,
 				A8040021DF83B35FF824C029 /* SyncModels.swift in Sources */,
@@ -844,7 +838,7 @@
 				CODE_SIGN_ENTITLEMENTS = SafariExtensionAppStore.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 29;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = U2NEAJ73J2;
 				INFOPLIST_FILE = SafariExtension/InfoAppStore.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = BrowSync;
@@ -854,7 +848,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.1.5;
+				MARKETING_VERSION = 1.1.6;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D APP_STORE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync.extension;
 				SDKROOT = macosx;
@@ -870,17 +864,17 @@
 				CODE_SIGN_ENTITLEMENTS = BrowSyncAppStore.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 29;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = U2NEAJ73J2;
 				INFOPLIST_FILE = BrowSync/Resources/InfoAppStore.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = BrowSync;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.1.5;
+				MARKETING_VERSION = 1.1.6;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D APP_STORE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync;
 				PRODUCT_NAME = BrowSync;
@@ -917,7 +911,7 @@
 				CODE_SIGN_ENTITLEMENTS = SafariExtensionAppStore.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 29;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = U2NEAJ73J2;
 				INFOPLIST_FILE = SafariExtension/InfoAppStore.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = BrowSync;
@@ -927,7 +921,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.1.5;
+				MARKETING_VERSION = 1.1.6;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D APP_STORE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync.extension;
 				SDKROOT = macosx;
@@ -1008,17 +1002,17 @@
 				CODE_SIGN_ENTITLEMENTS = BrowSyncAppStore.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 29;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = U2NEAJ73J2;
 				INFOPLIST_FILE = BrowSync/Resources/InfoAppStore.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = BrowSync;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.1.5;
+				MARKETING_VERSION = 1.1.6;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D APP_STORE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync;
 				PRODUCT_NAME = BrowSync;

@@ -459,3 +459,11 @@
 "Professional shares all open tabs." = "Professional shares all open tabs.";
 "iCloud Sync is available in Professional." = "iCloud Sync is available in Professional.";
 "Add Custom Browser..." = "Add Custom Browser...";
+
+
+
+"Remove Browser" = "Remove Browser";
+
+"Grant Access" = "Grant Access";
+"Please select the Safari folder to grant BrowSync access for syncing." = "Please select the Safari folder to grant BrowSync access for syncing.";
+"Safari requires folder access due to Sandbox restrictions." = "Safari requires folder access due to Sandbox restrictions.";

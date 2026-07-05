@@ -203,20 +203,36 @@
       gap: 16px;
       justify-content: flex-start;
       align-items: center;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       white-space: nowrap;
+      overflow-x: auto;
+      max-width: calc(100% + 32px);
+      padding: 24px 16px 32px 16px;
+      margin: -24px -16px -32px -16px;
+    }
+
+    /* Hide scrollbar for cta-group */
+    .cta-group::-webkit-scrollbar {
+      display: none;
+    }
+
+    .cta-group {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
     }
 
     .btn-primary {
       background: #000000;
       color: #ffffff;
-      padding: 12px 28px;
+      height: 48px;
+      padding: 0 12px;
       border-radius: 8px;
       font-weight: 600;
       font-size: 1.05rem;
       transition: all 0.3s ease;
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 8px;
       /* Dark mode styles */
       border: 1px solid rgba(255, 255, 255, 0.25);
@@ -256,7 +272,7 @@
 
     .store-badge img {
       width: auto;
-      height: 46px;
+      height: 48px;
       border-radius: 8px;
       border: 1px solid var(--border);
     }
@@ -358,32 +374,39 @@
       }
     }
 
-    /* Firefox Badge */
-    .btn-firefox {
+    /* Icon Button for Extensions */
+    .btn-icon {
       background: var(--card-bg);
-      color: var(--text);
       border: 1px solid var(--border);
-      height: 46px;
+      height: 48px;
+      width: 48px;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      flex: 0 0 auto;
     }
 
-    .btn-firefox:hover {
+    .btn-icon:hover {
       background: var(--card-bg-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
     }
 
-    .btn-firefox img {
-      padding: 8px 12px;
-      width: 58px;
-      height: 46px;
+    html[data-theme="light"] .btn-icon {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    html[data-theme="light"] .btn-icon:hover {
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    }
+
+    .btn-icon img {
+      width: 24px;
+      height: 24px;
       object-fit: contain;
-      border: none !important;
-      border-radius: 0;
-    }
-
-    .btn-firefox span {
-      font-weight: 600;
-      padding-right: 16px;
-      font-size: 0.95rem;
-      white-space: nowrap;
     }
 
     /* Carousel */
@@ -685,18 +708,14 @@
         height: 42px;
       }
 
-      .btn-firefox {
+      .btn-icon {
         height: 42px;
+        width: 42px;
       }
 
-      .btn-firefox img {
-        width: 54px;
-        height: 42px;
-      }
-
-      .btn-firefox span {
-        font-size: 0.9rem;
-        padding-right: 14px;
+      .btn-icon img {
+        width: 20px;
+        height: 20px;
       }
 
       footer {
@@ -736,21 +755,47 @@
         <p data-i18n="hero.lead">打通 Safari、所有 Chromium 内核浏览器与 Firefox。根据规则智能分流链接，并实时同步书签与登录状态。纯本地运行，捍卫您的隐私。</p>
         <div class="cta-container">
           <div class="cta-group">
+            <a href="https://github.com/chentao1006/browsync/releases/latest" target="_blank" rel="noopener"
+              class="btn-primary">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span data-i18n="hero.cta">免费下载 macOS 版</span>
+            </a>
             <a href="https://apps.apple.com/cn/app/id6784604835?mt=12" target="_blank" rel="noopener"
               class="store-badge app-store-badge">
               <img data-app-store-badge src="BrowSync/Resources/Marketing/download-on-app-store-zh.svg"
                 alt="从 App Store 下载">
             </a>
-            <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh" target="_blank"
-              class="store-badge">
-              <img src="BrowSync/Resources/Marketing/chrome-web-store-badge.png"
-                alt="Available in the Chrome Web Store">
-            </a>
-            <a href="https://addons.mozilla.org/zh-CN/firefox/addon/brow-sync/" target="_blank"
-              class="store-badge btn-firefox">
-              <img src="ChromiumExtension/icons/firefox.png" alt="Firefox">
-              <span>Firefox Add-on</span>
-            </a>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="color: var(--muted); font-size: 0.95rem; margin-left: 8px;"
+                data-i18n="install.extensions">浏览器扩展：</span>
+              <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh" target="_blank"
+                class="btn-icon" title="Chrome Web Store">
+                <img src="assets/chrome.svg" alt="Chrome">
+              </a>
+              <a href="https://addons.mozilla.org/zh-CN/firefox/addon/brow-sync/" target="_blank" class="btn-icon"
+                title="Firefox Add-on">
+                <img src="ChromiumExtension/icons/firefox.png" alt="Firefox">
+              </a>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 16px; flex-wrap: wrap;">
+            <span style="color: var(--muted); font-size: 0.95rem;" data-i18n="install.desc">或者使用 Homebrew 安装：</span>
+            <div
+              style="display: flex; align-items: stretch; background: var(--bg); border-radius: 8px; border: 1px solid var(--border); overflow: hidden;">
+              <code
+                style="padding: 10px 16px; font-family: 'SFMono-Regular', Consolas, monospace; color: var(--muted); font-size: 0.95rem; display: flex; align-items: center;">brew install --cask chentao1006/tap/browsync</code>
+              <button
+                onclick="navigator.clipboard.writeText('brew install --cask chentao1006/tap/browsync'); const btn=this; const old=btn.innerText; btn.innerText='Copied!'; setTimeout(()=>btn.innerText=old, 2000);"
+                style="appearance: none; border: none; border-left: 1px solid var(--border); background: var(--card-bg); color: var(--text); padding: 0 14px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: background 0.2s;"
+                onmouseover="this.style.background='var(--border)'"
+                onmouseout="this.style.background='var(--card-bg)'">Copy</button>
+            </div>
           </div>
 
         </div>
@@ -915,23 +960,48 @@
           <h3 data-i18n="install.title" style="justify-content: center; font-size: 2rem; margin-bottom: 24px;">安装
             BrowSync</h3>
           <div class="cta-group" style="margin-bottom: 32px;">
+            <a href="https://github.com/chentao1006/browsync/releases/latest" target="_blank" rel="noopener"
+              class="btn-primary">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span data-i18n="hero.cta">免费下载 macOS 版</span>
+            </a>
             <a href="https://apps.apple.com/cn/app/id6784604835?mt=12" target="_blank" rel="noopener"
               class="store-badge app-store-badge">
               <img data-app-store-badge src="BrowSync/Resources/Marketing/download-on-app-store-zh.svg"
                 alt="从 App Store 下载">
             </a>
-            <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh" target="_blank"
-              class="store-badge">
-              <img src="BrowSync/Resources/Marketing/chrome-web-store-badge.png"
-                alt="Available in the Chrome Web Store">
-            </a>
-            <a href="https://addons.mozilla.org/zh-CN/firefox/addon/brow-sync/" target="_blank"
-              class="store-badge btn-firefox">
-              <img src="ChromiumExtension/icons/firefox.png" alt="Firefox">
-              <span>Firefox Add-on</span>
-            </a>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="color: var(--muted); font-size: 0.95rem; margin-left: 8px;"
+                data-i18n="install.extensions">浏览器扩展：</span>
+              <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh" target="_blank"
+                class="btn-icon" title="Chrome Web Store">
+                <img src="assets/chrome.svg" alt="Chrome">
+              </a>
+              <a href="https://addons.mozilla.org/zh-CN/firefox/addon/brow-sync/" target="_blank" class="btn-icon"
+                title="Firefox Add-on">
+                <img src="ChromiumExtension/icons/firefox.png" alt="Firefox">
+              </a>
+            </div>
           </div>
 
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+            <span style="color: var(--muted); font-size: 0.95rem;" data-i18n="install.desc">或者使用 Homebrew 安装：</span>
+            <div
+              style="display: flex; align-items: stretch; background: var(--bg); border-radius: 8px; border: 1px solid var(--border); overflow: hidden;">
+              <code
+                style="padding: 10px 16px; font-family: 'SFMono-Regular', Consolas, monospace; color: var(--muted); font-size: 0.95rem; display: flex; align-items: center;">brew install --cask chentao1006/tap/browsync</code>
+              <button
+                onclick="navigator.clipboard.writeText('brew install --cask chentao1006/tap/browsync'); const btn=this; const old=btn.innerText; btn.innerText='Copied!'; setTimeout(()=>btn.innerText=old, 2000);"
+                style="appearance: none; border: none; border-left: 1px solid var(--border); background: var(--card-bg); color: var(--text); padding: 0 14px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: background 0.2s;"
+                onmouseover="this.style.background='var(--border)'"
+                onmouseout="this.style.background='var(--card-bg)'">Copy</button>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -976,6 +1046,7 @@
         "feat6.title": "☁️ iCloud 同步",
         "feat6.desc": "在您的所有 Mac 设备之间无缝同步分流规则与偏好设置。",
         "install.title": "安装 BrowSync",
+        "install.extensions": "浏览器扩展：",
         "footer.copy": "© 2026 BrowSync. 纯本地浏览器协同工具。",
         "footer.github": "GitHub 源码",
         "footer.readme": "文档说明",
@@ -992,7 +1063,7 @@
         "hero.eyebrow": "Native macOS App",
         "hero.title": "Cross-Browser Routing & Sync Hub",
         "hero.lead": "Unite Safari, all Chromium-based browsers, and Firefox. Intelligently route your links, and sync bookmarks and sessions in real-time. 100% local and privacy-first.",
-        "hero.cta": "Download DMG",
+        "hero.cta": "Download",
         "appStore.badge": "BrowSync/Resources/Marketing/download-on-app-store-en.svg",
         "appStore.alt": "Download on the App Store",
         "features.title": "Key Features",
@@ -1009,6 +1080,7 @@
         "feat6.title": "☁️ iCloud Sync",
         "feat6.desc": "Seamlessly sync your routing rules and preferences across all your Mac devices.",
         "install.title": "Install BrowSync",
+        "install.extensions": "Extensions:",
         "footer.copy": "© 2026 BrowSync. Privacy-first browser sync tool.",
         "footer.github": "View GitHub",
         "footer.readme": "Documentation",
