@@ -234,6 +234,8 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
+      white-space: nowrap;
+      flex-shrink: 0;
       /* Dark mode styles */
       border: 1px solid rgba(255, 255, 255, 0.25);
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
@@ -299,6 +301,7 @@
       font-weight: 600;
       font-size: 1.05rem;
       transition: all 0.2s ease;
+      white-space: nowrap;
     }
 
     .btn-secondary:hover {
@@ -700,8 +703,14 @@
       }
 
       .cta-group {
-        gap: 12px;
+        gap: 16px;
+        flex-direction: column;
+        align-items: stretch;
         white-space: normal;
+      }
+
+      .store-badge {
+        justify-content: center;
       }
 
       .store-badge img {
@@ -770,7 +779,7 @@
               <img data-app-store-badge src="BrowSync/Resources/Marketing/download-on-app-store-zh.svg"
                 alt="从 App Store 下载">
             </a>
-            <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0;">
               <span style="color: var(--muted); font-size: 0.95rem; margin-left: 8px;"
                 data-i18n="install.extensions">浏览器扩展：</span>
               <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh" target="_blank"
@@ -975,7 +984,7 @@
               <img data-app-store-badge src="BrowSync/Resources/Marketing/download-on-app-store-zh.svg"
                 alt="从 App Store 下载">
             </a>
-            <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0;">
               <span style="color: var(--muted); font-size: 0.95rem; margin-left: 8px;"
                 data-i18n="install.extensions">浏览器扩展：</span>
               <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh" target="_blank"
