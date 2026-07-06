@@ -427,3 +427,6 @@
 "Please select the Safari folder to grant BrowSync access for syncing." = "Please select the Safari folder to grant BrowSync access for syncing.";
 "Safari requires folder access due to Sandbox restrictions." = "Safari requires folder access due to Sandbox restrictions.";
 
+
+"Bookmark Backup Warning Header" = "最初にブックマークをバックアップ";
+"Bookmark Backup Warning Detail" = "初めてブックマークの同期を有効にする前に、誤って削除したりデータが失われたりするのを防ぐため、ブラウザに組み込まれているエクスポート機能を使用してブックマークをバックアップしてください。";

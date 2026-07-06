@@ -838,7 +838,6 @@
 				CODE_SIGN_ENTITLEMENTS = SafariExtensionAppStore.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = U2NEAJ73J2;
 				INFOPLIST_FILE = SafariExtension/InfoAppStore.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = BrowSync;
@@ -848,7 +847,6 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.1.6;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D APP_STORE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync.extension;
 				SDKROOT = macosx;
@@ -864,7 +862,6 @@
 				CODE_SIGN_ENTITLEMENTS = BrowSyncAppStore.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = U2NEAJ73J2;
 				INFOPLIST_FILE = BrowSync/Resources/InfoAppStore.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = BrowSync;
@@ -874,7 +871,6 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.1.6;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D APP_STORE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync;
 				PRODUCT_NAME = BrowSync;
@@ -911,7 +907,6 @@
 				CODE_SIGN_ENTITLEMENTS = SafariExtensionAppStore.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = U2NEAJ73J2;
 				INFOPLIST_FILE = SafariExtension/InfoAppStore.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = BrowSync;
@@ -921,7 +916,6 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.1.6;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D APP_STORE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync.extension;
 				SDKROOT = macosx;
@@ -1002,7 +996,6 @@
 				CODE_SIGN_ENTITLEMENTS = BrowSyncAppStore.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = U2NEAJ73J2;
 				INFOPLIST_FILE = BrowSync/Resources/InfoAppStore.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = BrowSync;
@@ -1012,7 +1005,6 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.1.6;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D APP_STORE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync;
 				PRODUCT_NAME = BrowSync;

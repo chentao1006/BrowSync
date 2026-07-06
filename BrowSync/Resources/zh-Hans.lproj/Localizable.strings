@@ -495,3 +495,6 @@
 "Grant Access" = "授权访问";
 "Please select the Safari folder to grant BrowSync access for syncing." = "请选择 Safari 文件夹以授予 BrowSync 同步权限。";
 "Safari requires folder access due to Sandbox restrictions." = "由于沙盒限制，Safari 同步需要您手动授权目录访问权限。";
+
+"Bookmark Backup Warning Header" = "建议先备份书签";
+"Bookmark Backup Warning Detail" = "在首次开启书签同步前，请务必先通过浏览器自带功能备份各浏览器的书签，以防误删或数据丢失。";

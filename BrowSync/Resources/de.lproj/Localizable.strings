@@ -425,3 +425,6 @@
 "Please select the Safari folder to grant BrowSync access for syncing." = "Please select the Safari folder to grant BrowSync access for syncing.";
 "Safari requires folder access due to Sandbox restrictions." = "Safari requires folder access due to Sandbox restrictions.";
 
+
+"Bookmark Backup Warning Header" = "Lesezeichen zuerst sichern";
+"Bookmark Backup Warning Detail" = "Bevor Sie die Lesezeichensynchronisierung zum ersten Mal aktivieren, sichern Sie bitte Ihre Lesezeichen mit der integrierten Exportfunktion Ihres Browsers, um versehentliches Löschen oder Datenverlust zu vermeiden.";

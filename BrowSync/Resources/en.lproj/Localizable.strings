@@ -467,3 +467,6 @@
 "Grant Access" = "Grant Access";
 "Please select the Safari folder to grant BrowSync access for syncing." = "Please select the Safari folder to grant BrowSync access for syncing.";
 "Safari requires folder access due to Sandbox restrictions." = "Safari requires folder access due to Sandbox restrictions.";
+
+"Bookmark Backup Warning Header" = "Backup Bookmarks First";
+"Bookmark Backup Warning Detail" = "Before enabling bookmark sync for the first time, please make sure to back up your bookmarks using your browser's built-in export feature to prevent accidental deletion or data loss.";

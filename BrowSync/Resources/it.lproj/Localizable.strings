@@ -425,3 +425,6 @@
 "Please select the Safari folder to grant BrowSync access for syncing." = "Please select the Safari folder to grant BrowSync access for syncing.";
 "Safari requires folder access due to Sandbox restrictions." = "Safari requires folder access due to Sandbox restrictions.";
 
+
+"Bookmark Backup Warning Header" = "Esegui prima il backup";
+"Bookmark Backup Warning Detail" = "Prima di abilitare la sincronizzazione dei segnalibri per la prima volta, assicurati di eseguire il backup dei segnalibri utilizzando la funzione di esportazione integrata nel browser per evitare l'eliminazione accidentale o la perdita di dati.";

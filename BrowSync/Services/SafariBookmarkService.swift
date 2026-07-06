@@ -18,9 +18,15 @@ final class SafariBookmarkService {
     private let logger = Logger(subsystem: "com.ct106.browsync", category: "SafariBookmarks")
 
     private var bookmarksURL: URL? {
+#if APP_STORE
+        // Must be called inside withSafariAccess so the security-scoped resource is active.
+        // SandboxAccessManager caches the resolved URL for this purpose.
+        return SandboxAccessManager.shared.safariBookmarksPlistURL
+#else
         let home = FileManager.default.homeDirectoryForCurrentUser
         let url = home.appendingPathComponent("Library/Safari/Bookmarks.plist")
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
+#endif
     }
 
     private var isSafariRunning: Bool {
@@ -478,60 +484,68 @@ import os.log
 final class SafariCleanup {
     static func cleanDirtyBookmarks() {
         let logger = Logger(subsystem: "com.ct106.browsync", category: "SafariCleanup")
-        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Safari/Bookmarks.plist")
-        
-        guard let data = try? Data(contentsOf: url),
-              var plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-              var children = plist["Children"] as? [[String: Any]] else {
-            return
-        }
+        // SafariCleanup must also go through withSafariAccess on App Store builds
+        // to get a security-scoped resource for the real ~/Library/Safari path.
+        SandboxAccessManager.shared.withSafariAccess {
+#if APP_STORE
+            let bookmarksPlistURL = SandboxAccessManager.shared.safariBookmarksPlistURL
+#else
+            let bookmarksPlistURL: URL? = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Safari/Bookmarks.plist")
+#endif
+            guard let url = bookmarksPlistURL,
+                  let data = try? Data(contentsOf: url),
+                  var plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                  var children = plist["Children"] as? [[String: Any]] else {
+                return
+            }
 
-        let dirtyNames: Set<String> = ["bookmarks bar", "书签栏", "favorites", "收藏夹栏", "other bookmarks", "其他书签", "其他收藏夹"]
-        var modified = false
+            let dirtyNames: Set<String> = ["bookmarks bar", "书签栏", "favorites", "收藏夹栏", "other bookmarks", "其他书签", "其他收藏夹"]
+            var modified = false
 
-        func cleanNode(_ nodeChildren: inout [[String: Any]]) {
-            var newChildren = [[String: Any]]()
-            for child in nodeChildren {
-                if let type = child["WebBookmarkType"] as? String, type == "WebBookmarkTypeList",
-                   let title = child["Title"] as? String, dirtyNames.contains(title.lowercased()) {
-                    logger.info("Found dirty folder: \(title), extracting its contents...")
-                    if let subChildren = child["Children"] as? [[String: Any]] {
-                        newChildren.append(contentsOf: subChildren)
+            func cleanNode(_ nodeChildren: inout [[String: Any]]) {
+                var newChildren = [[String: Any]]()
+                for child in nodeChildren {
+                    if let type = child["WebBookmarkType"] as? String, type == "WebBookmarkTypeList",
+                       let title = child["Title"] as? String, dirtyNames.contains(title.lowercased()) {
+                        logger.info("Found dirty folder: \(title), extracting its contents...")
+                        if let subChildren = child["Children"] as? [[String: Any]] {
+                            newChildren.append(contentsOf: subChildren)
+                        }
+                        modified = true
+                    } else {
+                        var cleanChild = child
+                        if var subChildren = cleanChild["Children"] as? [[String: Any]] {
+                            cleanNode(&subChildren)
+                            cleanChild["Children"] = subChildren
+                        }
+                        newChildren.append(cleanChild)
                     }
-                    modified = true
-                } else {
-                    var cleanChild = child
-                    if var subChildren = cleanChild["Children"] as? [[String: Any]] {
-                        cleanNode(&subChildren)
-                        cleanChild["Children"] = subChildren
-                    }
-                    newChildren.append(cleanChild)
+                }
+                nodeChildren = newChildren
+            }
+
+            if let barIdx = children.firstIndex(where: { ($0["Title"] as? String) == "BookmarksBar" }),
+               var barChildren = children[barIdx]["Children"] as? [[String: Any]] {
+                cleanNode(&barChildren)
+                children[barIdx]["Children"] = barChildren
+            }
+
+            if let menuIdx = children.firstIndex(where: { ($0["Title"] as? String) == "BookmarksMenu" }),
+               var menuChildren = children[menuIdx]["Children"] as? [[String: Any]] {
+                cleanNode(&menuChildren)
+                children[menuIdx]["Children"] = menuChildren
+            }
+
+            if modified {
+                plist["Children"] = children
+                do {
+                    let newData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+                    try newData.write(to: url, options: .atomic)
+                    logger.info("Successfully cleaned up dirty bookmarks!")
+                } catch {
+                    logger.error("Failed to save: \(error)")
                 }
             }
-            nodeChildren = newChildren
-        }
-
-        if let barIdx = children.firstIndex(where: { ($0["Title"] as? String) == "BookmarksBar" }),
-           var barChildren = children[barIdx]["Children"] as? [[String: Any]] {
-            cleanNode(&barChildren)
-            children[barIdx]["Children"] = barChildren
-        }
-
-        if let menuIdx = children.firstIndex(where: { ($0["Title"] as? String) == "BookmarksMenu" }),
-           var menuChildren = children[menuIdx]["Children"] as? [[String: Any]] {
-            cleanNode(&menuChildren)
-            children[menuIdx]["Children"] = menuChildren
-        }
-
-        if modified {
-            plist["Children"] = children
-            do {
-                let newData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
-                try newData.write(to: url, options: .atomic)
-                logger.info("Successfully cleaned up dirty bookmarks!")
-            } catch {
-                logger.error("Failed to save: \(error)")
-            }
-        }
-    }
-}
+        } // end withSafariAccess
+    } // end cleanDirtyBookmarks
+} // end SafariCleanup

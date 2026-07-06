@@ -408,16 +408,16 @@ extension AppState: DaemonServerDelegate {
             // so we should never push bookmarks to the Safari extension.
             if clientId.contains("safari") { return }
             
-            // Do not push bookmarks back to the browser that is the source of truth
-            if sourceBrowser == .chrome && clientId.contains("chrome") { return }
+            // Do not push bookmarks back to the browser that is the source of truth.
+            // In one-way mode the source must never receive its own snapshot as a
+            // full mirror, especially after another browser requested a refresh.
+            let clientBrowserId = clientId.components(separatedBy: "-").first?.lowercased() ?? clientId.lowercased()
+            if strategy == .oneWay && clientBrowserId == sourceBrowser.id.lowercased() { return }
             
             var bookmarksToSend: [Bookmark]? = nil
             var currentSafariBms: [SyncBookmark] = []
             
             if sourceBrowser == .safari {
-#if APP_STORE
-                return
-#else
                 let safariSvc = SafariBookmarkService()
                 currentSafariBms = safariSvc.readBookmarks()
                 if !currentSafariBms.isEmpty {
@@ -425,7 +425,7 @@ extension AppState: DaemonServerDelegate {
                         Bookmark(id: b.id, title: b.title, url: b.url, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
                     }
                 }
-#endif
+
             } else {
                 if let snapshot = self.backupService.getSnapshot(sourceBrowser: sourceBrowser.rawValue) {
                     bookmarksToSend = snapshot

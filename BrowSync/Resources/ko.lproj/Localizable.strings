@@ -427,3 +427,6 @@
 "Please select the Safari folder to grant BrowSync access for syncing." = "Please select the Safari folder to grant BrowSync access for syncing.";
 "Safari requires folder access due to Sandbox restrictions." = "Safari requires folder access due to Sandbox restrictions.";
 
+
+"Bookmark Backup Warning Header" = "먼저 북마크 백업";
+"Bookmark Backup Warning Detail" = "처음으로 북마크 동기화를 활성화하기 전에 실수로 삭제하거나 데이터가 손실되지 않도록 브라우저의 내장 내보내기 기능을 사용하여 북마크를 백업하십시오.";

@@ -27,6 +27,8 @@ final class SyncService: ObservableObject {
     @Published var lastSyncDate: Date? = nil
     @Published var isSyncing: Bool = false
     @Published var syncLog: [SyncLogEntry] = []
+    /// Bookmark count per browser ID (e.g. "safari", "chrome"). Updated on sync.
+    @Published var bookmarkCounts: [String: Int] = [:]
     
     private var currentManualSyncStats = SyncStats()
 
@@ -69,6 +71,7 @@ final class SyncService: ObservableObject {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         dataDir = appSupport.appendingPathComponent("BrowSync")
         createDataDirectories()
+        loadBookmarkCountsFromDisk()
 #if !APP_STORE
         startSafariBookmarkMonitor()
 #endif
@@ -88,6 +91,24 @@ final class SyncService: ObservableObject {
         for dir in dirs {
             let url = dataDir.appendingPathComponent(dir)
             try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        }
+    }
+
+    private func loadBookmarkCountsFromDisk() {
+        let bookmarksDir = dataDir.appendingPathComponent("bookmarks")
+        guard let files = try? FileManager.default.contentsOfDirectory(at: bookmarksDir, includingPropertiesForKeys: nil) else { return }
+        for file in files where file.pathExtension == "json" {
+            let clientId = file.deletingPathExtension().lastPathComponent
+            let browserId = clientId.components(separatedBy: "-").first ?? clientId
+            guard let data = try? Data(contentsOf: file),
+                  let bookmarks = try? JSONDecoder().decode([Bookmark].self, from: data) else { continue }
+            let existing = bookmarkCounts[browserId] ?? 0
+            bookmarkCounts[browserId] = max(existing, bookmarks.count)
+        }
+        // Load Safari count from snapshot (Safari doesn't send JSON like Chromium)
+        Task {
+            let count = safariBookmarks.readBookmarks().count
+            if count > 0 { bookmarkCounts["safari"] = count }
         }
     }
     
@@ -165,11 +186,9 @@ final class SyncService: ObservableObject {
         log("Starting manual sync... Connected clients: \(connectedClients)")
 
         let targetCategories = categories ?? settings.enabledCategories
-#if APP_STORE
-        let preSyncSafariBookmarks: [SyncBookmark] = []
-#else
+        // Read pre-sync Safari bookmarks on all builds (sandbox access handled inside readBookmarks)
         let preSyncSafariBookmarks = targetCategories.contains(.bookmarks) ? safariBookmarks.readBookmarks() : []
-#endif
+        if !preSyncSafariBookmarks.isEmpty { bookmarkCounts["safari"] = preSyncSafariBookmarks.count }
         for category in SyncCategory.allCases where targetCategories.contains(category) {
             await syncCategory(category)
         }
@@ -184,11 +203,9 @@ final class SyncService: ObservableObject {
         lastSyncDate = Date()
         isSyncing = false
         if targetCategories.contains(.bookmarks) {
-#if APP_STORE
-            currentManualSyncStats.bookmarks = 0
-#else
             let postSyncSafariBookmarks = safariBookmarks.readBookmarks()
             currentManualSyncStats.bookmarks = postSyncSafariBookmarks.count
+            if !postSyncSafariBookmarks.isEmpty { bookmarkCounts["safari"] = postSyncSafariBookmarks.count }
             
             let prevMap = Dictionary(uniqueKeysWithValues: preSyncSafariBookmarks.map { ($0.id, $0) })
             let newMap = Dictionary(uniqueKeysWithValues: postSyncSafariBookmarks.map { ($0.id, $0) })
@@ -207,7 +224,6 @@ final class SyncService: ObservableObject {
                     currentManualSyncStats.bookmarksDeleted += 1
                 }
             }
-#endif
         }
         log("Sync complete (Bookmarks: \(currentManualSyncStats.bookmarks), Cookies: \(currentManualSyncStats.cookies), LocalStorage: \(currentManualSyncStats.localStorage), SessionStorage: \(currentManualSyncStats.sessionStorage))")
         return currentManualSyncStats
@@ -221,11 +237,7 @@ final class SyncService: ObservableObject {
 
         if category == .bookmarks {
             // Determine if we should push Safari to others
-#if APP_STORE
-            let shouldPushSafari = false
-#else
             let shouldPushSafari = (strategy == .twoWayMerge || (strategy == .oneWay && sourceBrowser == .safari)) && settings.bookmarkParticipatingBrowsers.contains(.safari)
-#endif
             
             if shouldPushSafari {
                 let safariBms = safariBookmarks.readBookmarks()
@@ -281,6 +293,7 @@ final class SyncService: ObservableObject {
                     }
                     
                     backupService?.saveSnapshot(bookmarks: bookmarks, sourceBrowser: "safari")
+                    bookmarkCounts["safari"] = bookmarks.count
                     
                     var pushMsg = WSMessage(
                         type: .sync,
@@ -293,14 +306,38 @@ final class SyncService: ObservableObject {
                     pushMsg.isFullMirror = (strategy == .oneWay) // Full mirror if one-way, otherwise just merge
                     daemon?.broadcast(pushMsg, participatingBrowsers: settings.bookmarkParticipatingBrowsers)
                     log("Pushed \(bookmarks.count) Safari bookmarks to clients")
+                    
+                    // After pushing, update expected counts for all non-Safari receiving browsers
+                    // so the UI reflects what was just sent (avoids stale counts after sync)
+                    let targetDir = dataDir.appendingPathComponent("bookmarks")
+                    for browser in settings.bookmarkParticipatingBrowsers where browser.id != "safari" {
+                        bookmarkCounts[browser.id] = bookmarks.count
+                        // Also persist this pushed state so it survives app restart
+                        save(bookmarks, to: targetDir.appendingPathComponent("\(browser.id)-main.json"))
+                    }
                 } else {
                     log("No Safari bookmarks found to sync")
                 }
             }
 
-            // Determine if we should pull from others
-            let shouldPullOthers = strategy == .twoWayMerge || (strategy == .oneWay && sourceBrowser != .safari)
-            if shouldPullOthers {
+            // Determine if we should pull from others. In one-way mode we must
+            // only pull from the configured source browser; otherwise an empty
+            // target browser can become the full-mirror source and wipe data.
+            if strategy == .oneWay && sourceBrowser != .safari {
+                guard settings.bookmarkParticipatingBrowsers.contains(sourceBrowser) else {
+                    log("Skipped one-way bookmark pull because \(sourceBrowser.displayName) is not participating in sync.")
+                    return
+                }
+                let requestMessage = WSMessage(
+                    type: .sync,
+                    site: "*",
+                    category: category.rawValue,
+                    payload: nil,
+                    messageId: UUID().uuidString,
+                    timestamp: Date().timeIntervalSince1970
+                )
+                daemon?.broadcast(requestMessage, participatingBrowsers: [sourceBrowser])
+            } else if strategy == .twoWayMerge {
                 let requestMessage = WSMessage(
                     type: .sync,
                     site: "*",
@@ -371,12 +408,31 @@ final class SyncService: ObservableObject {
         let strategy = settings.bookmarkSyncStrategy
         let sourceBrowser = settings.bookmarkSourceBrowser
         let isBookmarkCategory = (category == "bookmarks" || category == "bookmark_incremental" || category == "bookmarks_removed")
-        
-        if isBookmarkCategory && strategy == .oneWay && sourceBrowser == .safari {
-            if clientId.lowercased().contains("chrome") || clientId.lowercased().contains("edge") {
-                log("Ignored \(category) from [\(clientId)] due to one-way sync strategy (Safari is primary)")
-                return
+
+        if isBookmarkCategory && strategy == .oneWay && !isClient(clientId, from: sourceBrowser) {
+            log("Ignored \(category) from [\(clientId)] due to one-way sync strategy (\(sourceBrowser.displayName) is primary)")
+            
+            // Even though we ignore it for syncing, we MUST update this client's local snapshot/count
+            // so the UI reflects its actual state (e.g. user deleted a bookmark in Chrome).
+            if category == "bookmarks_removed" || category == "bookmark_incremental" {
+                Task {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    let req = WSMessage(
+                        type: .sync,
+                        site: "*",
+                        category: "bookmarks",
+                        payload: nil,
+                        messageId: UUID().uuidString,
+                        timestamp: Date().timeIntervalSince1970
+                    )
+                    await MainActor.run {
+                        if let b = Browser(rawValue: clientId.components(separatedBy: "-").first ?? clientId) {
+                            self.daemon?.broadcast(req, participatingBrowsers: [b])
+                        }
+                    }
+                }
             }
+            return
         }
         if strategy == .oneWay && category == "bookmarks" {
             // In one-way sync, the target should exactly mirror the source.
@@ -394,12 +450,32 @@ final class SyncService: ObservableObject {
             if case .bookmarksRemoved(let bm) = filteredMessage.payload {
                 safariBookmarks.removeBookmark(id: bm.id, title: bm.title, url: bm.url ?? nil)
                 log("Removed bookmark '\(bm.title)' from Safari (triggered by [\(clientId)])")
+                // Refresh Safari count after removal
+                let updatedCount = safariBookmarks.readBookmarks().count
+                if updatedCount > 0 { bookmarkCounts["safari"] = updatedCount }
+                
                 let shouldSync = settings.bookmarkAutoSync || settings.automaticSync || isSyncing
                 if shouldSync {
                     daemon?.broadcast(filteredMessage, excluding: clientId)
                     // NOTE: Do NOT save bookmarks_removed to GlobalStateStore.
                     // These are point-in-time events; replaying them to reconnecting
                     // clients causes destructive false deletions.
+                    
+                    // Request a fresh sync from all clients to update counts and snapshots accurately
+                    Task {
+                        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s debounce to let extensions process deletions
+                        let req = WSMessage(
+                            type: .sync,
+                            site: "*",
+                            category: "bookmarks",
+                            payload: nil,
+                            messageId: UUID().uuidString,
+                            timestamp: Date().timeIntervalSince1970
+                        )
+                        await MainActor.run {
+                            self.daemon?.broadcast(req, participatingBrowsers: self.settings.bookmarkParticipatingBrowsers)
+                        }
+                    }
                 }
             }
             return
@@ -739,6 +815,11 @@ final class SyncService: ObservableObject {
         return "\(domain)::\(path)::\(cookie.name)"
     }
 
+    private func isClient(_ clientId: String, from browser: Browser) -> Bool {
+        let clientBrowserId = clientId.components(separatedBy: "-").first?.lowercased() ?? clientId.lowercased()
+        return clientBrowserId == browser.id.lowercased()
+    }
+
     private func buildDeletedBookmarkForest(from deletedBms: [Bookmark], sourceBrowser: String) -> [DeletedBookmark] {
         var nodeDict = [String: DeletedBookmark]()
         let now = Date()
@@ -779,14 +860,47 @@ final class SyncService: ObservableObject {
         switch payload {
         case .bookmarks(let bookmarks):
             let targetDir = dataDir.appendingPathComponent("bookmarks")
-            if category == "bookmarks" {
+            if category == "bookmarks" || category == "bookmark_backup" {
                 save(bookmarks, to: targetDir.appendingPathComponent("\(clientId).json"))
+                // Update bookmark count for this browser
+                let browserId = clientId.components(separatedBy: "-").first ?? clientId
+                bookmarkCounts[browserId] = bookmarks.count
             }
             
             // Also write natively into Safari if the source is a Chromium browser, AND the category is an actual sync (not a backup)
             if category != "bookmark_backup" && !clientId.lowercased().contains("safari") && settings.bookmarkParticipatingBrowsers.contains(.safari) {
 #if APP_STORE
-                log("Skipping native Safari bookmark write in App Store build")
+                // In App Store sandbox, writing is gated by the security-scoped bookmark
+                // that the user granted via requestSafariAccess(). applyBookmarks() and
+                // readBookmarks() both call withSafariAccess internally.
+                if SandboxAccessManager.shared.hasSafariAccess {
+                    let strategy = settings.bookmarkSyncStrategy
+                    let sourceBrowser = settings.bookmarkSourceBrowser
+                    if !(strategy == .oneWay && sourceBrowser == .safari) {
+                        let syncBookmarks = bookmarks.compactMap { b -> SyncBookmark? in
+                            let urlStr: String?
+                            if let urlOpt = b.url { urlStr = urlOpt } else { urlStr = nil }
+                            if !b.isFolder && urlStr == nil { return nil }
+                            return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar ?? false)
+                        }
+                        let sourceName = clientId.components(separatedBy: "-").first ?? clientId
+                        self.lastNetworkSyncTime = Date()
+                        let count = safariBookmarks.applyBookmarks(syncBookmarks, from: sourceName, isFullMirror: isFullMirror)
+                        if count >= 0 {
+                            log("Wrote \(count) bookmarks into Safari natively (App Store)")
+                            let freshSafariBms = safariBookmarks.readBookmarks()
+                            if !freshSafariBms.isEmpty {
+                                let snapshotBms = freshSafariBms.map { b in
+                                    Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
+                                }
+                                backupService?.saveSnapshot(bookmarks: snapshotBms, sourceBrowser: "safari")
+                                log("Updated Safari snapshot after write (\(snapshotBms.count) items)")
+                            }
+                        }
+                    }
+                } else {
+                    log("Skipping Safari bookmark write: no folder access granted yet")
+                }
 #else
                 // Ensure strategy allows it (oneWay from Safari should not accept writes)
                 let strategy = settings.bookmarkSyncStrategy

@@ -15,6 +15,7 @@ struct BookmarkSyncTabView: View {
     @State private var showingRestoreAllConfirmation = false
     @State private var showUpgradeAlert = false
     @State private var showSandboxAlert = false
+    @State private var showAutoSyncUpgradeAlert = false
     
     @StateObject private var sandboxManager = SandboxAccessManager.shared
     
@@ -81,6 +82,21 @@ struct BookmarkSyncTabView: View {
             .padding()
 
             Form {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label(String(localized: "Bookmark Backup Warning Header", bundle: langBundle.bundle), systemImage: "exclamationmark.triangle")
+                            .font(.headline)
+                            .foregroundStyle(.orange)
+                        
+                        Group {
+                            Text(String(localized: "Bookmark Backup Warning Detail", bundle: langBundle.bundle))
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+                
                 Section(String(localized: "Participating Browsers", bundle: langBundle.bundle)) {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
@@ -228,7 +244,7 @@ struct BookmarkSyncTabView: View {
                         get: { appState.purchaseService.isProUnlocked && syncSettings.bookmarkAutoSync.wrappedValue },
                         set: { enabled in
                             guard appState.purchaseService.isProUnlocked else {
-                                showUpgradeAlert = true
+                                showAutoSyncUpgradeAlert = true
                                 syncSettings.bookmarkAutoSync.wrappedValue = false
                                 return
                             }
@@ -237,7 +253,9 @@ struct BookmarkSyncTabView: View {
                     )) {
                         HStack(spacing: 6) {
                             Text(String(localized: "Real-time Auto Sync", bundle: langBundle.bundle))
-                            ProBadge()
+                            if !appState.purchaseService.isProUnlocked {
+                                ProBadge()
+                            }
                         }
                     }
                 }
@@ -381,6 +399,11 @@ struct BookmarkSyncTabView: View {
                 Button(String(localized: "OK", bundle: langBundle.bundle), role: .cancel) {}
             } message: {
                 Text(String(format: String(localized: "Free version supports up to %d sync browsers. Unlock Professional for unlimited browsers.", bundle: langBundle.bundle), ProLimits.freeSyncBrowserCount))
+            }
+            .alert(String(localized: "Professional Required", bundle: langBundle.bundle), isPresented: $showAutoSyncUpgradeAlert) {
+                Button(String(localized: "OK", bundle: langBundle.bundle), role: .cancel) {}
+            } message: {
+                Text(String(localized: "Real-time auto sync is a Professional feature. Unlock Professional to enable it.", bundle: langBundle.bundle))
             }
         }
     }

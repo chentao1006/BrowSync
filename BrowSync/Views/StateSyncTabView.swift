@@ -11,6 +11,7 @@ struct StateSyncTabView: View {
     @State private var siteToDelete: WebsiteSyncSetting?
     @State private var showDisabledDomainAlert = false
     @State private var showUpgradeAlert = false
+    @State private var showAutoSyncUpgradeAlert = false
     @State private var disabledDomainAttempted = ""
     
     private var syncSettings: Binding<SyncSettings> {
@@ -166,7 +167,7 @@ struct StateSyncTabView: View {
                         get: { appState.purchaseService.isProUnlocked && syncSettings.automaticSync.wrappedValue },
                         set: { enabled in
                             guard appState.purchaseService.isProUnlocked else {
-                                showUpgradeAlert = true
+                                showAutoSyncUpgradeAlert = true
                                 syncSettings.automaticSync.wrappedValue = false
                                 return
                             }
@@ -175,7 +176,9 @@ struct StateSyncTabView: View {
                     )) {
                         HStack(spacing: 6) {
                             Text(String(localized: "Real-time Auto Sync", bundle: langBundle.bundle))
-                            ProBadge()
+                            if !appState.purchaseService.isProUnlocked {
+                                ProBadge()
+                            }
                         }
                     }
                         .padding(.vertical, 4)
@@ -286,6 +289,11 @@ struct StateSyncTabView: View {
                 Button(String(localized: "OK", bundle: langBundle.bundle), role: .cancel) {}
             } message: {
                 Text(String(format: String(localized: "Free version supports up to %d sync browsers and %d website rules. Unlock Professional for unlimited sync.", bundle: langBundle.bundle), ProLimits.freeSyncBrowserCount, ProLimits.freeWebsiteRuleCount))
+            }
+            .alert(String(localized: "Professional Required", bundle: langBundle.bundle), isPresented: $showAutoSyncUpgradeAlert) {
+                Button(String(localized: "OK", bundle: langBundle.bundle), role: .cancel) {}
+            } message: {
+                Text(String(localized: "Real-time auto sync is a Professional feature. Unlock Professional to enable it.", bundle: langBundle.bundle))
             }
         }
     }

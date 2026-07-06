@@ -60,15 +60,28 @@ final class SandboxAccessManager: ObservableObject {
     }
     
     /// Wraps a block of code with temporary access to the Safari folder.
+    /// The block receives the resolved Safari directory URL (security-scoped) so callers
+    /// can construct the correct real path instead of relying on homeDirectoryForCurrentUser.
     func withSafariAccess<T>(_ block: () throws -> T) rethrows -> T {
 #if APP_STORE
         guard let bookmarkData = UserDefaults.standard.data(forKey: defaultsKey) else {
+            logger.warning("withSafariAccess: no saved bookmark data, access will be denied")
             return try block()
         }
         
         var isStale = false
         guard let url = try? URL(resolvingBookmarkData: bookmarkData, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &isStale) else {
+            logger.error("withSafariAccess: failed to resolve security-scoped bookmark")
             return try block()
+        }
+        
+        // If the bookmark has gone stale, refresh it so future accesses succeed.
+        if isStale {
+            logger.notice("withSafariAccess: bookmark is stale, attempting to refresh")
+            if let freshData = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
+                UserDefaults.standard.set(freshData, forKey: defaultsKey)
+                logger.notice("withSafariAccess: bookmark refreshed successfully")
+            }
         }
         
         let accessed = url.startAccessingSecurityScopedResource()
@@ -77,9 +90,38 @@ final class SandboxAccessManager: ObservableObject {
                 url.stopAccessingSecurityScopedResource()
             }
         }
+        
+        if !accessed {
+            logger.error("withSafariAccess: startAccessingSecurityScopedResource() returned false")
+        }
+        
+        // Cache the resolved URL so callers can build paths relative to it.
+        _resolvedSafariDirectoryURL = url
+        defer { _resolvedSafariDirectoryURL = nil }
+        
         return try block()
 #else
         return try block()
+#endif
+    }
+    
+    /// Only valid while inside a `withSafariAccess` closure on APP_STORE builds.
+    /// Returns the security-scoped Safari directory URL so callers can construct
+    /// the real path to Bookmarks.plist instead of using homeDirectoryForCurrentUser.
+    private(set) var _resolvedSafariDirectoryURL: URL? = nil
+    
+    var safariBookmarksPlistURL: URL? {
+#if APP_STORE
+        // Inside withSafariAccess, _resolvedSafariDirectoryURL is the real ~/Library/Safari
+        if let safariDir = _resolvedSafariDirectoryURL {
+            let url = safariDir.appendingPathComponent("Bookmarks.plist")
+            return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        }
+        return nil
+#else
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let url = home.appendingPathComponent("Library/Safari/Bookmarks.plist")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
 #endif
     }
 }
