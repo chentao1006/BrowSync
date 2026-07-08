@@ -430,3 +430,32 @@
 
 "Bookmark Backup Warning Header" = "最初にブックマークをバックアップ";
 "Bookmark Backup Warning Detail" = "初めてブックマークの同期を有効にする前に、誤って削除したりデータが失われたりするのを防ぐため、ブラウザに組み込まれているエクスポート機能を使用してブックマークをバックアップしてください。";
+
+"Sync Folder" = "同期フォルダ";
+
+"Root Directory (All Bookmarks)" = "ルートディレクトリ（すべてのブックマーク）";
+
+"Loading..." = "読み込み中...";
+
+"Select Folder" = "フォルダを選択";
+
+"Select" = "選択";
+
+"Choose Folder..." = "フォルダを選択...";
+
+"Add Folder" = "フォルダを追加";
+
+"New Folder Name" = "新しいフォルダ名";
+
+"Add" = "追加";
+
+
+
+
+"Favorites" = "お気に入り";
+
+"Bookmarks Bar" = "ブックマークバー";
+
+"Bookmarks Menu" = "ブックマークメニュー";
+
+"Other Bookmarks" = "その他のブックマーク";

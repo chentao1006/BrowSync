@@ -428,3 +428,32 @@
 
 "Bookmark Backup Warning Header" = "Esegui prima il backup";
 "Bookmark Backup Warning Detail" = "Prima di abilitare la sincronizzazione dei segnalibri per la prima volta, assicurati di eseguire il backup dei segnalibri utilizzando la funzione di esportazione integrata nel browser per evitare l'eliminazione accidentale o la perdita di dati.";
+
+"Sync Folder" = "Cartella di sincronizzazione";
+
+"Root Directory (All Bookmarks)" = "Directory radice (Tutti i segnalibri)";
+
+"Loading..." = "Caricamento...";
+
+"Select Folder" = "Seleziona cartella";
+
+"Select" = "Seleziona";
+
+"Choose Folder..." = "Scegli cartella...";
+
+"Add Folder" = "Aggiungi cartella";
+
+"New Folder Name" = "Nome della nuova cartella";
+
+"Add" = "Aggiungi";
+
+
+
+
+"Favorites" = "Preferiti";
+
+"Bookmarks Bar" = "Barra dei preferiti";
+
+"Bookmarks Menu" = "Menu preferiti";
+
+"Other Bookmarks" = "Altri preferiti";

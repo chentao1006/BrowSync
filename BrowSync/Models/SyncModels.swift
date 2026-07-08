@@ -12,7 +12,7 @@ struct Bookmark: Identifiable, Codable, Equatable {
     var parentId: String?
     var isFolder: Bool
     var inBookmarksBar: Bool? // True if it belongs to the Favorites/Bookmarks Bar
-    var dateAdded: Date
+    var dateAdded: Date?
     var dateModified: Date?
     var sourceBrowser: Browser
 
@@ -209,6 +209,7 @@ struct SyncSettings: Codable, Equatable {
     var conflictStrategy: ConflictStrategy = .primaryWins
     var bookmarkSyncStrategy: BookmarkSyncStrategy = .twoWayMerge
     var bookmarkSourceBrowser: Browser = .safari
+    var bookmarkSyncFolder: String? = nil
     var bookmarkAutoSync: Bool = false
     var bookmarkParticipatingBrowsers: Set<Browser> = []
     
@@ -228,7 +229,7 @@ struct SyncSettings: Codable, Equatable {
     var iCloudSync: Bool = false     // PRO
 
     private enum CodingKeys: String, CodingKey {
-        case conflictStrategy, bookmarkSyncStrategy, bookmarkSourceBrowser, bookmarkAutoSync, bookmarkParticipatingBrowsers, browserDataSyncStrategy, stateSourceBrowser, stateParticipatingBrowsers, websiteListPolicy, websiteSettings, tabSharingParticipatingBrowsers, tabSharingEnabled, enabledCategories, automaticSync, iCloudSync
+        case conflictStrategy, bookmarkSyncStrategy, bookmarkSourceBrowser, bookmarkSyncFolder, bookmarkAutoSync, bookmarkParticipatingBrowsers, browserDataSyncStrategy, stateSourceBrowser, stateParticipatingBrowsers, websiteListPolicy, websiteSettings, tabSharingParticipatingBrowsers, tabSharingEnabled, enabledCategories, automaticSync, iCloudSync
     }
 
     init() {}
@@ -238,6 +239,7 @@ struct SyncSettings: Codable, Equatable {
         conflictStrategy = try container.decodeIfPresent(ConflictStrategy.self, forKey: .conflictStrategy) ?? .primaryWins
         bookmarkSyncStrategy = try container.decodeIfPresent(BookmarkSyncStrategy.self, forKey: .bookmarkSyncStrategy) ?? .twoWayMerge
         bookmarkSourceBrowser = try container.decodeIfPresent(Browser.self, forKey: .bookmarkSourceBrowser) ?? .safari
+        bookmarkSyncFolder = try container.decodeIfPresent(String.self, forKey: .bookmarkSyncFolder)
         bookmarkAutoSync = try container.decodeIfPresent(Bool.self, forKey: .bookmarkAutoSync) ?? false
         bookmarkParticipatingBrowsers = try container.decodeIfPresent(Set<Browser>.self, forKey: .bookmarkParticipatingBrowsers) ?? []
         browserDataSyncStrategy = try container.decodeIfPresent(BrowserDataSyncStrategy.self, forKey: .browserDataSyncStrategy) ?? .latestWins
@@ -250,5 +252,229 @@ struct SyncSettings: Codable, Equatable {
         enabledCategories = try container.decodeIfPresent(Set<SyncCategory>.self, forKey: .enabledCategories) ?? []
         automaticSync = try container.decodeIfPresent(Bool.self, forKey: .automaticSync) ?? false
         iCloudSync = try container.decodeIfPresent(Bool.self, forKey: .iCloudSync) ?? false
+    }
+}
+// BookmarkTreeMerger.swift
+// BrowSync — Utility to merge specific bookmark folders
+
+import Foundation
+
+struct BookmarkTreeMerger {
+    
+    /// Overlays the `folderPath` from `sourceTree` onto `targetTree`.
+    /// Items outside `folderPath` in `targetTree` are preserved.
+    /// Items inside `folderPath` in `targetTree` are replaced by items from `sourceTree`.
+    static func overlay(sourceTree: [Bookmark], targetTree: [Bookmark], folderPath: String) -> [Bookmark] {
+        let components = folderPath.components(separatedBy: "/").filter { !$0.isEmpty }
+        guard !components.isEmpty else { return targetTree }
+        
+        // 1. Find source folder
+        let sourceFolderId = findFolderId(pathComponents: components, in: sourceTree)
+        
+        // 2. Extract source items under sourceFolderId
+        var sourceItemsToMigrate: [Bookmark] = []
+        if let sourceFolderId = sourceFolderId {
+            sourceItemsToMigrate = extractDescendants(of: sourceFolderId, in: sourceTree)
+        }
+        
+        // 3. Find or create target folder path in targetTree
+        var modifiedTargetTree = targetTree
+        let targetFolderId = ensureFolderPath(components: components, in: &modifiedTargetTree)
+        
+        // 4. Remove all existing descendants of target folder in targetTree
+        modifiedTargetTree = removeDescendants(of: targetFolderId, in: modifiedTargetTree)
+        
+        // 5. Append source items, remapping their parentId if they are top-level children
+        for var item in sourceItemsToMigrate {
+            if item.parentId == sourceFolderId {
+                item.parentId = targetFolderId
+            }
+            modifiedTargetTree.append(item)
+        }
+        
+        return modifiedTargetTree
+    }
+    
+    /// Extracts a subtree from `sourceTree` at `folderPath`, and maps its root to the corresponding folder in `targetTree`.
+    /// Returns the mapped subtree, including any intermediate folders created to reach the target path.
+    static func extractSubtreeAndMapRoot(sourceTree: [Bookmark], targetTree: [Bookmark], folderPath: String) -> [Bookmark] {
+        let components = folderPath.components(separatedBy: "/").filter { !$0.isEmpty }
+        guard !components.isEmpty else { return sourceTree }
+        
+        var modifiedTargetTree = targetTree
+        let targetFolderId = ensureFolderPath(components: components, in: &modifiedTargetTree)
+        
+        // Identify newly created intermediate folders
+        let originalTargetIds = Set(targetTree.map { $0.id })
+        let newlyCreatedFolders = modifiedTargetTree.filter { !originalTargetIds.contains($0.id) }
+        
+        let sourceFolderId = findFolderId(pathComponents: components, in: sourceTree)
+        var extractedItems: [Bookmark] = []
+        if let sourceFolderId = sourceFolderId {
+            extractedItems = extractDescendants(of: sourceFolderId, in: sourceTree)
+            // Remap parent ID
+            for i in 0..<extractedItems.count {
+                if extractedItems[i].parentId == sourceFolderId {
+                    extractedItems[i].parentId = targetFolderId
+                }
+            }
+        }
+        
+        var parentPathNodes: [Bookmark] = []
+        var currentPid = targetFolderId
+        let roots = Set(["0", "1", "2", "3"])
+        while !roots.contains(currentPid) {
+            if let p = modifiedTargetTree.first(where: { $0.id == currentPid }) {
+                if !newlyCreatedFolders.contains(where: { $0.id == p.id }) {
+                    parentPathNodes.append(p)
+                }
+                currentPid = p.parentId ?? "2"
+            } else {
+                break
+            }
+        }
+        
+        return parentPathNodes + newlyCreatedFolders + extractedItems
+    }
+    
+    /// Returns a Set of URLs and Titles that are strictly inside the `folderPath` of the given tree.
+    static func getIdentifiersInFolder(tree: [Bookmark], folderPath: String) -> (urls: Set<String>, titles: Set<String>) {
+        let components = folderPath.components(separatedBy: "/").filter { !$0.isEmpty }
+        if components.isEmpty {
+            return ([], [])
+        }
+        
+        guard let folderId = findFolderId(pathComponents: components, in: tree) else {
+            return ([], [])
+        }
+        
+        let descendants = extractDescendants(of: folderId, in: tree)
+        let urls = Set(descendants.compactMap { if let u = $0.url, let actual = u { return actual.lowercased() } else { return nil } })
+        
+        var titles = Set(descendants.filter { $0.isFolder }.map { $0.title.lowercased() })
+        // Include the target folder itself
+        if let targetFolder = tree.first(where: { $0.id == folderId }) {
+            titles.insert(targetFolder.title.lowercased())
+        }
+        
+        return (urls, titles)
+    }
+    
+    private static func matchRootComponent(_ component: String) -> String? {
+        let barNames = [
+            "Bookmarks Bar", "书签栏", "書籤列", "Favorites", "Favorites Bar",
+            String(localized: "Bookmarks Bar", bundle: Bundle.main),
+            String(localized: "Favorites", bundle: Bundle.main)
+        ]
+        let otherNames = [
+            "Other Bookmarks", "其他书签", "其他書籤", "Bookmarks Menu", "Other Favorites",
+            String(localized: "Other Bookmarks", bundle: Bundle.main),
+            String(localized: "Bookmarks Menu", bundle: Bundle.main)
+        ]
+        let mobileNames = [
+            "Mobile Bookmarks", "移动设备书签", "行動裝置書籤",
+            String(localized: "Mobile Bookmarks", bundle: Bundle.main)
+        ]
+        
+        if barNames.contains(component) { return "1" }
+        if otherNames.contains(component) { return "2" }
+        if mobileNames.contains(component) { return "3" }
+        return nil
+    }
+
+    private static func findFolderId(pathComponents: [String], in tree: [Bookmark]) -> String? {
+        let rootIds = Set(["0", "1", "2", "3"])
+        var currentParentIds = rootIds
+
+        var currentId: String? = nil
+        
+        for (index, component) in pathComponents.enumerated() {
+            if index == 0, let rootId = matchRootComponent(component) {
+                currentId = rootId
+                currentParentIds = [rootId]
+                continue
+            }
+            
+            let matches = tree.filter { $0.isFolder && $0.title == component && currentParentIds.contains($0.parentId ?? "") }
+            if let match = matches.first {
+                currentId = match.id
+                currentParentIds = [match.id]
+            } else {
+                return nil
+            }
+        }
+        
+        return currentId
+    }
+    
+    private static func extractDescendants(of parentId: String, in tree: [Bookmark]) -> [Bookmark] {
+        var descendants: [Bookmark] = []
+        var queue = [parentId]
+        
+        while !queue.isEmpty {
+            let current = queue.removeFirst()
+            let children = tree.filter { $0.parentId == current }
+            descendants.append(contentsOf: children)
+            queue.append(contentsOf: children.filter { $0.isFolder }.map { $0.id })
+        }
+        
+        return descendants
+    }
+    
+    private static func removeDescendants(of parentId: String, in tree: [Bookmark]) -> [Bookmark] {
+        var toRemove = Set<String>()
+        var queue = [parentId]
+        
+        while !queue.isEmpty {
+            let current = queue.removeFirst()
+            let children = tree.filter { $0.parentId == current }
+            for child in children {
+                toRemove.insert(child.id)
+                if child.isFolder {
+                    queue.append(child.id)
+                }
+            }
+        }
+        
+        return tree.filter { !toRemove.contains($0.id) }
+    }
+     static func ensureFolderPath(components: [String], in tree: inout [Bookmark]) -> String {
+        let rootIds = Set(["0", "1", "2", "3"])
+        var currentParentIds = rootIds
+
+        var currentId: String = "2" // Default to Other Bookmarks (Safari Root)
+        
+        for (index, component) in components.enumerated() {
+            if index == 0, let rootId = matchRootComponent(component) {
+                currentId = rootId
+                currentParentIds = [rootId]
+                continue
+            }
+            
+            let matches = tree.filter { $0.isFolder && $0.title == component && currentParentIds.contains($0.parentId ?? "") }
+            if let match = matches.first {
+                currentId = match.id
+                currentParentIds = [match.id]
+            } else {
+                // Create missing folder
+                let newId = UUID().uuidString
+                let effectiveParent = currentId
+                let newFolder = Bookmark(
+                    id: newId,
+                    title: component,
+                    url: nil,
+                    parentId: effectiveParent,
+                    isFolder: true,
+                    inBookmarksBar: effectiveParent == "1",
+                    dateAdded: Date(),
+                    sourceBrowser: .safari // dummy value
+                )
+                tree.append(newFolder)
+                currentId = newId
+                currentParentIds = [newId]
+            }
+        }
+        
+        return currentId
     }
 }

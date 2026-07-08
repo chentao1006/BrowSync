@@ -428,3 +428,32 @@
 
 "Bookmark Backup Warning Header" = "Lesezeichen zuerst sichern";
 "Bookmark Backup Warning Detail" = "Bevor Sie die Lesezeichensynchronisierung zum ersten Mal aktivieren, sichern Sie bitte Ihre Lesezeichen mit der integrierten Exportfunktion Ihres Browsers, um versehentliches Löschen oder Datenverlust zu vermeiden.";
+
+"Sync Folder" = "Ordner synchronisieren";
+
+"Root Directory (All Bookmarks)" = "Stammverzeichnis (Alle Lesezeichen)";
+
+"Loading..." = "Wird geladen...";
+
+"Select Folder" = "Ordner auswählen";
+
+"Select" = "Auswählen";
+
+"Choose Folder..." = "Ordner auswählen...";
+
+"Add Folder" = "Ordner hinzufügen";
+
+"New Folder Name" = "Neuer Ordnername";
+
+"Add" = "Hinzufügen";
+
+
+
+
+"Favorites" = "Favoriten";
+
+"Bookmarks Bar" = "Lesezeichenleiste";
+
+"Bookmarks Menu" = "Lesezeichenmenü";
+
+"Other Bookmarks" = "Andere Lesezeichen";

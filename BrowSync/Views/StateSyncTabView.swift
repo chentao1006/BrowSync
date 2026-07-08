@@ -13,6 +13,7 @@ struct StateSyncTabView: View {
     @State private var showUpgradeAlert = false
     @State private var showAutoSyncUpgradeAlert = false
     @State private var disabledDomainAttempted = ""
+    @FocusState private var focusedSiteID: UUID?
     
     private var syncSettings: Binding<SyncSettings> {
         Binding(
@@ -193,7 +194,12 @@ struct StateSyncTabView: View {
                                 showUpgradeAlert = true
                                 return
                             }
-                            syncSettings.websiteSettings.wrappedValue.append(WebsiteSyncSetting(domain: "", strategy: nil))
+                            let newSite = WebsiteSyncSetting(domain: "", strategy: nil)
+                            syncSettings.websiteSettings.wrappedValue.insert(newSite, at: 0)
+                            
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                focusedSiteID = newSite.id
+                            }
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "plus")
@@ -209,6 +215,7 @@ struct StateSyncTabView: View {
                     ForEach(syncSettings.websiteSettings) { $site in
                         HStack {
                             TextField("", text: $site.domain, prompt: Text(String(localized: "Domain (e.g. example.com)", bundle: langBundle.bundle)))
+                                .focused($focusedSiteID, equals: site.id)
                                 .textFieldStyle(.roundedBorder)
                                 .labelsHidden()
                                 .onChange(of: $site.domain.wrappedValue) { newValue in

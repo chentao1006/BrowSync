@@ -430,3 +430,32 @@
 
 "Bookmark Backup Warning Header" = "먼저 북마크 백업";
 "Bookmark Backup Warning Detail" = "처음으로 북마크 동기화를 활성화하기 전에 실수로 삭제하거나 데이터가 손실되지 않도록 브라우저의 내장 내보내기 기능을 사용하여 북마크를 백업하십시오.";
+
+"Sync Folder" = "동기화 폴더";
+
+"Root Directory (All Bookmarks)" = "루트 디렉토리 (모든 북마크)";
+
+"Loading..." = "로딩 중...";
+
+"Select Folder" = "폴더 선택";
+
+"Select" = "선택";
+
+"Choose Folder..." = "폴더 선택...";
+
+"Add Folder" = "폴더 추가";
+
+"New Folder Name" = "새 폴더 이름";
+
+"Add" = "추가";
+
+
+
+
+"Favorites" = "즐겨찾기";
+
+"Bookmarks Bar" = "북마크 바";
+
+"Bookmarks Menu" = "북마크 메뉴";
+
+"Other Bookmarks" = "기타 북마크";

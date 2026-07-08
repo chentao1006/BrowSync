@@ -428,3 +428,32 @@
 
 "Bookmark Backup Warning Header" = "Copia de seguridad primero";
 "Bookmark Backup Warning Detail" = "Antes de habilitar la sincronización de marcadores por primera vez, asegúrese de hacer una copia de seguridad de sus marcadores utilizando la función de exportación integrada de su navegador para evitar la eliminación accidental o la pérdida de datos.";
+
+"Sync Folder" = "Carpeta de sincronización";
+
+"Root Directory (All Bookmarks)" = "Directorio raíz (Todos los marcadores)";
+
+"Loading..." = "Cargando...";
+
+"Select Folder" = "Seleccionar carpeta";
+
+"Select" = "Seleccionar";
+
+"Choose Folder..." = "Elegir carpeta...";
+
+"Add Folder" = "Añadir carpeta";
+
+"New Folder Name" = "Nombre de la nueva carpeta";
+
+"Add" = "Añadir";
+
+
+
+
+"Favorites" = "Favoritos";
+
+"Bookmarks Bar" = "Barra de favoritos";
+
+"Bookmarks Menu" = "Menú de marcadores";
+
+"Other Bookmarks" = "Otros marcadores";

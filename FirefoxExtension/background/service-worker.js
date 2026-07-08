@@ -469,7 +469,7 @@ async function handlePullRequest(category, site) {
       traverse(tree);
       console.log(`[BrowSync] Sending ${flat.length} bookmarks...`);
       send({
-        type: 'sync', browser: DETECTED_BROWSER, category: 'bookmarks',
+        type: 'sync', browser: DETECTED_BROWSER, category: category === 'bookmark_backup' ? 'bookmark_backup' : 'bookmarks',
         payload: { kind: 'bookmarks', bookmarks: flat },
         messageId: crypto.randomUUID(), timestamp: Date.now()
       });
@@ -829,11 +829,21 @@ if (chrome.bookmarks) {
     }
     
     const mappedId = chromeToSafariId.get(id) || id;
+    const rawParentId = removeInfo.parentId || removeInfo.node?.parentId;
+    let mappedParentId = rawParentId;
+    if (rawParentId === localBarId) mappedParentId = '1';
+    else if (rawParentId === localOtherId) mappedParentId = '2';
+    else if (rawParentId === localMobileId) mappedParentId = '3';
+    else if (rawParentId === 'unfiled_____') mappedParentId = '2';
+    else if (rawParentId === 'toolbar_____') mappedParentId = '1';
+
     const deletedBm = {
       id: mappedId,
       title: removeInfo.node.title,
-      url: removeInfo.node.url,
-      isFolder: !removeInfo.node.url
+      url: removeInfo.node.url || null,
+      isFolder: !removeInfo.node.url,
+      parentId: mappedParentId || null,
+      sourceBrowser: DETECTED_BROWSER
     };
     
     console.log('[BrowSync] Explicit bookmark removed:', deletedBm);
@@ -841,12 +851,17 @@ if (chrome.bookmarks) {
       type: 'sync',
       browser: DETECTED_BROWSER,
       category: 'bookmarks_removed',
-      payload: { bookmarksRemoved: deletedBm },
+      payload: { kind: 'bookmarksRemoved', bookmarksRemoved: deletedBm },
       messageId: crypto.randomUUID(),
       timestamp: Date.now()
     });
     
-    handleBookmarkChange('removed');
+    // Cancel any pending debounce — the explicit bookmarks_removed above is sufficient.
+    // A full resync after deletion risks mergeLevel preserving the deleted item in Safari.
+    if (bookmarkDebounceTimer) {
+      clearTimeout(bookmarkDebounceTimer);
+      bookmarkDebounceTimer = null;
+    }
   });
   chrome.bookmarks.onChanged.addListener(() => handleBookmarkChange('changed'));
   chrome.bookmarks.onMoved.addListener(() => handleBookmarkChange('moved'));

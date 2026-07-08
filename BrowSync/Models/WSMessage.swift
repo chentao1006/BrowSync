@@ -91,7 +91,7 @@ enum WSPayload: Codable {
     case raw([String: AnyCodable])
 
     private enum CodingKeys: String, CodingKey {
-        case kind, bookmarks, tabs, localStorage, sessionStorage, cookies, history, raw, id, bookmark
+        case kind, bookmarks, tabs, localStorage, sessionStorage, cookies, history, raw, id, bookmark, bookmarksRemoved
     }
 
     init(from decoder: Decoder) throws {
@@ -112,12 +112,19 @@ enum WSPayload: Codable {
             self = .cookies(try container.decode([SyncCookie].self, forKey: .cookies))
         case "history":
             self = .history(try container.decode([HistoryEntry].self, forKey: .history))
-        case "bookmarks_removed":
-            if let str = try? container.decode(String.self, forKey: .id) {
+        case "bookmarks_removed", "bookmarksRemoved":
+            // Support multiple field name conventions from different extension versions:
+            // - Chrome extension sends: { kind: 'bookmarksRemoved', bookmarksRemoved: {...} }
+            // - Safari extension / older versions send: { kind: 'bookmarks_removed', bookmark: {...} } or { id: '...' }
+            if let bm = try? container.decode(Bookmark.self, forKey: .bookmarksRemoved) {
+                self = .bookmarksRemoved(bm)
+            } else if let bm = try? container.decode(Bookmark.self, forKey: .bookmark) {
+                self = .bookmarksRemoved(bm)
+            } else if let str = try? container.decode(String.self, forKey: .id) {
                 self = .bookmarksRemoved(Bookmark(id: str, title: "", url: nil, parentId: nil, isFolder: false, dateAdded: Date(), sourceBrowser: .safari))
             } else {
-                let bm = try container.decode(Bookmark.self, forKey: .bookmark)
-                self = .bookmarksRemoved(bm)
+                // Fallback: decode as raw if nothing matches
+                self = .raw(try container.decode([String: AnyCodable].self, forKey: .raw))
             }
         default:
             self = .raw(try container.decode([String: AnyCodable].self, forKey: .raw))

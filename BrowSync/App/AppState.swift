@@ -436,17 +436,31 @@ extension AppState: DaemonServerDelegate {
             
             // ── Offline Deletion Sync ────────────────────────────────────────────
             // Compare Safari's current state to this client's last known snapshot.
-            // Any bookmark that was in the client's snapshot but is no longer in
-            // Safari was deleted while the client was offline. Send explicit
-            // bookmarks_removed so the client removes them on reconnect.
-            // We compare by URL (for leaves) and title (for folders) — not by UUID
-            // — to avoid false positives from Safari's UUID drift.
             if sourceBrowser == .safari && !currentSafariBms.isEmpty,
                let clientSnapshot = self.backupService.getSnapshot(sourceBrowser: clientId) {
-                let currentUrls = Set(currentSafariBms.compactMap { $0.url }.map { $0.lowercased() })
-                let currentFolderTitles = Set(currentSafariBms.filter { $0.isFolder }.map { $0.title.lowercased() })
                 
-                let offlineDeleted = clientSnapshot.filter { bm in
+                var currentUrls = Set(currentSafariBms.compactMap { $0.url }.map { $0.lowercased() })
+                var currentFolderTitles = Set(currentSafariBms.filter { $0.isFolder }.map { $0.title.lowercased() })
+                var snapshotToCheck = clientSnapshot
+                
+                // If syncing a specific folder, restrict deletion check to that folder
+                if let syncFolder = self.settingsService.syncSettings.bookmarkSyncFolder {
+                    let (urls, titles) = BookmarkTreeMerger.getIdentifiersInFolder(tree: bookmarks, folderPath: syncFolder)
+                    currentUrls = urls
+                    currentFolderTitles = titles
+                    
+                    if let targetFolderId = BookmarkTreeMerger.getIdentifiersInFolder(tree: clientSnapshot, folderPath: syncFolder).urls.isEmpty ? nil : "" {
+                        // We actually just filter the snapshotToCheck to only include items in the sync folder
+                        let (_, clientTitles) = BookmarkTreeMerger.getIdentifiersInFolder(tree: clientSnapshot, folderPath: syncFolder)
+                        // Wait, it's easier to just use `extractSubtreeAndMapRoot` to get the items
+                        snapshotToCheck = BookmarkTreeMerger.extractSubtreeAndMapRoot(sourceTree: clientSnapshot, targetTree: clientSnapshot, folderPath: syncFolder)
+                    } else {
+                        // If we can't cleanly extract, we just filter by descendants
+                        snapshotToCheck = BookmarkTreeMerger.extractSubtreeAndMapRoot(sourceTree: clientSnapshot, targetTree: clientSnapshot, folderPath: syncFolder)
+                    }
+                }
+                
+                let offlineDeleted = snapshotToCheck.filter { bm in
                     if let urlOpt = bm.url, let url = urlOpt, currentUrls.contains(url.lowercased()) { return false }
                     if bm.isFolder == true && currentFolderTitles.contains(bm.title.lowercased()) { return false }
                     return true
@@ -469,18 +483,27 @@ extension AppState: DaemonServerDelegate {
             }
             // ────────────────────────────────────────────────────────────────────
             
+            var finalBookmarksToSend = bookmarks
+            var isFullMirror = (strategy == .oneWay)
+            
+            if let syncFolder = self.settingsService.syncSettings.bookmarkSyncFolder {
+                let targetSnapshot = self.backupService.getSnapshot(sourceBrowser: clientId) ?? []
+                finalBookmarksToSend = BookmarkTreeMerger.extractSubtreeAndMapRoot(sourceTree: bookmarks, targetTree: targetSnapshot, folderPath: syncFolder)
+                isFullMirror = false
+            }
+            
             var msg = WSMessage(
                 type: .sync,
                 site: "*",
                 category: "bookmarks",
-                payload: .bookmarks(bookmarks),
+                payload: .bookmarks(finalBookmarksToSend),
                 messageId: UUID().uuidString,
                 timestamp: Date().timeIntervalSince1970
             )
-            msg.isFullMirror = (strategy == .oneWay) // Full mirror if one-way, otherwise just merge
+            msg.isFullMirror = isFullMirror
             // Only send to the requesting client
             let sourceName = sourceBrowser == .safari ? "Safari" : "Chrome"
-            self.syncService.log("Answering pull request from [\(clientId)]: Pushed \(bookmarks.count) \(sourceName) bookmarks (isFullMirror: \(msg.isFullMirror ?? false))")
+            self.syncService.log("Answering pull request from [\(clientId)]: Pushed \(finalBookmarksToSend.count) \(sourceName) bookmarks (isFullMirror: \(msg.isFullMirror ?? false))")
             server.send(msg, toClientId: clientId)
         }
     }

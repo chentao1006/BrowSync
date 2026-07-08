@@ -139,6 +139,12 @@ final class SafariBookmarkService {
     private func insertBookmarks(_ bookmarks: [SyncBookmark], into plist: inout [String: Any], sourceBrowser: String, isFullMirror: Bool = false) -> Int {
         guard var children = plist["Children"] as? [[String: Any]] else { return 0 }
 
+        let systemRootIds = Set(["0", "1", "2", "3"])
+        // Exclude system root folders themselves, and any item parented to the mobile bookmarks root ("3")
+        // Mobile bookmarks have no corresponding location in Safari's plist structure.
+        let validBookmarks = bookmarks.filter {
+            !systemRootIds.contains($0.id) && ($0.parentId == nil || !systemRootIds.subtracting(["1","2"]).contains($0.parentId!))
+        }
         var addedCount = 0
 
         var extractedLeaves = [String: [[String: Any]]]()
@@ -147,12 +153,12 @@ final class SafariBookmarkService {
         func extractExistingNodes(from nodes: inout [[String: Any]]) {
             for i in (0..<nodes.count).reversed() {
                 if let url = nodes[i]["URLString"] as? String {
-                    if bookmarks.contains(where: { !$0.isFolder && $0.url == url }) {
+                    if validBookmarks.contains(where: { !$0.isFolder && $0.url == url }) {
                         let removed = nodes.remove(at: i)
                         extractedLeaves[url, default: []].append(removed)
                     }
                 } else if let type = nodes[i]["WebBookmarkType"] as? String, type == "WebBookmarkTypeList", let title = nodes[i]["Title"] as? String {
-                    if bookmarks.contains(where: { $0.isFolder && $0.title == title }) {
+                    if validBookmarks.contains(where: { $0.isFolder && $0.title == title }) {
                         var removed = nodes.remove(at: i)
                         if var subChildren = removed["Children"] as? [[String: Any]] {
                             extractExistingNodes(from: &subChildren)
@@ -196,7 +202,8 @@ final class SafariBookmarkService {
                     "WebBookmarkType": "WebBookmarkTypeList",
                     "Title": bookmark.title,
                     "WebBookmarkUUID": uuid,
-                    "Children": childNodes
+                    "Children": childNodes,
+                    "BrowSyncSourceRoot": bookmark.parentId ?? "2"
                 ]
             } else {
                 guard let urlStr = bookmark.url else { return nil }
@@ -217,7 +224,8 @@ final class SafariBookmarkService {
                     "URLString": urlStr,
                     "WebBookmarkUUID": uuid,
                     "ReadingListNonSync": false,
-                    "URIDictionary": ["title": bookmark.title]
+                    "URIDictionary": ["title": bookmark.title],
+                    "BrowSyncSourceRoot": bookmark.parentId ?? "2"
                 ]
             }
         }
@@ -248,7 +256,7 @@ final class SafariBookmarkService {
                     if let idx = safariNodes.firstIndex(where: { ($0["WebBookmarkType"] as? String) == "WebBookmarkTypeList" && ($0["Title"] as? String) == bookmark.title }) {
                         var existingFolder = safariNodes.remove(at: idx)
                         var subChildren = existingFolder["Children"] as? [[String: Any]] ?? []
-                        let chromeSub = bookmarks.filter { $0.parentId == bookmark.id }
+                        let chromeSub = validBookmarks.filter { $0.parentId == bookmark.id }
                         mergeLevel(chromeNodes: chromeSub, safariNodes: &subChildren, isRoot: false)
                         existingFolder["Children"] = subChildren
                         newSafariNodes.append(existingFolder)
@@ -297,7 +305,7 @@ final class SafariBookmarkService {
                 guard !rootChromeIds.contains($0.id) else { return false }
                 let pid = $0.parentId ?? "1"
                 if chromeParentId == "1" {
-                    return pid == "1" || pid == "0" || pid == "3"
+                    return pid == "1" || pid == "0"
                 } else {
                     return pid == chromeParentId
                 }
@@ -363,6 +371,11 @@ final class SafariBookmarkService {
                 
                 func traverse(nodes: [[String: Any]], parentId: String?, rootChromeId: String?) {
                     for child in nodes {
+                        // Skip any item that was written by BrowSync from Chrome's Mobile Bookmarks root.
+                        // These were inserted erroneously in a previous sync and should not be read back.
+                        if let sourceRoot = child["BrowSyncSourceRoot"] as? String, sourceRoot == "3" {
+                            continue
+                        }
                         let isFolder = (child["WebBookmarkType"] as? String) == "WebBookmarkTypeList"
                         let titleDict = child["URIDictionary"] as? [String: Any]
                         let titleStr = titleDict?["title"] as? String ?? child["Title"] as? String ?? child["URLString"] as? String ?? "Untitled"
@@ -381,11 +394,13 @@ final class SafariBookmarkService {
                 
                 if let barIdx = children.firstIndex(where: { ($0["Title"] as? String) == "BookmarksBar" }),
                    let barChildren = children[barIdx]["Children"] as? [[String: Any]] {
+                    result.append(SyncBookmark(id: "1", title: String(localized: "Favorites", bundle: Bundle.main), url: nil, parentId: "0", isFolder: true, inBookmarksBar: true))
                     traverse(nodes: barChildren, parentId: nil, rootChromeId: "1")
                 }
                 
                 if let menuIdx = children.firstIndex(where: { ($0["Title"] as? String) == "BookmarksMenu" }),
                    let menuChildren = children[menuIdx]["Children"] as? [[String: Any]] {
+                    result.append(SyncBookmark(id: "2", title: String(localized: "Bookmarks Menu", bundle: Bundle.main), url: nil, parentId: "0", isFolder: true, inBookmarksBar: false))
                     traverse(nodes: menuChildren, parentId: nil, rootChromeId: "2")
                 }
                 
@@ -408,6 +423,113 @@ final class SafariBookmarkService {
                 return []
             }
         }
+    }
+
+    // MARK: - Cleanup Mobile Bookmark Contamination
+
+    /// Removes items that were incorrectly synced from Chrome's Mobile Bookmarks root into Safari.
+    /// This runs on app startup to clean up contamination from older versions of BrowSync.
+    ///
+    /// Detection strategy (in priority order, no name matching for ongoing use):
+    ///   1. Nodes tagged with BrowSyncSourceRoot="3" — written by the new metadata-aware code.
+    ///   2. Root-level folders whose title exactly matches known mobile bookmark folder names
+    ///      from major browsers — this is a one-time migration for pre-metadata contamination only.
+    func cleanupMobileBookmarkContamination() {
+        SandboxAccessManager.shared.withSafariAccess {
+            guard let url = bookmarksURL,
+                  let data = try? Data(contentsOf: url),
+                  var plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                  var children = plist["Children"] as? [[String: Any]] else { return }
+
+            let knownMobileTitles: Set<String> = [
+                "Mobile Bookmarks",      // Chrome/Edge EN
+                "移动设备上的书签",        // Chrome/Edge zh-CN (most common)
+                "移动设备书签",            // Chrome/Edge zh-CN (variant)
+                "移动设备的书签",          // Edge zh-CN (variant)
+                "行動裝置書籤",            // zh-TW
+                "Marcadores del dispositivo móvil", // ES
+                "Mobil yer imleri",       // TR
+                "Mobilní záložky",        // CS
+            ]
+
+            var didChange = false
+
+            func removeContamination(from nodes: inout [[String: Any]], isAtRoot: Bool) {
+                nodes = nodes.filter { node in
+                    // Priority 1: metadata tag (ID-based, language-independent)
+                    if let sourceRoot = node["BrowSyncSourceRoot"] as? String, sourceRoot == "3" {
+                        logger.info("[Cleanup] Removing BrowSync mobile-root node: \(node["Title"] as? String ?? "(unknown)")")
+                        didChange = true
+                        return false
+                    }
+                    // Priority 2: one-time name-based migration for pre-metadata contamination
+                    // Only at root level to avoid false positives (user could have a similarly-named folder inside another folder)
+                    if isAtRoot,
+                       let title = node["Title"] as? String,
+                       knownMobileTitles.contains(title) {
+                        logger.info("[Cleanup] Removing pre-metadata mobile bookmark contamination: \"\(title)\"")
+                        didChange = true
+                        return false
+                    }
+                    return true
+                }
+            }
+
+            // Check Safari root level items (not system folders)
+            let systemTitles = Set(["BookmarksBar", "BookmarksMenu", "History", "com.apple.ReadingList"])
+            var rootUserItems = children.filter {
+                guard let t = $0["Title"] as? String else { return true }
+                return !systemTitles.contains(t)
+            }
+            removeContamination(from: &rootUserItems, isAtRoot: true)
+
+            // Rebuild children with cleaned root items
+            var cleanedChildren = children.filter {
+                if let t = $0["Title"] as? String, systemTitles.contains(t) { return true }
+                return false
+            }
+            cleanedChildren.append(contentsOf: rootUserItems)
+
+            // Also clean inside BookmarksBar and BookmarksMenu (non-root, metadata-only)
+            for i in 0..<cleanedChildren.count {
+                if var subChildren = cleanedChildren[i]["Children"] as? [[String: Any]] {
+                    removeContamination(from: &subChildren, isAtRoot: false)
+                    cleanedChildren[i]["Children"] = subChildren
+                }
+            }
+
+            guard didChange else { return }
+
+            plist["Children"] = cleanedChildren
+            isWritingInternally = true
+            if let newData = try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0) {
+                try? newData.write(to: url, options: .atomic)
+                logger.info("[Cleanup] Safari plist cleaned of mobile bookmark contamination.")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                self.isWritingInternally = false
+            }
+        }
+    }
+
+    // MARK: - Ensure Folder Exists
+
+    
+    func ensureFolderExists(path: String) {
+        let bookmarks = readBookmarks()
+        var targetTree = bookmarks.map { Bookmark(id: $0.id, title: $0.title, url: $0.url, parentId: $0.parentId, isFolder: $0.isFolder, inBookmarksBar: $0.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari) }
+        
+        let components = path.components(separatedBy: "/")
+        _ = BookmarkTreeMerger.ensureFolderPath(components: components, in: &targetTree)
+        
+        let finalBookmarks = targetTree.compactMap { b -> SyncBookmark? in
+            let urlStr: String?
+            if let urlOpt = b.url { urlStr = urlOpt } else { urlStr = nil }
+            if !b.isFolder && urlStr == nil { return nil }
+            return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar ?? false)
+        }
+        
+        _ = applyBookmarks(finalBookmarks, from: "Local UI", isFullMirror: true)
     }
 
     // MARK: - Remove Safari Bookmark

@@ -18,6 +18,7 @@ struct DeletedBookmark: Identifiable, Codable, Equatable {
 @MainActor
 final class BackupService: ObservableObject {
     @Published var deletedBookmarks: [DeletedBookmark] = []
+    @Published var lastSnapshotUpdate: Date = Date()
     
     private let logger = Logger(subsystem: "com.ct106.browsync", category: "BackupService")
     private let backupsDir: URL
@@ -43,22 +44,34 @@ final class BackupService: ObservableObject {
         do {
             let data = try JSONEncoder().encode(bookmarks)
             try data.write(to: fileURL)
+            Task { @MainActor in
+                self.lastSnapshotUpdate = Date()
+            }
         } catch {
             logger.error("Failed to save snapshot for \(sourceBrowser): \(error)")
         }
     }
     
     func getSnapshot(sourceBrowser: String) -> [Bookmark]? {
-        let filename = sourceBrowser.replacingOccurrences(of: "/", with: "_")
-        let fileURL = backupsDir.appendingPathComponent("snapshot_\(filename).json")
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+        let prefix = "snapshot_\(sourceBrowser.replacingOccurrences(of: "/", with: "_"))"
         do {
-            let data = try Data(contentsOf: fileURL)
-            return try JSONDecoder().decode([Bookmark].self, from: data)
+            let files = try FileManager.default.contentsOfDirectory(at: backupsDir, includingPropertiesForKeys: [.creationDateKey])
+            let matchingFiles = files.filter { $0.lastPathComponent.hasPrefix(prefix) && $0.pathExtension == "json" }
+            
+            let sorted = matchingFiles.sorted { u1, u2 in
+                let d1 = (try? u1.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date.distantPast
+                let d2 = (try? u2.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date.distantPast
+                return d1 > d2
+            }
+            
+            if let newest = sorted.first {
+                let data = try Data(contentsOf: newest)
+                return try JSONDecoder().decode([Bookmark].self, from: data)
+            }
         } catch {
             logger.error("Failed to load snapshot for \(sourceBrowser): \(error)")
-            return nil
         }
+        return nil
     }
     
     // MARK: - Trash Bin Management

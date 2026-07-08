@@ -17,6 +17,8 @@ struct BookmarkSyncTabView: View {
     @State private var showSandboxAlert = false
     @State private var showAutoSyncUpgradeAlert = false
     
+    @State private var showFolderSheet = false
+    
     @StateObject private var sandboxManager = SandboxAccessManager.shared
     
     private var syncSettings: Binding<SyncSettings> {
@@ -240,6 +242,44 @@ struct BookmarkSyncTabView: View {
 #endif
                     }
                     
+                    HStack {
+                        Text(String(localized: "Sync Folder", bundle: langBundle.bundle))
+                        Spacer()
+                        Button {
+                            showFolderSheet = true
+                        } label: {
+                                HStack(spacing: 6) {
+                                    if let appURL = appState.browserInfos.first(where: { $0.browser == syncSettings.bookmarkSourceBrowser.wrappedValue })?.appURL {
+                                        AppIconImage(appURL: appURL)
+                                            .frame(width: 16, height: 16)
+                                    }
+                                    Text(syncSettings.bookmarkSyncFolder.wrappedValue ?? String(localized: "Root Directory (All Bookmarks)", bundle: langBundle.bundle))
+                                        .truncationMode(.middle)
+                                    Image(systemName: "chevron.up.chevron.down")
+                                        .font(.caption)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color(NSColor.controlBackgroundColor))
+                            .cornerRadius(6)
+                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(NSColor.separatorColor), lineWidth: 1))
+                            .popover(isPresented: $showFolderSheet, arrowEdge: .bottom) {
+                                FolderSelectionSheet(
+                                    selectedFolder: syncSettings.bookmarkSyncFolder,
+                                    sourceBrowser: syncSettings.bookmarkSourceBrowser,
+                                    langBundle: langBundle.bundle
+                                )
+                                .environmentObject(appState)
+                            }
+                        }
+                    .onChange(of: syncSettings.bookmarkSyncStrategy.wrappedValue) { _ in
+                        appState.settingsService.save()
+                    }
+                    .onChange(of: syncSettings.bookmarkSourceBrowser.wrappedValue) { _ in
+                        appState.settingsService.save()
+                    }
                     Toggle(isOn: Binding(
                         get: { appState.purchaseService.isProUnlocked && syncSettings.bookmarkAutoSync.wrappedValue },
                         set: { enabled in
@@ -408,6 +448,8 @@ struct BookmarkSyncTabView: View {
         }
     }
     
+    
+    
     private func flattenDeletedBookmark(_ item: DeletedBookmark) -> [SyncBookmark] {
         var result = [SyncBookmark(id: item.id, title: item.title, url: item.url, parentId: item.parentId, isFolder: item.isFolder, inBookmarksBar: item.parentId == "1")]
         if let children = item.children {
@@ -518,5 +560,445 @@ struct BookmarkSyncTabView: View {
             showSuccess = false
         }
 #endif
+    }
+}
+
+// MARK: - Folder Node
+
+struct FolderNode: Identifiable, Hashable {
+    let id: String // full path
+    let name: String
+    var children: [FolderNode]?
+}
+
+class FolderNodeClass {
+    let name: String
+    let fullPath: String
+    var children: [String: FolderNodeClass] = [:]
+    var orderIndex: Int
+    
+    init(name: String, fullPath: String, orderIndex: Int) {
+        self.name = name
+        self.fullPath = fullPath
+        self.orderIndex = orderIndex
+    }
+    
+    func toStruct() -> FolderNode {
+        let sortedChildren = children.values.sorted { $0.orderIndex < $1.orderIndex }.map { $0.toStruct() }
+        return FolderNode(id: fullPath, name: name, children: sortedChildren.isEmpty ? nil : sortedChildren)
+    }
+}
+
+extension BookmarkSyncTabView {
+    static func buildTree(from paths: [String]) -> [FolderNode] {
+        let root = FolderNodeClass(name: "", fullPath: "", orderIndex: -1)
+        for (i, path) in paths.enumerated() {
+            let components = path.components(separatedBy: "/")
+            var current = root
+            var currentPath = ""
+            for component in components {
+                currentPath = currentPath.isEmpty ? component : currentPath + "/" + component
+                if current.children[component] == nil {
+                    current.children[component] = FolderNodeClass(name: component, fullPath: currentPath, orderIndex: i)
+                }
+                current = current.children[component]!
+            }
+        }
+        return root.children.values.sorted { $0.orderIndex < $1.orderIndex }.map { $0.toStruct() }
+    }
+}
+
+// MARK: - Folder Selection Sheet
+
+// MARK: - Folder Selection Sheet
+
+struct FolderSelectionSheet: View {
+    @EnvironmentObject var appState: AppState
+    @Binding var selectedFolder: String?
+    @Binding var sourceBrowser: Browser
+    let langBundle: Bundle
+    
+    @Environment(\.dismiss) var dismiss
+    @State private var localSelection: String? = nil
+    @State private var showingAddFolder = false
+    @State private var newFolderName = ""
+    
+    @State private var localSelectionBrowser: Browser?
+    @State private var selectedBrowser: Browser = .safari
+    @State private var nodes: [FolderNode] = []
+    @State private var isLoading = false
+    @State private var hasSnapshot = true
+    @State private var expandedNodes: Set<String> = []
+    
+    var isTwoWay: Bool {
+        appState.settingsService.syncSettings.bookmarkSyncStrategy == .twoWayMerge
+    }
+    
+    var displayBrowsers: [Browser] {
+        Browser.allCases.filter { browser in
+            appState.settingsService.syncSettings.bookmarkParticipatingBrowsers.contains(browser) &&
+            appState.browserInfos.contains { $0.browser == browser && $0.isInstalled }
+        }
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(String(localized: "Select Folder", bundle: langBundle))
+                    .font(.headline)
+                
+                Spacer()
+                
+                Button {
+                    let msg = WSMessage.pull(site: nil, category: "bookmark_backup")
+                    appState.daemon.broadcast(msg, participatingBrowsers: [selectedBrowser])
+                    loadFolders()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .help(String(localized: "Refresh", bundle: langBundle))
+            }
+            .padding()
+            
+            Divider()
+            
+            if isTwoWay {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(displayBrowsers, id: \.self) { browser in
+                            let isSelected = selectedBrowser == browser
+                            Button {
+                                selectedBrowser = browser
+                                loadFolders()
+                            } label: {
+                                HStack(spacing: 6) {
+                                    if let appURL = appState.browserInfos.first(where: { $0.browser == browser })?.appURL {
+                                        AppIconImage(appURL: appURL)
+                                            .frame(width: 16, height: 16)
+                                    }
+                                    Text(browser.displayName)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(isSelected ? Color.accentColor : Color(NSColor.controlBackgroundColor))
+                                .foregroundColor(isSelected ? .white : .primary)
+                                .cornerRadius(6)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(isSelected ? Color.accentColor : Color(NSColor.separatorColor), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding()
+                }
+                Divider()
+            }
+            
+            if isLoading {
+                Spacer()
+                ProgressView()
+                Spacer()
+            } else if !hasSnapshot {
+                Spacer()
+                VStack(spacing: 12) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.secondary)
+                    Text(String(localized: "Data not retrieved", bundle: langBundle))
+                        .font(.headline)
+                    Text(String(localized: "Please open this browser and ensure the BrowSync extension is active.", bundle: langBundle))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    
+                    if let url = selectedBrowser.appURL {
+                        Button(String(format: String(localized: "Open %@", bundle: langBundle), selectedBrowser.displayName)) {
+                            NSWorkspace.shared.open(url)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .padding(.top, 8)
+                    }
+                }
+                .padding()
+                Spacer()
+            } else {
+                ScrollViewReader { proxy in
+                    List {
+                        DisclosureGroup(isExpanded: .constant(true)) {
+                            ForEach(nodes) { node in
+                                RecursiveFolderNodeView(
+                                    node: node,
+                                    localSelection: $localSelection,
+                                    localSelectionBrowser: $localSelectionBrowser,
+                                    selectedBrowser: selectedBrowser,
+                                    expandedNodes: $expandedNodes
+                                )
+                            }
+                        } label: {
+                            Button {
+                                localSelection = nil
+                                localSelectionBrowser = selectedBrowser
+                            } label: {
+                                HStack {
+                                    Image(systemName: "folder")
+                                    Text(String(localized: "Root Directory (All Bookmarks)", bundle: langBundle))
+                                    Spacer()
+                                    if localSelection == nil && localSelectionBrowser == selectedBrowser {
+                                        Image(systemName: "checkmark")
+                                            .foregroundColor(.accentColor)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.vertical, 2)
+                            .padding(.horizontal, 4)
+                            .background(localSelection == nil && localSelectionBrowser == selectedBrowser ? Color.accentColor.opacity(0.15) : Color.clear)
+                            .cornerRadius(4)
+                        }
+                    }
+                    .listStyle(.sidebar)
+                    .onChange(of: isLoading) { loading in
+                        if !loading, let sel = localSelection {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                withAnimation {
+                                    proxy.scrollTo(sel, anchor: .center)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            Divider()
+            
+            HStack {
+                Button {
+                    showingAddFolder = true
+                } label: {
+                    Image(systemName: "folder.badge.plus")
+                    Text(String(localized: "Add Folder", bundle: langBundle))
+                }
+                .disabled(isLoading || !hasSnapshot)
+                .popover(isPresented: $showingAddFolder) {
+                    VStack(spacing: 12) {
+                        Text(String(localized: "New Folder Name", bundle: langBundle))
+                            .font(.headline)
+                        TextField("", text: $newFolderName)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 200)
+                        HStack {
+                            Button(String(localized: "Cancel", bundle: langBundle)) {
+                                showingAddFolder = false
+                                newFolderName = ""
+                            }
+                            Button(String(localized: "Add", bundle: langBundle)) {
+                                if !newFolderName.isEmpty {
+                                    let newPath = localSelection == nil ? newFolderName : localSelection! + "/" + newFolderName
+                                    if selectedBrowser == .safari {
+                                        SafariBookmarkService().ensureFolderExists(path: newPath)
+                                    }
+                                    localSelection = newPath
+                                    localSelectionBrowser = selectedBrowser
+                                    loadFolders()
+                                }
+                                showingAddFolder = false
+                                newFolderName = ""
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(newFolderName.isEmpty)
+                        }
+                    }
+                    .padding()
+                }
+                
+                Spacer()
+                
+                Button(String(localized: "Cancel", bundle: langBundle)) {
+                    dismiss()
+                }
+                .keyboardShortcut(.escape, modifiers: [])
+                
+                Button(String(localized: "Select", bundle: langBundle)) {
+                    selectedFolder = localSelection
+                    if let browser = localSelectionBrowser {
+                        sourceBrowser = browser
+                    } else {
+                        sourceBrowser = selectedBrowser
+                    }
+                    appState.settingsService.save()
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(isLoading || !hasSnapshot)
+            }
+            .padding()
+        }
+        .frame(width: 400, height: 500)
+        .onAppear {
+            localSelection = selectedFolder
+            let source = appState.settingsService.syncSettings.bookmarkSourceBrowser
+            localSelectionBrowser = source
+            if isTwoWay {
+                if displayBrowsers.contains(source) {
+                    selectedBrowser = source
+                } else {
+                    selectedBrowser = displayBrowsers.first ?? .safari
+                }
+            } else {
+                selectedBrowser = source
+            }
+            loadFolders()
+        }
+        .onReceive(appState.backupService.$lastSnapshotUpdate) { _ in
+            loadFolders()
+        }
+    }
+    
+    private func loadFolders() {
+        isLoading = true
+        hasSnapshot = true
+        
+        let browserToLoad = selectedBrowser
+        
+        Task {
+            var rawFolders: [(id: String, parentId: String?, title: String)] = []
+            var foundSnapshot = true
+            
+            if browserToLoad == .safari {
+                let bookmarks = SafariBookmarkService().readBookmarks()
+                rawFolders = bookmarks.filter { $0.isFolder }.map { ($0.id, $0.parentId, $0.title) }
+            } else {
+                if let snapshot = appState.backupService.getSnapshot(sourceBrowser: browserToLoad.rawValue) {
+                    rawFolders = snapshot.filter { $0.isFolder }.map { ($0.id, $0.parentId, $0.title) }
+                } else {
+                    foundSnapshot = false
+                }
+            }
+
+            var idToFolder: [String: (id: String, parentId: String?, title: String)] = [:]
+            for f in rawFolders { idToFolder[f.id] = f }
+            
+            if browserToLoad == .safari {
+                let hasChildren = rawFolders.contains(where: { $0.parentId == "2" })
+                if !hasChildren {
+                    rawFolders.removeAll(where: { $0.id == "2" })
+                    idToFolder.removeValue(forKey: "2")
+                }
+            }
+
+            var paths: [String] = []
+            
+            for f in rawFolders {
+                var path = f.title
+                var currentId = f.parentId
+                while let pid = currentId {
+                    if pid == "0" { break }
+                    
+                    if let parent = idToFolder[pid] {
+                        path = parent.title + "/" + path
+                        currentId = parent.parentId
+                    } else {
+                        if browserToLoad == .safari {
+                            if pid == "1" {
+                                path = String(localized: "Favorites", bundle: langBundle) + "/" + path
+                            }
+                            // If pid == "2" for Safari, it's the root Bookmarks Menu, so we prepend nothing.
+                        } else {
+                            if pid == "1" { path = String(localized: "Bookmarks Bar", bundle: langBundle) + "/" + path }
+                            else if pid == "2" { path = String(localized: "Other Bookmarks", bundle: langBundle) + "/" + path }
+                            else if pid == "3" { path = String(localized: "Mobile Bookmarks", bundle: langBundle) + "/" + path }
+                        }
+                        break
+                    }
+                }
+                paths.append(path)
+            }
+
+            let loadedNodes = BookmarkSyncTabView.buildTree(from: paths)
+            
+            await MainActor.run {
+                self.nodes = loadedNodes
+                self.hasSnapshot = foundSnapshot
+                self.isLoading = false
+                
+                // Auto-expand paths containing the selected folder
+                if let selection = self.localSelection {
+                    let components = selection.components(separatedBy: "/")
+                    var currentPath = ""
+                    for component in components {
+                        if !component.isEmpty {
+                            currentPath = currentPath.isEmpty ? component : currentPath + "/" + component
+                            self.expandedNodes.insert(currentPath)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct RecursiveFolderNodeView: View {
+    let node: FolderNode
+    @Binding var localSelection: String?
+    @Binding var localSelectionBrowser: Browser?
+    let selectedBrowser: Browser
+    @Binding var expandedNodes: Set<String>
+    
+    var body: some View {
+        let isSelected = localSelection == node.id && localSelectionBrowser == selectedBrowser
+        
+        let label = Button {
+            localSelection = node.id
+            localSelectionBrowser = selectedBrowser
+        } label: {
+            HStack {
+                Image(systemName: "folder")
+                Text(node.name)
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .foregroundColor(.accentColor)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, 2)
+        .padding(.horizontal, 4)
+        .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+        .cornerRadius(4)
+        
+        if let children = node.children, !children.isEmpty {
+            DisclosureGroup(
+                isExpanded: Binding(
+                    get: { expandedNodes.contains(node.id) },
+                    set: { isExpanded in
+                        if isExpanded { expandedNodes.insert(node.id) }
+                        else { expandedNodes.remove(node.id) }
+                    }
+                )
+            ) {
+                ForEach(children) { child in
+                    RecursiveFolderNodeView(
+                        node: child,
+                        localSelection: $localSelection,
+                        localSelectionBrowser: $localSelectionBrowser,
+                        selectedBrowser: selectedBrowser,
+                        expandedNodes: $expandedNodes
+                    )
+                }
+            } label: {
+                label
+            }
+            .id(node.id)
+        } else {
+            label
+                .id(node.id)
+        }
     }
 }

@@ -470,3 +470,34 @@
 
 "Bookmark Backup Warning Header" = "Backup Bookmarks First";
 "Bookmark Backup Warning Detail" = "Before enabling bookmark sync for the first time, please make sure to back up your bookmarks using your browser's built-in export feature to prevent accidental deletion or data loss.";
+
+"Sync Folder" = "Sync Folder";
+
+"Root Directory (All Bookmarks)" = "Root Directory (All Bookmarks)";
+
+"Loading..." = "Loading...";
+
+"Select Folder" = "Select Folder";
+
+"Select" = "Select";
+
+"Choose Folder..." = "Choose Folder...";
+
+"Add Folder" = "Add Folder";
+
+"New Folder Name" = "New Folder Name";
+
+"Add" = "Add";
+
+
+
+
+"Favorites" = "Favorites";
+
+"Bookmarks Bar" = "Bookmarks Bar";
+
+"Bookmarks Menu" = "Bookmarks Menu";
+
+"Other Bookmarks" = "Other Bookmarks";
+"Data not retrieved" = "Data not retrieved";
+"Please open this browser and ensure the BrowSync extension is active." = "Please open this browser and ensure the BrowSync extension is active.";

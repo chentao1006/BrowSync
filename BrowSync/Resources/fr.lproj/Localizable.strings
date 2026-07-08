@@ -428,3 +428,32 @@
 
 "Bookmark Backup Warning Header" = "Sauvegarder les favoris d'abord";
 "Bookmark Backup Warning Detail" = "Avant d'activer la synchronisation des favoris pour la première fois, assurez-vous de sauvegarder vos favoris en utilisant la fonction d'exportation intégrée de votre navigateur pour éviter toute suppression accidentelle ou perte de données.";
+
+"Sync Folder" = "Dossier de synchronisation";
+
+"Root Directory (All Bookmarks)" = "Répertoire racine (Tous les signets)";
+
+"Loading..." = "Chargement...";
+
+"Select Folder" = "Sélectionner un dossier";
+
+"Select" = "Sélectionner";
+
+"Choose Folder..." = "Choisir un dossier...";
+
+"Add Folder" = "Ajouter un dossier";
+
+"New Folder Name" = "Nom du nouveau dossier";
+
+"Add" = "Ajouter";
+
+
+
+
+"Favorites" = "Favoris";
+
+"Bookmarks Bar" = "Barre de favoris";
+
+"Bookmarks Menu" = "Menu des signets";
+
+"Other Bookmarks" = "Autres favoris";

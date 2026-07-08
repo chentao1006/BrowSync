@@ -478,7 +478,7 @@ async function handlePullRequest(category, site) {
       traverse(tree);
       console.log(`[BrowSync] Sending ${flat.length} bookmarks...`);
       send({
-        type: 'sync', browser: CURRENT_BROWSER_ID, category: 'bookmarks',
+        type: 'sync', browser: CURRENT_BROWSER_ID, category: category === 'bookmark_backup' ? 'bookmark_backup' : 'bookmarks',
         payload: { kind: 'bookmarks', bookmarks: flat },
         messageId: crypto.randomUUID(), timestamp: Date.now()
       });
@@ -576,14 +576,18 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
     const snapshot = [];
     function flatForBackup(nodes) {
       for (const node of nodes) {
-        if (node.id !== '0' && node.id !== '1' && node.id !== '2' && node.id !== '3') {
+        if (!systemRoots.has(node.id)) {
+          let pId = node.parentId;
+          if (pId === localBarId) pId = '1';
+          else if (pId === localOtherId) pId = '2';
+          else if (pId === localMobileId) pId = '3';
           snapshot.push({
             id: node.id,
             title: node.title || '',
             url: node.url || null,
-            parentId: node.parentId || null,
+            parentId: pId || null,
             isFolder: !node.url,
-            inBookmarksBar: node.parentId === '1',
+            inBookmarksBar: pId === '1',
             dateAdded: (node.dateAdded || Date.now()) / 1000,
             sourceBrowser: CURRENT_BROWSER_ID
           });
@@ -772,7 +776,7 @@ async function handleBookmarkChange(reason) {
     const snapshot = [];
     function flatForBackup(nodes) {
       for (const node of nodes) {
-        if (node.id !== '0') {
+        if (!systemRoots.has(node.id)) {
           let pId = node.parentId;
           if (pId === localBarId) pId = '1';
           else if (pId === localOtherId) pId = '2';
@@ -822,11 +826,20 @@ if (chrome.bookmarks) {
     }
     
     const mappedId = chromeToSafariId.get(id) || id;
+    // Also map the parentId so Safari can use it for context
+    const rawParentId = removeInfo.parentId || removeInfo.node?.parentId;
+    let mappedParentId = rawParentId;
+    if (rawParentId === localBarId) mappedParentId = '1';
+    else if (rawParentId === localOtherId) mappedParentId = '2';
+    else if (rawParentId === localMobileId) mappedParentId = '3';
+
     const deletedBm = {
       id: mappedId,
       title: removeInfo.node.title,
-      url: removeInfo.node.url,
-      isFolder: !removeInfo.node.url
+      url: removeInfo.node.url || null,
+      isFolder: !removeInfo.node.url,
+      parentId: mappedParentId || null,
+      sourceBrowser: CURRENT_BROWSER_ID
     };
     
     console.log('[BrowSync] Explicit bookmark removed:', deletedBm);
@@ -834,12 +847,21 @@ if (chrome.bookmarks) {
       type: 'sync',
       browser: CURRENT_BROWSER_ID,
       category: 'bookmarks_removed',
-      payload: { bookmarksRemoved: deletedBm },
+      payload: { kind: 'bookmarksRemoved', bookmarksRemoved: deletedBm },
       messageId: crypto.randomUUID(),
       timestamp: Date.now()
     });
     
-    handleBookmarkChange('removed');
+    // Do NOT call handleBookmarkChange here. The bookmarks_removed event above is sufficient
+    // for cross-browser deletion. Calling handleBookmarkChange would trigger a full resync
+    // after a 10s debounce which would then call applyBookmarkSync — that merges Chrome's
+    // state into Safari preserving Safari-only items, potentially undoing the deletion if
+    // removeBookmark on Safari side couldn't match by UUID.
+    // Instead, just reset the debounce timer to avoid it firing from a stale trigger.
+    if (bookmarkDebounceTimer) {
+      clearTimeout(bookmarkDebounceTimer);
+      bookmarkDebounceTimer = null;
+    }
   });
   chrome.bookmarks.onChanged.addListener(() => handleBookmarkChange('changed'));
   chrome.bookmarks.onMoved.addListener(() => handleBookmarkChange('moved'));

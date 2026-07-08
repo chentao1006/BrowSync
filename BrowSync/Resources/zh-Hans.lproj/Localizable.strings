@@ -498,3 +498,34 @@
 
 "Bookmark Backup Warning Header" = "建议先备份书签";
 "Bookmark Backup Warning Detail" = "在首次开启书签同步前，请务必先通过浏览器自带功能备份各浏览器的书签，以防误删或数据丢失。";
+
+"Sync Folder" = "同步文件夹";
+
+"Root Directory (All Bookmarks)" = "根目录（全部书签）";
+
+"Loading..." = "加载中...";
+
+"Select Folder" = "选择文件夹";
+
+"Select" = "选择";
+
+"Choose Folder..." = "选择文件夹...";
+
+"Add Folder" = "添加文件夹";
+
+"New Folder Name" = "新文件夹名称";
+
+"Add" = "添加";
+
+
+
+
+"Favorites" = "个人收藏";
+
+"Bookmarks Bar" = "书签栏";
+
+"Bookmarks Menu" = "书签菜单";
+
+"Other Bookmarks" = "其他书签";
+"Data not retrieved" = "未获取数据";
+"Please open this browser and ensure the BrowSync extension is active." = "请打开该浏览器，并确保 BrowSync 扩展已安装并启用。";
