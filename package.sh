@@ -43,8 +43,8 @@ set -e
 
 echo "🚀 Starting packaging process..."
 
-rm -rf "${RESULT_DIR}"
 mkdir -p "${RESULT_DIR}"
+rm -rf "${ARCHIVE_PATH}" "${EXPORT_PATH}" "${DMG_PATH}"
 
 echo "📦 Archiving the app..."
 xcodebuild archive \
@@ -134,5 +134,8 @@ else
     echo "❌ Sparkle generate_appcast tool still missing at ${SPARKLE_BIN_PATH}."
     exit 1
 fi
+
+echo "🧹 Cleaning up exported app and archive..."
+rm -rf "${EXPORT_PATH}" "${ARCHIVE_PATH}"
 
 echo "🎉 All done! Your DMG is at: ${DMG_PATH}"

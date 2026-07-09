@@ -89,7 +89,19 @@ else
     echo "✅ Local configuration updated."
     # xcodegen > /dev/null (Removed: to allow manual Xcode settings to be preserved)
 
-    # 2. Run Local Build
+    # 2. Package Extensions
+    echo "📦 Packaging Chromium Extension..."
+    mkdir -p "${RESULT_DIR}"
+    cd ChromiumExtension
+    zip -r "../${RESULT_DIR}/ChromiumExtension-v${NEW_VERSION}.zip" * -x "*.DS_Store" -x "*.git*" > /dev/null
+    cd ..
+
+    echo "📦 Packaging Firefox Extension..."
+    cd FirefoxExtension
+    zip -r "../${RESULT_DIR}/FirefoxExtension-v${NEW_VERSION}.zip" * -x "*.DS_Store" -x "*.git*" > /dev/null
+    cd ..
+
+    # 3. Run Local Build
     chmod +x package.sh
     ./package.sh "$NEW_VERSION"
 
@@ -127,15 +139,6 @@ git push origin "v$NEW_VERSION"
 # Use GitHub CLI to create release and upload assets
 if command -v gh >/dev/null 2>&1; then
     echo "📡 Creating GitHub Release and uploading assets..."
-    echo "📦 Packaging Chromium Extension..."
-    cd ChromiumExtension
-    zip -r "../${RESULT_DIR}/ChromiumExtension-v${NEW_VERSION}.zip" * -x "*.DS_Store" -x "*.git*" > /dev/null
-    cd ..
-
-    echo "📦 Packaging Firefox Extension..."
-    cd FirefoxExtension
-    zip -r "../${RESULT_DIR}/FirefoxExtension-v${NEW_VERSION}.zip" * -x "*.DS_Store" -x "*.git*" > /dev/null
-    cd ..
     
     # DMG is the primary asset
     ASSETS=("${RESULT_DIR}/BrowSync.dmg")
