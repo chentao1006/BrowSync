@@ -316,6 +316,8 @@ final class DaemonServer: ObservableObject {
             }
             
             if message.category == "browserData" && message.site != nil {
+                AppState.shared.syncService.prepareSilentBrowserDataPull(to: client.id, site: message.site)
+
                 let requestMessage = WSMessage.pull(site: message.site, category: "browserData")
                 broadcast(requestMessage, excluding: client.id)
             }

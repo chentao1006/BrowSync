@@ -31,6 +31,12 @@ final class SyncService: ObservableObject {
     @Published var bookmarkCounts: [String: Int] = [:]
     
     private var currentManualSyncStats = SyncStats()
+    private struct SilentBrowserDataPull {
+        let requesterClientId: String
+        let site: String?
+        let expiresAt: Date
+    }
+    private var silentBrowserDataPulls: [SilentBrowserDataPull] = []
 
     var daemon: DaemonServer?
     var settingsService: SettingsService?
@@ -414,6 +420,71 @@ final class SyncService: ObservableObject {
         }
         log("Sync complete (Bookmarks: \(currentManualSyncStats.bookmarks), Cookies: \(currentManualSyncStats.cookies), LocalStorage: \(currentManualSyncStats.localStorage), SessionStorage: \(currentManualSyncStats.sessionStorage))")
         return currentManualSyncStats
+    }
+
+    func prepareSilentBrowserDataPull(to requesterClientId: String, site: String?) {
+        pruneExpiredSilentBrowserDataPulls()
+        silentBrowserDataPulls.removeAll { $0.requesterClientId == requesterClientId }
+        silentBrowserDataPulls.append(
+            SilentBrowserDataPull(
+                requesterClientId: requesterClientId,
+                site: normalizedSite(site),
+                expiresAt: Date().addingTimeInterval(12)
+            )
+        )
+    }
+
+    private func pruneExpiredSilentBrowserDataPulls() {
+        let now = Date()
+        silentBrowserDataPulls.removeAll { $0.expiresAt < now }
+    }
+
+    private func silentBrowserDataPullRequesters(for message: WSMessage, from clientId: String) -> [String] {
+        guard let category = message.category,
+              category == "cookies" || category == "localStorage" || category == "sessionStorage" else {
+            return []
+        }
+
+        pruneExpiredSilentBrowserDataPulls()
+        return silentBrowserDataPulls.compactMap { pull in
+            guard pull.requesterClientId != clientId else { return nil }
+            guard silentPull(pull, matches: message) else { return nil }
+            return pull.requesterClientId
+        }
+    }
+
+    private func silentPull(_ pull: SilentBrowserDataPull, matches message: WSMessage) -> Bool {
+        guard let site = pull.site, site != "*" else { return true }
+        if let messageSite = normalizedSite(message.site), messageSite == "*" || host(messageSite, matches: site) {
+            return true
+        }
+
+        switch message.payload {
+        case .cookies(let cookies):
+            return cookies.contains { host($0.domain, matches: site) }
+        case .localStorage(let items), .sessionStorage(let items):
+            return items.contains { item in
+                guard let originHost = URL(string: item.origin)?.host else { return host(item.origin, matches: site) }
+                return host(originHost, matches: site)
+            }
+        default:
+            return true
+        }
+    }
+
+    private func normalizedSite(_ site: String?) -> String? {
+        guard var site = site?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines), !site.isEmpty else { return nil }
+        if let host = URL(string: site)?.host {
+            site = host
+        }
+        if site.hasPrefix(".") { site.removeFirst() }
+        return site
+    }
+
+    private func host(_ host: String, matches site: String) -> Bool {
+        let cleanHost = normalizedSite(host) ?? host.lowercased()
+        let cleanSite = normalizedSite(site) ?? site.lowercased()
+        return cleanHost == cleanSite || cleanHost.hasSuffix("." + cleanSite) || cleanSite.hasSuffix("." + cleanHost)
     }
 
     private func syncCategory(_ category: SyncCategory) async {
@@ -936,6 +1007,10 @@ final class SyncService: ObservableObject {
                 // For tab sharing, we always broadcast to others immediately, without checking auto-sync rules
                 daemon?.broadcast(filteredMessage, excluding: clientId)
             } else {
+                for requesterId in silentBrowserDataPullRequesters(for: filteredMessage, from: clientId) {
+                    logSyncPayload(filteredMessage, direction: "outgoing", clientId: requesterId, note: "silent-browser-data-pull-response")
+                    daemon?.send(filteredMessage, toClientId: requesterId)
+                }
                 log("Automatic sync is disabled. Received data but did not broadcast.")
             }
         }
