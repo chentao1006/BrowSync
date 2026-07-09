@@ -31,6 +31,10 @@
 "New Rule" = "Nueva regla";
 "Edit Rule" = "Editar regla";
 "Cancel" = "Cancelar";
+"Close" = "Cerrar";
+"Folder" = "Carpeta";
+"Bookmark" = "Marcador";
+"Unknown URL" = "URL desconocida";
 "Save" = "Guardar";
 "Name" = "Nombre";
 "e.g. Work Docs" = "ej. Documentos de trabajo";
@@ -355,7 +359,7 @@
 "Select browsers to share their active tabs. Shared tabs will appear in the popup of other extensions." = "Selecciona los navegadores que compartiran sus pestanas activas. Las pestanas compartidas apareceran en la ventana emergente de otras extensiones.";
 "Overview" = "Resumen";
 "Cached Remote Tabs:" = "Pestanas remotas en cache:";
-"Deleted Bookmarks (Trash Bin)" = "Marcadores eliminados (papelera)";
+"Deleted Bookmarks (Trash Bin)" = "Marcadores eliminados recientemente";
 "No deleted bookmarks" = "No hay marcadores eliminados";
 "These bookmarks were deleted recently. You can restore them individually." = "Estos marcadores se eliminaron recientemente. Puedes restaurarlos individualmente.";
 "Clear All" = "Borrar todo";
@@ -458,12 +462,19 @@
 
 "Other Bookmarks" = "Otros marcadores";
 "Mobile Bookmarks" = "Marcadores móviles";
-"Manage Folders" = "Gestionar carpetas";
+"Manage Folders" = "Configurar carpetas";
 "Manage Bookmarks" = "Gestionar marcadores";
-"Manage Sync Folders" = "Gestionar carpetas de sincronización";
+"Manage Sync Folders" = "Configurar carpetas de sincronización";
+"Manage Sync Folders Description" = "Elige la carpeta que debe sincronizar cada navegador. BrowSync mantiene alineados los marcadores dentro de las carpetas seleccionadas y no cambia los marcadores fuera de ellas.";
 "Confirm" = "Confirmar";
+"Show" = "Mostrar";
+"Hide" = "Ocultar";
+"View" = "Ver";
+"Recently Deleted Bookmarks" = "Marcadores eliminados recientemente";
 "Bookmark Sync Failed" = "Error al sincronizar marcadores";
 "The selected folder for %@ no longer exists: %@" = "La carpeta seleccionada para %@ ya no existe: %@";
 "Selected folder not found: %@" = "Carpeta seleccionada no encontrada: %@";
 "Data not retrieved" = "Datos no obtenidos";
 "Please open this browser and ensure the BrowSync extension is active." = "Abre este navegador y asegúrate de que la extensión BrowSync esté activa.";
+"Extension Offline" = "Extensión sin conexión";
+"The BrowSync extension in %@ appears offline. Open %@ now?" = "La extensión de BrowSync en %@ parece estar sin conexión. ¿Abrir %@ ahora?";

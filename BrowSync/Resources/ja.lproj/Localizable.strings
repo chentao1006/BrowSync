@@ -31,6 +31,10 @@
 "New Rule" = "新規ルール";
 "Edit Rule" = "ルールを編集";
 "Cancel" = "キャンセル";
+"Close" = "閉じる";
+"Folder" = "フォルダ";
+"Bookmark" = "ブックマーク";
+"Unknown URL" = "不明なURL";
 "Save" = "保存";
 "Name" = "名前";
 "e.g. Work Docs" = "例：仕事のドキュメント";
@@ -357,7 +361,7 @@
 "Select browsers to share their active tabs. Shared tabs will appear in the popup of other extensions." = "アクティブなタブを共有するブラウザを選択します。共有されたタブは他の拡張機能のポップアップに表示されます。";
 "Overview" = "概要";
 "Cached Remote Tabs:" = "キャッシュされたリモートタブ:";
-"Deleted Bookmarks (Trash Bin)" = "削除済みブックマーク（ゴミ箱）";
+"Deleted Bookmarks (Trash Bin)" = "最近削除したブックマーク";
 "No deleted bookmarks" = "削除済みブックマークはありません";
 "These bookmarks were deleted recently. You can restore them individually." = "これらのブックマークは最近削除されました。個別に復元できます。";
 "Clear All" = "すべて消去";
@@ -460,12 +464,19 @@
 
 "Other Bookmarks" = "その他のブックマーク";
 "Mobile Bookmarks" = "モバイルブックマーク";
-"Manage Folders" = "フォルダを管理";
+"Manage Folders" = "フォルダを設定";
 "Manage Bookmarks" = "ブックマークを管理";
-"Manage Sync Folders" = "同期フォルダを管理";
+"Manage Sync Folders" = "同期フォルダを設定";
+"Manage Sync Folders Description" = "各ブラウザで同期するフォルダを選択します。BrowSync は選択したフォルダ内のブックマークを揃え、それ以外の場所にあるブックマークは変更しません。";
 "Confirm" = "確認";
+"Show" = "表示";
+"Hide" = "非表示";
+"View" = "表示";
+"Recently Deleted Bookmarks" = "最近削除したブックマーク";
 "Bookmark Sync Failed" = "ブックマーク同期に失敗";
 "The selected folder for %@ no longer exists: %@" = "%@ の選択フォルダが存在しません: %@";
 "Selected folder not found: %@" = "選択したフォルダが見つかりません: %@";
 "Data not retrieved" = "データを取得していません";
 "Please open this browser and ensure the BrowSync extension is active." = "このブラウザを開き、BrowSync 拡張機能が有効になっていることを確認してください。";
+"Extension Offline" = "拡張機能がオフライン";
+"The BrowSync extension in %@ appears offline. Open %@ now?" = "%@ の BrowSync 拡張機能はオフラインのようです。今すぐ %@ を開きますか？";

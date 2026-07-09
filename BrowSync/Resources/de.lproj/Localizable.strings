@@ -31,6 +31,10 @@
 "New Rule" = "Neue Regel";
 "Edit Rule" = "Regel bearbeiten";
 "Cancel" = "Abbrechen";
+"Close" = "Schließen";
+"Folder" = "Ordner";
+"Bookmark" = "Lesezeichen";
+"Unknown URL" = "Unbekannte URL";
 "Save" = "Speichern";
 "Name" = "Name";
 "e.g. Work Docs" = "z.B. Arbeitsdokumente";
@@ -355,7 +359,7 @@
 "Select browsers to share their active tabs. Shared tabs will appear in the popup of other extensions." = "Waehlen Sie Browser aus, die ihre aktiven Tabs teilen sollen. Geteilte Tabs erscheinen im Popup anderer Erweiterungen.";
 "Overview" = "Uebersicht";
 "Cached Remote Tabs:" = "Zwischengespeicherte entfernte Tabs:";
-"Deleted Bookmarks (Trash Bin)" = "Geloeschte Lesezeichen (Papierkorb)";
+"Deleted Bookmarks (Trash Bin)" = "Kuerzlich geloeschte Lesezeichen";
 "No deleted bookmarks" = "Keine geloeschten Lesezeichen";
 "These bookmarks were deleted recently. You can restore them individually." = "Diese Lesezeichen wurden kuerzlich geloescht. Sie koennen sie einzeln wiederherstellen.";
 "Clear All" = "Alle leeren";
@@ -458,12 +462,19 @@
 
 "Other Bookmarks" = "Andere Lesezeichen";
 "Mobile Bookmarks" = "Mobile Lesezeichen";
-"Manage Folders" = "Ordner verwalten";
+"Manage Folders" = "Ordner konfigurieren";
 "Manage Bookmarks" = "Lesezeichen verwalten";
-"Manage Sync Folders" = "Synchronisierungsordner verwalten";
+"Manage Sync Folders" = "Synchronisierungsordner konfigurieren";
+"Manage Sync Folders Description" = "Waehlen Sie aus, welchen Ordner jeder Browser synchronisieren soll. BrowSync haelt die Lesezeichen in den ausgewaehlten Ordnern gleich und aendert Lesezeichen ausserhalb davon nicht.";
 "Confirm" = "Bestätigen";
+"Show" = "Anzeigen";
+"Hide" = "Ausblenden";
+"View" = "Ansehen";
+"Recently Deleted Bookmarks" = "Kuerzlich geloeschte Lesezeichen";
 "Bookmark Sync Failed" = "Lesezeichensynchronisierung fehlgeschlagen";
 "The selected folder for %@ no longer exists: %@" = "Der ausgewählte Ordner für %@ existiert nicht mehr: %@";
 "Selected folder not found: %@" = "Ausgewählter Ordner nicht gefunden: %@";
 "Data not retrieved" = "Daten nicht abgerufen";
 "Please open this browser and ensure the BrowSync extension is active." = "Bitte öffnen Sie diesen Browser und stellen Sie sicher, dass die BrowSync-Erweiterung aktiv ist.";
+"Extension Offline" = "Erweiterung offline";
+"The BrowSync extension in %@ appears offline. Open %@ now?" = "Die BrowSync-Erweiterung in %@ scheint offline zu sein. %@ jetzt öffnen?";

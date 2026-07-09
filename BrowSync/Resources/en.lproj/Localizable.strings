@@ -38,6 +38,10 @@
 "New Rule" = "New Rule";
 "Edit Rule" = "Edit Rule";
 "Cancel" = "Cancel";
+"Close" = "Close";
+"Folder" = "Folder";
+"Bookmark" = "Bookmark";
+"Unknown URL" = "Unknown URL";
 "Save" = "Save";
 "Name" = "Name";
 "e.g. Work Docs" = "e.g. Work Docs";
@@ -358,7 +362,7 @@
 "BrowSync Complete" = "BrowSync Complete";
 "Synced %d bookmarks and %d state items." = "Synced %d bookmarks and %d state items.";
 
-"Deleted Bookmarks (Trash Bin)" = "Deleted Bookmarks (Trash Bin)";
+"Deleted Bookmarks (Trash Bin)" = "Recently Deleted Bookmarks";
 "No deleted bookmarks" = "No deleted bookmarks";
 "These bookmarks were deleted recently. You can restore them individually." = "These bookmarks were deleted recently. You can restore them individually.";
 "Clear All" = "Clear All";
@@ -502,10 +506,17 @@
 "Mobile Bookmarks" = "Mobile Bookmarks";
 "Data not retrieved" = "Data not retrieved";
 "Please open this browser and ensure the BrowSync extension is active." = "Please open this browser and ensure the BrowSync extension is active.";
-"Manage Folders" = "Manage Folders";
+"Extension Offline" = "Extension Offline";
+"The BrowSync extension in %@ appears offline. Open %@ now?" = "The BrowSync extension in %@ appears offline. Open %@ now?";
+"Manage Folders" = "Configure Folders";
 "Manage Bookmarks" = "Manage Bookmarks";
-"Manage Sync Folders" = "Manage Sync Folders";
+"Manage Sync Folders" = "Configure Sync Folders";
+"Manage Sync Folders Description" = "Choose the folder each browser should sync. BrowSync keeps bookmarks inside the selected folders aligned and leaves bookmarks outside them unchanged.";
 "Confirm" = "Confirm";
+"Show" = "Show";
+"Hide" = "Hide";
+"View" = "View";
+"Recently Deleted Bookmarks" = "Recently Deleted Bookmarks";
 "Bookmark Sync Failed" = "Bookmark Sync Failed";
 "The selected folder for %@ no longer exists: %@" = "The selected folder for %@ no longer exists: %@";
 "Selected folder not found: %@" = "Selected folder not found: %@";

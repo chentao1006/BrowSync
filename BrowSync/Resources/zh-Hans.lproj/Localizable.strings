@@ -37,6 +37,10 @@
 "New Rule" = "新建规则";
 "Edit Rule" = "编辑规则";
 "Cancel" = "取消";
+"Close" = "关闭";
+"Folder" = "文件夹";
+"Bookmark" = "书签";
+"Unknown URL" = "未知网址";
 "Save" = "保存";
 "Name" = "名称";
 "e.g. Work Docs" = "例如：工作文档";
@@ -385,7 +389,7 @@
 "BrowSync Complete" = "BrowSync 同步完成";
 "Synced %d bookmarks and %d state items." = "已同步 %d 条书签和 %d 项状态数据。";
 
-"Deleted Bookmarks (Trash Bin)" = "已删除书签 (回收站)";
+"Deleted Bookmarks (Trash Bin)" = "最近删除的书签";
 "No deleted bookmarks" = "回收站为空";
 "These bookmarks were deleted recently. You can restore them individually." = "以下是最近被删除的书签。你可以单独恢复它们。";
 "Clear All" = "清空回收站";
@@ -530,10 +534,17 @@
 "Mobile Bookmarks" = "移动书签";
 "Data not retrieved" = "未获取数据";
 "Please open this browser and ensure the BrowSync extension is active." = "请打开该浏览器，并确保 BrowSync 扩展已安装并启用。";
-"Manage Folders" = "管理文件夹";
+"Extension Offline" = "扩展未在线";
+"The BrowSync extension in %@ appears offline. Open %@ now?" = "%@ 中的 BrowSync 扩展似乎未在线。现在打开 %@ 吗？";
+"Manage Folders" = "配置文件夹";
 "Manage Bookmarks" = "管理书签";
-"Manage Sync Folders" = "管理同步文件夹";
+"Manage Sync Folders" = "配置同步文件夹";
+"Manage Sync Folders Description" = "为每个浏览器选择要同步的文件夹。BrowSync 会保持所选文件夹内的书签一致，不会更改其他位置的书签。";
 "Confirm" = "确认";
+"Show" = "显示";
+"Hide" = "隐藏";
+"View" = "查看";
+"Recently Deleted Bookmarks" = "最近删除的书签";
 "Bookmark Sync Failed" = "书签同步失败";
 "The selected folder for %@ no longer exists: %@" = "%@ 所选文件夹已不存在：%@";
 "Selected folder not found: %@" = "所选文件夹不存在：%@";

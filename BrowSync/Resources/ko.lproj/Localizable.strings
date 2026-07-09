@@ -31,6 +31,10 @@
 "New Rule" = "새 규칙";
 "Edit Rule" = "규칙 편집";
 "Cancel" = "취소";
+"Close" = "닫기";
+"Folder" = "폴더";
+"Bookmark" = "북마크";
+"Unknown URL" = "알 수 없는 URL";
 "Save" = "저장";
 "Name" = "이름";
 "e.g. Work Docs" = "예: 업무 문서";
@@ -359,7 +363,7 @@
 "Select browsers to share their active tabs. Shared tabs will appear in the popup of other extensions." = "활성 탭을 공유할 브라우저를 선택합니다. 공유된 탭은 다른 확장 프로그램의 팝업에 표시됩니다.";
 "Overview" = "개요";
 "Cached Remote Tabs:" = "캐시된 원격 탭:";
-"Deleted Bookmarks (Trash Bin)" = "삭제된 북마크(휴지통)";
+"Deleted Bookmarks (Trash Bin)" = "최근 삭제된 북마크";
 "No deleted bookmarks" = "삭제된 북마크가 없습니다";
 "These bookmarks were deleted recently. You can restore them individually." = "이 북마크는 최근에 삭제되었습니다. 각각 복원할 수 있습니다.";
 "Clear All" = "모두 지우기";
@@ -460,12 +464,19 @@
 
 "Other Bookmarks" = "기타 북마크";
 "Mobile Bookmarks" = "모바일 북마크";
-"Manage Folders" = "폴더 관리";
+"Manage Folders" = "폴더 설정";
 "Manage Bookmarks" = "북마크 관리";
-"Manage Sync Folders" = "동기화 폴더 관리";
+"Manage Sync Folders" = "동기화 폴더 설정";
+"Manage Sync Folders Description" = "각 브라우저에서 동기화할 폴더를 선택합니다. BrowSync는 선택한 폴더 안의 북마크를 맞춰 주며, 그 밖의 위치에 있는 북마크는 변경하지 않습니다.";
 "Confirm" = "확인";
+"Show" = "표시";
+"Hide" = "숨기기";
+"View" = "보기";
+"Recently Deleted Bookmarks" = "최근 삭제된 북마크";
 "Bookmark Sync Failed" = "북마크 동기화 실패";
 "The selected folder for %@ no longer exists: %@" = "%@에서 선택한 폴더가 더 이상 없습니다: %@";
 "Selected folder not found: %@" = "선택한 폴더를 찾을 수 없습니다: %@";
 "Data not retrieved" = "데이터를 가져오지 못함";
 "Please open this browser and ensure the BrowSync extension is active." = "이 브라우저를 열고 BrowSync 확장 프로그램이 활성화되어 있는지 확인하세요.";
+"Extension Offline" = "확장 프로그램 오프라인";
+"The BrowSync extension in %@ appears offline. Open %@ now?" = "%@의 BrowSync 확장 프로그램이 오프라인 상태로 보입니다. 지금 %@을(를) 열까요?";

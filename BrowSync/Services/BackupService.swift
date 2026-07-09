@@ -19,9 +19,12 @@ struct DeletedBookmark: Identifiable, Codable, Equatable {
 final class BackupService: ObservableObject {
     @Published var deletedBookmarks: [DeletedBookmark] = []
     @Published var lastSnapshotUpdate: Date = Date()
+    @Published var isLoadingDeletedBookmarks: Bool = false
     
     private let logger = Logger(subsystem: "com.ct106.browsync", category: "BackupService")
     private let backupsDir: URL
+    private var hasLoadedDeletedBookmarks = false
+    private var loadDeletedItemsTask: Task<Void, Never>?
     
     init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -33,7 +36,7 @@ final class BackupService: ObservableObject {
             logger.error("Failed to create backups directory: \(error)")
         }
         
-        loadDeletedItems()
+        loadDeletedItemsIfNeeded()
     }
     
     // MARK: - Snapshot Management (for diffing)
@@ -53,8 +56,17 @@ final class BackupService: ObservableObject {
     }
     
     func getSnapshot(sourceBrowser: String) -> [Bookmark]? {
-        let prefix = "snapshot_\(sourceBrowser.replacingOccurrences(of: "/", with: "_"))"
+        let filename = sourceBrowser.replacingOccurrences(of: "/", with: "_")
+        let directFileURL = backupsDir.appendingPathComponent("snapshot_\(filename).json")
         do {
+            // Fast path: snapshots are written to a stable filename.
+            if FileManager.default.fileExists(atPath: directFileURL.path) {
+                let data = try Data(contentsOf: directFileURL)
+                return try JSONDecoder().decode([Bookmark].self, from: data)
+            }
+
+            // Backward-compatibility fallback for older builds that may have multiple files.
+            let prefix = "snapshot_\(filename)"
             let files = try FileManager.default.contentsOfDirectory(at: backupsDir, includingPropertiesForKeys: [.creationDateKey])
             let matchingFiles = files.filter { $0.lastPathComponent.hasPrefix(prefix) && $0.pathExtension == "json" }
             
@@ -75,8 +87,29 @@ final class BackupService: ObservableObject {
     }
     
     // MARK: - Trash Bin Management
+
+    func loadDeletedItemsIfNeeded(force: Bool = false) {
+        if !force, hasLoadedDeletedBookmarks { return }
+        if loadDeletedItemsTask != nil { return }
+
+        isLoadingDeletedBookmarks = true
+        let fileURL = backupsDir.appendingPathComponent("trash.json")
+        loadDeletedItemsTask = Task {
+            let loaded = await Task.detached(priority: .utility) {
+                Self.readDeletedItemsFromDisk(fileURL: fileURL)
+            }.value
+
+            await MainActor.run {
+                self.deletedBookmarks = loaded
+                self.hasLoadedDeletedBookmarks = true
+                self.isLoadingDeletedBookmarks = false
+                self.loadDeletedItemsTask = nil
+            }
+        }
+    }
     
     func addDeletedBookmarks(_ newBookmarks: [DeletedBookmark]) {
+        ensureDeletedItemsLoadedForMutation()
         // Prevent duplicates based on ID and Title
         let existingSignatures = Set(deletedBookmarks.map { "\($0.id)-\($0.title)" })
         let uniqueNew = newBookmarks.filter { !existingSignatures.contains("\($0.id)-\($0.title)") }
@@ -92,23 +125,34 @@ final class BackupService: ObservableObject {
     }
     
     func removeDeletedBookmark(id: String) {
+        ensureDeletedItemsLoadedForMutation()
         deletedBookmarks.removeAll { $0.id == id }
         saveDeletedItems()
     }
     
     func clearAllDeletedBookmarks() {
+        ensureDeletedItemsLoadedForMutation()
         deletedBookmarks.removeAll()
         saveDeletedItems()
     }
-    
-    private func loadDeletedItems() {
+
+    private func ensureDeletedItemsLoadedForMutation() {
+        guard !hasLoadedDeletedBookmarks else { return }
         let fileURL = backupsDir.appendingPathComponent("trash.json")
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        deletedBookmarks = Self.readDeletedItemsFromDisk(fileURL: fileURL)
+        hasLoadedDeletedBookmarks = true
+        loadDeletedItemsTask?.cancel()
+        loadDeletedItemsTask = nil
+        isLoadingDeletedBookmarks = false
+    }
+
+    nonisolated private static func readDeletedItemsFromDisk(fileURL: URL) -> [DeletedBookmark] {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
         do {
             let data = try Data(contentsOf: fileURL)
-            deletedBookmarks = try JSONDecoder().decode([DeletedBookmark].self, from: data)
+            return try JSONDecoder().decode([DeletedBookmark].self, from: data)
         } catch {
-            logger.error("Failed to load trash.json: \(error)")
+            return []
         }
     }
     

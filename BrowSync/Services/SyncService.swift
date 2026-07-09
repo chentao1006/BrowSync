@@ -94,6 +94,9 @@ final class SyncService: ObservableObject {
 
     private func bookmarkTreeSnapshot(for browser: Browser) -> [Bookmark] {
         if browser == .safari {
+            if let cachedSafari = backupService?.getSnapshot(sourceBrowser: "safari"), !cachedSafari.isEmpty {
+                return cachedSafari
+            }
             return safariBookmarks.readBookmarks().map {
                 Bookmark(id: $0.id, title: $0.title, url: $0.url.flatMap { $0 }, parentId: $0.parentId, isFolder: $0.isFolder, inBookmarksBar: $0.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
             }
@@ -648,11 +651,12 @@ final class SyncService: ObservableObject {
             filteredMessage.isFullMirror = true
         }
         if category == "bookmark_backup", case .bookmarks(let bms) = filteredMessage.payload {
-            let sanitizedBookmarks = sanitizeIncomingBookmarksForSafari(bms, from: clientId)
-            saveSnapshotAliases(bookmarks: sanitizedBookmarks, clientId: clientId)
+            // Backup snapshots are used by folder pickers and diagnostics.
+            // Keep them as raw browser data; sync-only sanitization can hide folders.
+            saveSnapshotAliases(bookmarks: bms, clientId: clientId)
             let browserId = clientId.components(separatedBy: "-").first ?? clientId
-            bookmarkCounts[browserId] = sanitizedBookmarks.count
-            log("Saved bookmark backup from [\(clientId)] with \(sanitizedBookmarks.count) items; backup is not broadcast as sync data.")
+            bookmarkCounts[browserId] = bms.count
+            log("Saved bookmark backup from [\(clientId)] with \(bms.count) items; backup is not broadcast as sync data.")
             return
         }
         if category == "bookmarks", case .bookmarks(let bms) = filteredMessage.payload {

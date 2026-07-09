@@ -442,8 +442,10 @@ extension AppState: DaemonServerDelegate {
             
             // ── Offline Deletion Sync ────────────────────────────────────────────
             // Compare Safari's current state to this client's last known snapshot.
-            if sourceBrowser == .safari && !currentSafariBms.isEmpty,
-               let clientSnapshot = self.backupService.getSnapshot(sourceBrowser: clientId) {
+                let clientBrowserRawId = clientId.components(separatedBy: "-").first ?? clientId
+                if sourceBrowser == .safari && !currentSafariBms.isEmpty,
+                    let clientSnapshot = self.backupService.getSnapshot(sourceBrowser: clientId)
+                    ?? self.backupService.getSnapshot(sourceBrowser: clientBrowserRawId) {
                 
                 var currentUrls = Set(currentSafariBms.compactMap { $0.url }.map { $0.lowercased() })
                 var currentFolderTitles = Set(currentSafariBms.filter { $0.isFolder }.map { $0.title.lowercased() })
@@ -460,7 +462,7 @@ extension AppState: DaemonServerDelegate {
                     currentFolderTitles = titles
                 }
 
-                if let clientBrowser = Browser(rawValue: clientId.components(separatedBy: "-").first ?? clientId),
+                     if let clientBrowser = Browser(rawValue: clientBrowserRawId),
                    let targetSyncFolder = self.settingsService.syncSettings.bookmarkFolder(for: clientBrowser) {
                     if let targetSnapshot = BookmarkTreeMerger.extractExistingSubtreeAsRoot(sourceTree: clientSnapshot, folderPath: targetSyncFolder) {
                         snapshotToCheck = targetSnapshot
@@ -488,7 +490,7 @@ extension AppState: DaemonServerDelegate {
                             messageId: UUID().uuidString,
                             timestamp: Date().timeIntervalSince1970
                         )
-                        if let browser = Browser(rawValue: clientId.components(separatedBy: "-").first ?? clientId) {
+                        if let browser = Browser(rawValue: clientBrowserRawId) {
                             delMsg.targetBookmarkFolder = self.settingsService.syncSettings.bookmarkFolder(for: browser)
                         }
                         server.send(delMsg, toClientId: clientId)

@@ -39,16 +39,14 @@ struct BookmarkSyncTabView: View {
     @EnvironmentObject var langBundle: LanguageBundle
     @State private var isSyncing = false
     @State private var showSuccess = false
-    @State private var itemToDelete: DeletedBookmark?
-    @State private var showingDeleteConfirmation = false
-    @State private var showingClearAllConfirmation = false
-    @State private var showingRestoreAllConfirmation = false
     @State private var showUpgradeAlert = false
     @State private var showSandboxAlert = false
     @State private var showAutoSyncUpgradeAlert = false
+    @State private var showRecentlyDeletedWindow = false
     
     @State private var showFolderManager = false
     @State private var handledFolderManagerOpenRequest = 0
+    @State private var hasMissingManagedFolder = false
     
     @StateObject private var sandboxManager = SandboxAccessManager.shared
     
@@ -65,14 +63,6 @@ struct BookmarkSyncTabView: View {
     
     private var availableBrowsers: [BrowserInfo] {
         return appState.browserInfos.filter { $0.isInstalled }
-    }
-
-    private var hasMissingManagedFolder: Bool {
-        let participants = syncSettings.bookmarkParticipatingBrowsers.wrappedValue
-        return participants.contains { browser in
-            if appState.syncService.missingBookmarkFolders[browser.rawValue] != nil { return true }
-            return appState.syncService.bookmarkFolderMissing(browser, folder: syncSettings.wrappedValue.bookmarkFolder(for: browser))
-        }
     }
 
     var body: some View {
@@ -123,345 +113,14 @@ struct BookmarkSyncTabView: View {
             .padding()
 
             Form {
-                Section {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label(String(localized: "Bookmark Backup Warning Header", bundle: langBundle.bundle), systemImage: "exclamationmark.triangle")
-                            .font(.headline)
-                            .foregroundStyle(.orange)
-                        
-                        Group {
-                            Text(String(localized: "Bookmark Backup Warning Detail", bundle: langBundle.bundle))
-                        }
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 4)
-                }
-                
-                Section(String(localized: "Participating Browsers", bundle: langBundle.bundle)) {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
-                            ForEach(availableBrowsers) { info in
-                                Toggle(isOn: Binding(
-                                    get: { syncSettings.bookmarkParticipatingBrowsers.wrappedValue.contains(info.browser) },
-                                    set: { isParticipating in
-                                        if isParticipating {
-                                            guard appState.purchaseService.isProUnlocked ||
-                                                    syncSettings.wrappedValue.bookmarkParticipatingBrowsers.count < ProLimits.freeSyncBrowserCount else {
-                                                showUpgradeAlert = true
-                                                return
-                                            }
-                                            syncSettings.wrappedValue.bookmarkParticipatingBrowsers.insert(info.browser)
-                                        } else {
-                                            syncSettings.wrappedValue.bookmarkParticipatingBrowsers.remove(info.browser)
-                                        }
-                                        appState.settingsService.save()
-                                        appState.broadcastSettings()
-                                    }
-                                )) {
-                                    HStack(spacing: 6) {
-                                        if let url = info.appURL {
-                                            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
-                                                .resizable()
-                                                .frame(width: 16, height: 16)
-                                        } else {
-                                            Image(systemName: info.id.sfSymbol)
-                                                .frame(width: 16, height: 16)
-                                        }
-                                        Text(info.displayName)
-                                        if !appState.purchaseService.isProUnlocked &&
-                                            !syncSettings.bookmarkParticipatingBrowsers.wrappedValue.contains(info.browser) &&
-                                            syncSettings.bookmarkParticipatingBrowsers.wrappedValue.count >= ProLimits.freeSyncBrowserCount {
-                                            ProBadge()
-                                        }
-                                        if info.browser == .safari {
-#if APP_STORE
-                                            if !sandboxManager.hasSafariAccess {
-                                                Button(String(localized: "Grant Access", bundle: langBundle.bundle)) {
-                                                    sandboxManager.requestSafariAccess { granted in
-                                                        if granted {
-                                                            // Auto-enable Safari if granted successfully
-                                                            syncSettings.wrappedValue.bookmarkParticipatingBrowsers.insert(.safari)
-                                                            appState.settingsService.save()
-                                                            appState.broadcastSettings()
-                                                        }
-                                                    }
-                                                }
-                                                .buttonStyle(.borderedProminent)
-                                                .controlSize(.small)
-                                            }
-#endif
-                                        }
-                                    }
-                                }
-                                .toggleStyle(.checkbox)
-                            }
-                        }
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 4)
-                    }
-#if APP_STORE
-                    if !sandboxManager.hasSafariAccess {
-                        Text(String(localized: "Safari requires folder access due to Sandbox restrictions.", bundle: langBundle.bundle))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 4)
-                            .padding(.top, 2)
-                    }
-#endif
-                }
-
-                Section(String(localized: "Sync Strategy", bundle: langBundle.bundle)) {
-                    Picker(String(localized: "Bookmark Strategy", bundle: langBundle.bundle), selection: syncSettings.bookmarkSyncStrategy) {
-                        ForEach(BookmarkSyncStrategy.allCases) { strategy in
-                            Text(String(localized: String.LocalizationValue(strategy.displayName), bundle: langBundle.bundle)).tag(strategy)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    
-                    // if syncSettings.bookmarkSyncStrategy.wrappedValue == .twoWayMerge {
-                    //     Text(String(localized: "Merge Warning Note", bundle: langBundle.bundle))
-                    //         .font(.caption)
-                    //         .foregroundStyle(.secondary)
-                    // }
-                
-                    if syncSettings.bookmarkSyncStrategy.wrappedValue == .oneWay {
-                        Picker(String(localized: "Bookmark Source Browser", bundle: langBundle.bundle), selection: syncSettings.bookmarkSourceBrowser) {
-                            ForEach(availableBrowsers) { info in
-                                Label {
-                                    Text(info.displayName)
-                                } icon: {
-                                    AppIconImage(appURL: info.appURL)
-                                }
-                                .tag(info.browser)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        
-#if !APP_STORE
-                        if syncSettings.bookmarkSourceBrowser.wrappedValue == .safari && !appState.hasFullDiskAccess {
-                            VStack(alignment: .leading, spacing: 10) {
-                                HStack {
-                                    Image(systemName: "exclamationmark.shield.fill")
-                                        .foregroundStyle(.red)
-                                    Text(String(localized: "Cannot read Safari bookmarks", bundle: langBundle.bundle))
-                                        .font(.headline)
-                                        .foregroundStyle(.red)
-                                }
-                                
-                                Text(String(localized: "Safari privacy warning", bundle: langBundle.bundle))
-                                    .font(.caption)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                
-                                HStack {
-                                    Button(String(localized: "Grant in System Settings", bundle: langBundle.bundle)) {
-                                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
-                                            NSWorkspace.shared.open(url)
-                                        }
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.small)
-                                    
-                                    Button(String(localized: "Already granted, refresh", bundle: langBundle.bundle)) {
-                                        appState.checkFullDiskAccess()
-                                    }
-                                    .buttonStyle(.link)
-                                    .controlSize(.small)
-                                }
-                                
-                                Text(String(localized: "Note restart", bundle: langBundle.bundle))
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding()
-                            .background(Color.red.opacity(0.1))
-                            .cornerRadius(8)
-                            .padding(.vertical, 4)
-                        }
-#endif
-                    }
-                    
-                    HStack {
-                        Text(String(localized: "Sync Folder", bundle: langBundle.bundle))
-                        Spacer()
-                        Button {
-                            showFolderManager = true
-                        } label: {
-                            HStack(spacing: 6) {
-                                if hasMissingManagedFolder {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundStyle(.orange)
-                                }
-                                Text(String(localized: "Manage Folders", bundle: langBundle.bundle))
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                    .sheet(isPresented: $showFolderManager) {
-                        BookmarkFolderManagementWindow(langBundle: langBundle.bundle)
-                            .environmentObject(appState)
-                    }
-                    .onChange(of: syncSettings.bookmarkSyncStrategy.wrappedValue) { _ in
-                        appState.settingsService.save()
-                    }
-                    .onChange(of: syncSettings.bookmarkSourceBrowser.wrappedValue) { _ in
-                        appState.settingsService.save()
-                    }
-                    Toggle(isOn: Binding(
-                        get: { appState.purchaseService.isProUnlocked && syncSettings.bookmarkAutoSync.wrappedValue },
-                        set: { enabled in
-                            guard appState.purchaseService.isProUnlocked else {
-                                showAutoSyncUpgradeAlert = true
-                                syncSettings.bookmarkAutoSync.wrappedValue = false
-                                return
-                            }
-                            syncSettings.bookmarkAutoSync.wrappedValue = enabled
-                        }
-                    )) {
-                        HStack(spacing: 6) {
-                            Text(String(localized: "Real-time Auto Sync", bundle: langBundle.bundle))
-                            if !appState.purchaseService.isProUnlocked {
-                                ProBadge()
-                            }
-                        }
-                    }
-                }
-#if !APP_STORE
-                if (syncSettings.bookmarkSyncStrategy.wrappedValue == .twoWayMerge || 
-                   (syncSettings.bookmarkSyncStrategy.wrappedValue == .oneWay && syncSettings.bookmarkSourceBrowser.wrappedValue == .safari)) 
-                   && !appState.hasFullDiskAccess {
-                    Section {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Image(systemName: "exclamationmark.shield.fill")
-                                    .foregroundStyle(.red)
-                                Text(String(localized: "Cannot read Safari bookmarks", bundle: langBundle.bundle))
-                                    .font(.headline)
-                                    .foregroundStyle(.red)
-                            }
-                            
-                            Text(String(localized: "Safari privacy warning 2", bundle: langBundle.bundle))
-                                .font(.caption)
-                                .fixedSize(horizontal: false, vertical: true)
-                            
-                            HStack {
-                                Button(String(localized: "Grant in System Settings", bundle: langBundle.bundle)) {
-                                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
-                                        NSWorkspace.shared.open(url)
-                                    }
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                                
-                                Button(String(localized: "Already granted, refresh", bundle: langBundle.bundle)) {
-                                    appState.checkFullDiskAccess()
-                                }
-                                .buttonStyle(.link)
-                                .controlSize(.small)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-#endif
-                
-                Section(String(localized: "Deleted Bookmarks (Trash Bin)", bundle: langBundle.bundle)) {
-                    if backupService.deletedBookmarks.isEmpty {
-                        Text(String(localized: "No deleted bookmarks", bundle: langBundle.bundle))
-                            .foregroundStyle(.secondary)
-                    } else {
-                        HStack {
-                            Text(String(localized: "These bookmarks were deleted recently. You can restore them individually.", bundle: langBundle.bundle))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Button(String(localized: "Restore All", bundle: langBundle.bundle)) {
-                                showingRestoreAllConfirmation = true
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundColor(.accentColor)
-                            .font(.caption)
-                            
-                            Button(String(localized: "Clear All", bundle: langBundle.bundle)) {
-                                showingClearAllConfirmation = true
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundColor(.red)
-                            .font(.caption)
-                        }
-                        
-                        ForEach(backupService.deletedBookmarks) { item in
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text(item.title)
-                                        .font(.headline)
-                                    HStack(spacing: 4) {
-                                        Text(item.isFolder ? "Folder" : (item.url ?? "Unknown URL"))
-                                        Text("•")
-                                        Text(item.deletedAt.formatted(date: .numeric, time: .shortened))
-                                    }
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                }
-                                
-                                Spacer()
-                                
-                                Button(String(localized: "Restore", bundle: langBundle.bundle)) {
-                                    restoreBookmark(item)
-                                }
-                                .buttonStyle(.bordered)
-                                .tint(.orange)
-                                
-                                Button(action: {
-                                    itemToDelete = item
-                                    showingDeleteConfirmation = true
-                                }) {
-                                    Image(systemName: "trash")
-                                }
-                                .buttonStyle(.plain)
-                                .foregroundColor(.red)
-                                .padding(.leading, 8)
-                            }
-                        }
-                    }
-                }
+                bookmarkBackupWarningSection
+                participatingBrowsersSection
+                syncStrategySection
+                safariFullDiskAccessSection
+                recentlyDeletedSection
             }
             .formStyle(.grouped)
             .disabled(!syncSettings.enabledCategories.wrappedValue.contains(.bookmarks))
-            .alert(
-                String(localized: "Confirm deletion", bundle: langBundle.bundle),
-                isPresented: $showingDeleteConfirmation,
-                presenting: itemToDelete
-            ) { item in
-                Button(String(localized: "Delete Permanently", bundle: langBundle.bundle), role: .destructive) {
-                    backupService.removeDeletedBookmark(id: item.id)
-                }
-                Button(String(localized: "Cancel", bundle: langBundle.bundle), role: .cancel) {}
-            } message: { item in
-                Text(String(localized: "This deleted bookmark will be permanently removed from the trash bin.", bundle: langBundle.bundle))
-            }
-            .alert(
-                String(localized: "Confirm Clear All", bundle: langBundle.bundle),
-                isPresented: $showingClearAllConfirmation
-            ) {
-                Button(String(localized: "Clear All", bundle: langBundle.bundle), role: .destructive) {
-                    backupService.clearAllDeletedBookmarks()
-                }
-                Button(String(localized: "Cancel", bundle: langBundle.bundle), role: .cancel) {}
-            } message: {
-                Text(String(localized: "Are you sure you want to permanently delete all bookmarks in the trash bin?", bundle: langBundle.bundle))
-            }
-            .alert(
-                String(localized: "Confirm Restore All", bundle: langBundle.bundle),
-                isPresented: $showingRestoreAllConfirmation
-            ) {
-                Button(String(localized: "Restore All", bundle: langBundle.bundle)) {
-                    restoreAllBookmarks()
-                }
-                Button(String(localized: "Cancel", bundle: langBundle.bundle), role: .cancel) {}
-            } message: {
-                Text(String(localized: "Are you sure you want to restore all bookmarks from the trash bin?", bundle: langBundle.bundle))
-            }
             .alert(String(localized: "Professional Required", bundle: langBundle.bundle), isPresented: $showUpgradeAlert) {
                 Button(String(localized: "OK", bundle: langBundle.bundle), role: .cancel) {}
             } message: {
@@ -472,12 +131,256 @@ struct BookmarkSyncTabView: View {
             } message: {
                 Text(String(localized: "Real-time auto sync is a Professional feature. Unlock Professional to enable it.", bundle: langBundle.bundle))
             }
+            .sheet(isPresented: $showRecentlyDeletedWindow) {
+                RecentlyDeletedBookmarksWindow(langBundle: langBundle.bundle)
+                    .environmentObject(appState)
+                    .environmentObject(backupService)
+            }
         }
         .onAppear {
+            refreshMissingManagedFolderState()
             handleFolderManagerOpenRequest()
+        }
+        .onChange(of: syncSettings.wrappedValue.bookmarkParticipatingBrowsers) { _ in
+            refreshMissingManagedFolderState()
+        }
+        .onChange(of: syncSettings.wrappedValue.bookmarkSyncFolders) { _ in
+            refreshMissingManagedFolderState()
+        }
+        .onChange(of: appState.syncService.missingBookmarkFolders) { _ in
+            refreshMissingManagedFolderState()
+        }
+        .onReceive(appState.backupService.$lastSnapshotUpdate) { _ in
+            refreshMissingManagedFolderState()
         }
         .onChange(of: appState.bookmarkFolderManagerOpenRequest) { _ in
             handleFolderManagerOpenRequest()
+        }
+    }
+
+    private var bookmarkBackupWarningSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(String(localized: "Bookmark Backup Warning Header", bundle: langBundle.bundle), systemImage: "exclamationmark.triangle")
+                    .font(.headline)
+                    .foregroundStyle(.orange)
+
+                Text(String(localized: "Bookmark Backup Warning Detail", bundle: langBundle.bundle))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    private var participatingBrowsersSection: some View {
+        Section(String(localized: "Participating Browsers", bundle: langBundle.bundle)) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(availableBrowsers) { info in
+                        Toggle(isOn: participatingBrowserBinding(for: info.browser)) {
+                            browserToggleLabel(for: info)
+                        }
+                        .toggleStyle(.checkbox)
+                    }
+                }
+                .padding(.vertical, 8)
+                .padding(.horizontal, 4)
+            }
+#if APP_STORE
+            if !sandboxManager.hasSafariAccess {
+                Text(String(localized: "Safari requires folder access due to Sandbox restrictions.", bundle: langBundle.bundle))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 4)
+                    .padding(.top, 2)
+            }
+#endif
+        }
+    }
+
+    private var syncStrategySection: some View {
+        Section(String(localized: "Sync Strategy", bundle: langBundle.bundle)) {
+            bookmarkStrategyPicker
+            oneWaySourcePicker
+            syncFolderRow
+            autoSyncToggle
+        }
+    }
+
+    private var bookmarkStrategyPicker: some View {
+        Picker(String(localized: "Bookmark Strategy", bundle: langBundle.bundle), selection: syncSettings.bookmarkSyncStrategy) {
+            ForEach(BookmarkSyncStrategy.allCases) { strategy in
+                Text(String(localized: String.LocalizationValue(strategy.displayName), bundle: langBundle.bundle))
+                    .tag(strategy)
+            }
+        }
+        .pickerStyle(.menu)
+    }
+
+    @ViewBuilder
+    private var oneWaySourcePicker: some View {
+        if syncSettings.bookmarkSyncStrategy.wrappedValue == .oneWay {
+            Picker(String(localized: "Bookmark Source Browser", bundle: langBundle.bundle), selection: syncSettings.bookmarkSourceBrowser) {
+                ForEach(availableBrowsers) { info in
+                    HStack(spacing: 6) {
+                        AppIconImage(appURL: info.appURL)
+                        Text(info.displayName)
+                    }
+                    .tag(info.browser)
+                }
+            }
+            .pickerStyle(.menu)
+
+#if !APP_STORE
+            if syncSettings.bookmarkSourceBrowser.wrappedValue == .safari && !appState.hasFullDiskAccess {
+                safariPrivacyWarning(detailKey: "Safari privacy warning", includeRestartNote: true)
+                    .padding()
+                    .background(Color.red.opacity(0.1))
+                    .cornerRadius(8)
+                    .padding(.vertical, 4)
+            }
+#endif
+        }
+    }
+
+    private var syncFolderRow: some View {
+        HStack {
+            Text(String(localized: "Sync Folder", bundle: langBundle.bundle))
+            Spacer()
+            Button {
+                showFolderManager = true
+            } label: {
+                HStack(spacing: 6) {
+                    if hasMissingManagedFolder {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    }
+                    Text(String(localized: "Manage Folders", bundle: langBundle.bundle))
+                }
+            }
+            .buttonStyle(.bordered)
+        }
+        .sheet(isPresented: $showFolderManager) {
+            BookmarkFolderManagementWindow(langBundle: langBundle.bundle)
+                .environmentObject(appState)
+        }
+        .onChange(of: syncSettings.bookmarkSyncStrategy.wrappedValue) { _ in
+            appState.settingsService.save()
+        }
+        .onChange(of: syncSettings.bookmarkSourceBrowser.wrappedValue) { _ in
+            appState.settingsService.save()
+        }
+    }
+
+    private var autoSyncToggle: some View {
+        Toggle(isOn: Binding(
+            get: { appState.purchaseService.isProUnlocked && syncSettings.bookmarkAutoSync.wrappedValue },
+            set: { enabled in
+                guard appState.purchaseService.isProUnlocked else {
+                    showAutoSyncUpgradeAlert = true
+                    syncSettings.bookmarkAutoSync.wrappedValue = false
+                    return
+                }
+                syncSettings.bookmarkAutoSync.wrappedValue = enabled
+            }
+        )) {
+            HStack(spacing: 6) {
+                Text(String(localized: "Real-time Auto Sync", bundle: langBundle.bundle))
+                if !appState.purchaseService.isProUnlocked {
+                    ProBadge()
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var safariFullDiskAccessSection: some View {
+#if !APP_STORE
+        let needsAccess = !appState.hasFullDiskAccess &&
+            (syncSettings.bookmarkSyncStrategy.wrappedValue == .twoWayMerge ||
+             (syncSettings.bookmarkSyncStrategy.wrappedValue == .oneWay && syncSettings.bookmarkSourceBrowser.wrappedValue == .safari))
+        if needsAccess {
+            Section {
+                safariPrivacyWarning(detailKey: "Safari privacy warning 2", includeRestartNote: false)
+                    .padding(.vertical, 4)
+            }
+        }
+#endif
+    }
+
+    private var recentlyDeletedSection: some View {
+        Section {
+            HStack {
+                Text(String(localized: "These bookmarks were deleted recently. You can restore them individually.", bundle: langBundle.bundle))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(String(localized: "View", bundle: langBundle.bundle)) {
+                    showRecentlyDeletedWindow = true
+                }
+                .buttonStyle(.bordered)
+            }
+        } header: {
+            Text(String(localized: "Recently Deleted Bookmarks", bundle: langBundle.bundle))
+        }
+    }
+
+    private func participatingBrowserBinding(for browser: Browser) -> Binding<Bool> {
+        Binding(
+            get: { syncSettings.bookmarkParticipatingBrowsers.wrappedValue.contains(browser) },
+            set: { isParticipating in
+                if isParticipating {
+                    guard appState.purchaseService.isProUnlocked ||
+                            syncSettings.wrappedValue.bookmarkParticipatingBrowsers.count < ProLimits.freeSyncBrowserCount else {
+                        showUpgradeAlert = true
+                        return
+                    }
+                    syncSettings.wrappedValue.bookmarkParticipatingBrowsers.insert(browser)
+                } else {
+                    syncSettings.wrappedValue.bookmarkParticipatingBrowsers.remove(browser)
+                }
+                appState.settingsService.save()
+                appState.broadcastSettings()
+            }
+        )
+    }
+
+    private func safariPrivacyWarning(detailKey: String, includeRestartNote: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "exclamationmark.shield.fill")
+                    .foregroundStyle(.red)
+                Text(String(localized: "Cannot read Safari bookmarks", bundle: langBundle.bundle))
+                    .font(.headline)
+                    .foregroundStyle(.red)
+            }
+
+            Text(String(localized: String.LocalizationValue(detailKey), bundle: langBundle.bundle))
+                .font(.caption)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Button(String(localized: "Grant in System Settings", bundle: langBundle.bundle)) {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button(String(localized: "Already granted, refresh", bundle: langBundle.bundle)) {
+                    appState.checkFullDiskAccess()
+                }
+                .buttonStyle(.link)
+                .controlSize(.small)
+            }
+
+            if includeRestartNote {
+                Text(String(localized: "Note restart", bundle: langBundle.bundle))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -486,9 +389,213 @@ struct BookmarkSyncTabView: View {
         handledFolderManagerOpenRequest = appState.bookmarkFolderManagerOpenRequest
         showFolderManager = true
     }
+
+    private func refreshMissingManagedFolderState() {
+        let participants = syncSettings.bookmarkParticipatingBrowsers.wrappedValue
+        hasMissingManagedFolder = participants.contains { browser in
+            if appState.syncService.missingBookmarkFolders[browser.rawValue] != nil { return true }
+            return appState.syncService.bookmarkFolderMissing(browser, folder: syncSettings.wrappedValue.bookmarkFolder(for: browser))
+        }
+    }
+
+    @ViewBuilder
+    private func browserToggleLabel(for info: BrowserInfo) -> some View {
+        let isParticipating = syncSettings.bookmarkParticipatingBrowsers.wrappedValue.contains(info.browser)
+        let hasReachedFreeLimit = syncSettings.bookmarkParticipatingBrowsers.wrappedValue.count >= ProLimits.freeSyncBrowserCount
+        let shouldShowProBadge = !appState.purchaseService.isProUnlocked && !isParticipating && hasReachedFreeLimit
+
+        HStack(spacing: 6) {
+            if let url = info.appURL {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                    .resizable()
+                    .frame(width: 16, height: 16)
+            } else {
+                Image(systemName: info.id.sfSymbol)
+                    .frame(width: 16, height: 16)
+            }
+            Text(info.displayName)
+            if shouldShowProBadge {
+                ProBadge()
+            }
+            if info.browser == .safari {
+#if APP_STORE
+                if !sandboxManager.hasSafariAccess {
+                    let grantAccessTitle = String(localized: "Grant Access", bundle: langBundle.bundle)
+                    Button(action: {
+                        sandboxManager.requestSafariAccess { granted in
+                            if granted {
+                                // Auto-enable Safari if granted successfully
+                                syncSettings.wrappedValue.bookmarkParticipatingBrowsers.insert(.safari)
+                                appState.settingsService.save()
+                                appState.broadcastSettings()
+                            }
+                        }
+                    }) {
+                        Text(grantAccessTitle)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+#endif
+            }
+        }
+    }
     
     
     
+}
+
+struct RecentlyDeletedBookmarksWindow: View {
+    @EnvironmentObject var appState: AppState
+    @EnvironmentObject var backupService: BackupService
+    @Environment(\.dismiss) private var dismiss
+    let langBundle: Bundle
+
+    @State private var itemToDelete: DeletedBookmark?
+    @State private var showingDeleteConfirmation = false
+    @State private var showingClearAllConfirmation = false
+    @State private var showingRestoreAllConfirmation = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(String(localized: "Recently Deleted Bookmarks", bundle: langBundle))
+                    .font(.title3.bold())
+                Spacer()
+            }
+            .padding()
+
+            Divider()
+
+            Group {
+                if backupService.isLoadingDeletedBookmarks {
+                    VStack {
+                        ProgressView()
+                        Text(String(localized: "Loading...", bundle: langBundle))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if backupService.deletedBookmarks.isEmpty {
+                    VStack {
+                        Text(String(localized: "No deleted bookmarks", bundle: langBundle))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List {
+                        HStack {
+                            Text(String(localized: "These bookmarks were deleted recently. You can restore them individually.", bundle: langBundle))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button(String(localized: "Restore All", bundle: langBundle)) {
+                                showingRestoreAllConfirmation = true
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundColor(.accentColor)
+                            .font(.caption)
+
+                            Button(String(localized: "Clear All", bundle: langBundle)) {
+                                showingClearAllConfirmation = true
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundColor(.red)
+                            .font(.caption)
+                        }
+
+                        ForEach(backupService.deletedBookmarks) { item in
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: deletedItemIconName(for: item))
+                                            .foregroundStyle(item.isFolder ? .orange : .accentColor)
+                                            .accessibilityLabel(deletedItemTypeTitle(for: item))
+                                        Text(item.title)
+                                            .font(.headline)
+                                    }
+                                    HStack(spacing: 4) {
+                                        Text(deletedItemDetailText(for: item))
+                                        Text("•")
+                                        Text(item.deletedAt.formatted(date: .numeric, time: .shortened))
+                                    }
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                Button(String(localized: "Restore", bundle: langBundle)) {
+                                    restoreBookmark(item)
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(.orange)
+
+                                Button {
+                                    itemToDelete = item
+                                    showingDeleteConfirmation = true
+                                } label: {
+                                    Image(systemName: "trash")
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundColor(.red)
+                                .padding(.leading, 8)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Divider()
+
+            HStack {
+                Spacer()
+                Button(String(localized: "Close", bundle: langBundle)) {
+                    dismiss()
+                }
+                .keyboardShortcut(.escape, modifiers: [])
+            }
+            .padding()
+        }
+        .frame(width: 720, height: 520)
+        .onAppear {
+            backupService.loadDeletedItemsIfNeeded()
+        }
+        .alert(
+            String(localized: "Confirm deletion", bundle: langBundle),
+            isPresented: $showingDeleteConfirmation,
+            presenting: itemToDelete
+        ) { item in
+            Button(String(localized: "Delete Permanently", bundle: langBundle), role: .destructive) {
+                backupService.removeDeletedBookmark(id: item.id)
+            }
+            Button(String(localized: "Cancel", bundle: langBundle), role: .cancel) {}
+        } message: { _ in
+            Text(String(localized: "This deleted bookmark will be permanently removed from the trash bin.", bundle: langBundle))
+        }
+        .alert(
+            String(localized: "Confirm Clear All", bundle: langBundle),
+            isPresented: $showingClearAllConfirmation
+        ) {
+            Button(String(localized: "Clear All", bundle: langBundle), role: .destructive) {
+                backupService.clearAllDeletedBookmarks()
+            }
+            Button(String(localized: "Cancel", bundle: langBundle), role: .cancel) {}
+        } message: {
+            Text(String(localized: "Are you sure you want to permanently delete all bookmarks in the trash bin?", bundle: langBundle))
+        }
+        .alert(
+            String(localized: "Confirm Restore All", bundle: langBundle),
+            isPresented: $showingRestoreAllConfirmation
+        ) {
+            Button(String(localized: "Restore All", bundle: langBundle)) {
+                restoreAllBookmarks()
+            }
+            Button(String(localized: "Cancel", bundle: langBundle), role: .cancel) {}
+        } message: {
+            Text(String(localized: "Are you sure you want to restore all bookmarks from the trash bin?", bundle: langBundle))
+        }
+    }
+
     private func flattenDeletedBookmark(_ item: DeletedBookmark) -> [SyncBookmark] {
         var result = [SyncBookmark(id: item.id, title: item.title, url: item.url, parentId: item.parentId, isFolder: item.isFolder, inBookmarksBar: item.parentId == "1")]
         if let children = item.children {
@@ -499,23 +606,36 @@ struct BookmarkSyncTabView: View {
         return result
     }
 
+    private func deletedItemIconName(for item: DeletedBookmark) -> String {
+        item.isFolder ? "folder.fill" : "bookmark.fill"
+    }
+
+    private func deletedItemTypeTitle(for item: DeletedBookmark) -> String {
+        String(localized: item.isFolder ? "Folder" : "Bookmark", bundle: langBundle)
+    }
+
+    private func deletedItemDetailText(for item: DeletedBookmark) -> String {
+        if item.isFolder {
+            return String(localized: "Folder", bundle: langBundle)
+        }
+        return item.url ?? String(localized: "Unknown URL", bundle: langBundle)
+    }
+
     private func restoreAllBookmarks() {
 #if APP_STORE
         return
 #else
         let safariSvc = SafariBookmarkService()
         var currentSafariBookmarks = safariSvc.readBookmarks()
-        
+
         for item in backupService.deletedBookmarks {
             let newBookmarks = flattenDeletedBookmark(item)
             currentSafariBookmarks.append(contentsOf: newBookmarks)
         }
-        
-        // Restore locally
+
         appState.syncService.recordInternalWrite()
         safariSvc.applyBookmarks(currentSafariBookmarks, from: "RestoreAll", isFullMirror: false)
-        
-        // Broadcast to other browsers
+
         var restoredItems: [SyncBookmark] = []
         for item in backupService.deletedBookmarks {
             restoredItems.append(contentsOf: flattenDeletedBookmark(item))
@@ -541,15 +661,8 @@ struct BookmarkSyncTabView: View {
             timestamp: Date().timeIntervalSince1970
         )
         appState.daemon.broadcast(msg, participatingBrowsers: appState.settingsService.syncSettings.bookmarkParticipatingBrowsers)
-        
-        // Clear trash
+
         backupService.clearAllDeletedBookmarks()
-        
-        showSuccess = true
-        Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            showSuccess = false
-        }
 #endif
     }
 
@@ -559,15 +672,13 @@ struct BookmarkSyncTabView: View {
 #else
         let safariSvc = SafariBookmarkService()
         var currentSafariBookmarks = safariSvc.readBookmarks()
-        
+
         let newBookmarks = flattenDeletedBookmark(item)
         currentSafariBookmarks.append(contentsOf: newBookmarks)
-        
-        // Restore locally
+
         appState.syncService.recordInternalWrite()
         safariSvc.applyBookmarks(currentSafariBookmarks, from: "Restore", isFullMirror: false)
-        
-        // Broadcast to other browsers
+
         let broadcastBookmarks = newBookmarks.map { b in
             Bookmark(
                 id: b.id,
@@ -589,15 +700,8 @@ struct BookmarkSyncTabView: View {
             timestamp: Date().timeIntervalSince1970
         )
         appState.daemon.broadcast(msg, participatingBrowsers: appState.settingsService.syncSettings.bookmarkParticipatingBrowsers)
-        
-        // Remove from trash
+
         backupService.removeDeletedBookmark(id: item.id)
-        
-        showSuccess = true
-        Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            showSuccess = false
-        }
 #endif
     }
 }
@@ -665,10 +769,17 @@ struct BookmarkFolderManagementWindow: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text(String(localized: "Manage Sync Folders", bundle: langBundle))
-                    .font(.title3.bold())
-                Spacer()
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(String(localized: "Manage Sync Folders", bundle: langBundle))
+                        .font(.title3.bold())
+                    Spacer()
+                }
+
+                Text(String(localized: "Manage Sync Folders Description", bundle: langBundle))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding()
 
@@ -823,6 +934,7 @@ struct FolderSelectionPopover: View {
     @State private var isLoading = false
     @State private var hasSnapshot = true
     @State private var expandedNodes: Set<String> = []
+    @State private var showOpenBrowserPrompt = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -831,8 +943,7 @@ struct FolderSelectionPopover: View {
                     .font(.headline)
                 Spacer()
                 Button {
-                    requestBookmarkSnapshot()
-                    loadFolders()
+                    handleRefreshTapped()
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
@@ -866,21 +977,31 @@ struct FolderSelectionPopover: View {
                 .padding()
                 .frame(width: 320, height: 280)
             } else {
-                List {
-                    DisclosureGroup(isExpanded: .constant(true)) {
-                        ForEach(nodes) { node in
-                            RecursiveFolderPickerNodeView(node: node, localSelection: $localSelection, expandedNodes: $expandedNodes)
+                ScrollViewReader { proxy in
+                    List {
+                        DisclosureGroup(isExpanded: .constant(true)) {
+                            ForEach(nodes) { node in
+                                RecursiveFolderPickerNodeView(node: node, localSelection: $localSelection, expandedNodes: $expandedNodes)
+                            }
+                        } label: {
+                            FolderPickerRow(
+                                title: String(localized: "Root Directory (All Bookmarks)", bundle: langBundle),
+                                isSelected: localSelection == nil
+                            ) {
+                                localSelection = nil
+                            }
                         }
-                    } label: {
-                        FolderPickerRow(
-                            title: String(localized: "Root Directory (All Bookmarks)", bundle: langBundle),
-                            isSelected: localSelection == nil
-                        ) {
-                            localSelection = nil
+                    }
+                    .listStyle(.sidebar)
+                    .onChange(of: isLoading) { loading in
+                        guard !loading, let sel = localSelection else { return }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            withAnimation {
+                                proxy.scrollTo(sel, anchor: .center)
+                            }
                         }
                     }
                 }
-                .listStyle(.sidebar)
                 .frame(width: 340, height: 300)
             }
 
@@ -914,6 +1035,27 @@ struct FolderSelectionPopover: View {
         .onReceive(appState.backupService.$lastSnapshotUpdate) { _ in
             loadFolders()
         }
+        .alert(
+            String(localized: "Extension Offline", bundle: langBundle),
+            isPresented: $showOpenBrowserPrompt
+        ) {
+            Button(String(localized: "Cancel", bundle: langBundle), role: .cancel) {}
+            Button(String(format: String(localized: "Open %@", bundle: langBundle), browser.displayName)) {
+                openBrowserAndRequestSnapshot()
+                loadFolders()
+            }
+        } message: {
+            Text(String(format: String(localized: "The BrowSync extension in %@ appears offline. Open %@ now?", bundle: langBundle), browser.displayName, browser.displayName))
+        }
+    }
+
+    private func handleRefreshTapped() {
+        if browser != .safari && !appState.daemon.isConnected(browser: browser) {
+            showOpenBrowserPrompt = true
+            return
+        }
+        requestBookmarkSnapshot()
+        loadFolders()
     }
 
     private func openBrowserAndRequestSnapshot() {
@@ -1053,8 +1195,10 @@ struct RecursiveFolderPickerNodeView: View {
             } label: {
                 label
             }
+            .id(node.id)
         } else {
             label
+                .id(node.id)
         }
     }
 }
@@ -1105,6 +1249,7 @@ struct FolderSelectionSheet: View {
     @State private var isLoading = false
     @State private var hasSnapshot = true
     @State private var expandedNodes: Set<String> = []
+    @State private var showOpenBrowserPrompt = false
     
     var isTwoWay: Bool {
         appState.settingsService.syncSettings.bookmarkSyncStrategy == .twoWayMerge
@@ -1126,9 +1271,7 @@ struct FolderSelectionSheet: View {
                 Spacer()
                 
                 Button {
-                    let msg = WSMessage.pull(site: nil, category: "bookmark_backup")
-                    appState.daemon.broadcast(msg, participatingBrowsers: [selectedBrowser])
-                    loadFolders()
+                    handleRefreshTapped()
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
@@ -1303,6 +1446,28 @@ struct FolderSelectionSheet: View {
         .onReceive(appState.backupService.$lastSnapshotUpdate) { _ in
             loadFolders()
         }
+        .alert(
+            String(localized: "Extension Offline", bundle: langBundle),
+            isPresented: $showOpenBrowserPrompt
+        ) {
+            Button(String(localized: "Cancel", bundle: langBundle), role: .cancel) {}
+            Button(String(format: String(localized: "Open %@", bundle: langBundle), selectedBrowser.displayName)) {
+                openBrowserAndRequestSnapshot()
+                loadFolders()
+            }
+        } message: {
+            Text(String(format: String(localized: "The BrowSync extension in %@ appears offline. Open %@ now?", bundle: langBundle), selectedBrowser.displayName, selectedBrowser.displayName))
+        }
+    }
+
+    private func handleRefreshTapped() {
+        if selectedBrowser != .safari && !appState.daemon.isConnected(browser: selectedBrowser) {
+            showOpenBrowserPrompt = true
+            return
+        }
+        let msg = WSMessage.pull(site: nil, category: "bookmark_backup")
+        appState.daemon.broadcast(msg, participatingBrowsers: [selectedBrowser])
+        loadFolders()
     }
     
     private func openBrowserAndRequestSnapshot() {
