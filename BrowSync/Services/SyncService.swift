@@ -87,7 +87,7 @@ final class SyncService: ObservableObject {
     // MARK: - Data Directories
 
     private func createDataDirectories() {
-        let dirs = ["sites", "bookmarks", "history", "logs"]
+        let dirs = ["sites", "bookmarks", "history", "logs", "logs/payloads"]
         for dir in dirs {
             let url = dataDir.appendingPathComponent(dir)
             try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -283,6 +283,7 @@ final class SyncService: ObservableObject {
                                     messageId: UUID().uuidString,
                                     timestamp: Date().timeIntervalSince1970
                                 )
+                                logSyncPayload(msg, direction: "outgoing", clientId: "safari", note: "safari-deletion")
                                 daemon?.broadcast(msg, participatingBrowsers: settings.bookmarkParticipatingBrowsers)
                                 // NOTE: Do NOT save bookmarks_removed to GlobalStateStore.
                                 // These are point-in-time events; replaying them to reconnecting
@@ -317,6 +318,7 @@ final class SyncService: ObservableObject {
                         timestamp: Date().timeIntervalSince1970
                     )
                     pushMsg.isFullMirror = (strategy == .oneWay && settings.bookmarkSyncFolder == nil) // Full mirror if one-way AND no sync folder
+                    logSyncPayload(pushMsg, direction: "outgoing", clientId: "safari", note: "push-safari-bookmarks")
                     daemon?.broadcast(pushMsg, participatingBrowsers: settings.bookmarkParticipatingBrowsers)
                     log("Pushed \(bookmarks.count) Safari bookmarks to clients")
                     
@@ -349,6 +351,7 @@ final class SyncService: ObservableObject {
                     messageId: UUID().uuidString,
                     timestamp: Date().timeIntervalSince1970
                 )
+                logSyncPayload(requestMessage, direction: "outgoing", clientId: sourceBrowser.id, note: "bookmark-pull-request")
                 daemon?.broadcast(requestMessage, participatingBrowsers: [sourceBrowser])
             } else if strategy == .twoWayMerge {
                 let requestMessage = WSMessage(
@@ -359,6 +362,7 @@ final class SyncService: ObservableObject {
                     messageId: UUID().uuidString,
                     timestamp: Date().timeIntervalSince1970
                 )
+                logSyncPayload(requestMessage, direction: "outgoing", clientId: "all-bookmark-participants", note: "bookmark-pull-request")
                 daemon?.broadcast(requestMessage, participatingBrowsers: settings.bookmarkParticipatingBrowsers)
             }
         } else {
@@ -371,6 +375,7 @@ final class SyncService: ObservableObject {
                 messageId: UUID().uuidString,
                 timestamp: Date().timeIntervalSince1970
             )
+            logSyncPayload(requestMessage, direction: "outgoing", clientId: "all", note: "pull-request")
             daemon?.broadcast(requestMessage)
             
             // Proactively push the globally cached state from the central app.
@@ -384,8 +389,10 @@ final class SyncService: ObservableObject {
                         if liveOnly.isEmpty { continue }
                         var cleaned = msg
                         cleaned.payload = .cookies(liveOnly)
+                        logSyncPayload(cleaned, direction: "outgoing", clientId: "cached-state", note: "cached-live-cookies")
                         daemon?.broadcast(cleaned)
                     } else {
+                        logSyncPayload(msg, direction: "outgoing", clientId: "cached-state", note: "cached-state")
                         daemon?.broadcast(msg)
                     }
                 }
@@ -399,6 +406,7 @@ final class SyncService: ObservableObject {
         guard message.type == .sync, let category = message.category else { return }
         
         var filteredMessage = message
+        logSyncPayload(message, direction: "incoming", clientId: clientId, note: "raw-received")
         
         // Capture previous snapshot for auto-sync notifications before it gets overwritten
         let preSyncAutoBookmarks = backupService?.getSnapshot(sourceBrowser: clientId) ?? []
@@ -453,14 +461,34 @@ final class SyncService: ObservableObject {
             filteredMessage.isFullMirror = true
         }
         if category == "bookmarks", case .bookmarks(let bms) = filteredMessage.payload {
-            // We no longer perform implicit deletion diffing for Chrome/Edge clients.
-            // It was causing mass-deletions when the extension's idMap was cleared.
-            // Now we strictly rely on explicit "bookmarks_removed" payloads sent by the extensions.
-            backupService?.saveSnapshot(bookmarks: bms, sourceBrowser: clientId)
+            // Explicit bookmarks_removed is preferred, but manual sync may only receive
+            // a fresh full snapshot. Diff it against the previous same-browser snapshot
+            // with URL/title fallbacks so offline Chrome-family deletions do not get
+            // resurrected by Safari's older tree.
+            let sanitizedBookmarks = sanitizeIncomingBookmarksForSafari(bms, from: clientId)
+            if sanitizedBookmarks.count != bms.count {
+                log("Sanitized \(bms.count - sanitizedBookmarks.count) non-Safari bookmark nodes from [\(clientId)] before snapshot/persist")
+                filteredMessage.payload = .bookmarks(sanitizedBookmarks)
+                logSyncPayload(filteredMessage, direction: "incoming", clientId: clientId, note: "sanitized-bookmarks")
+            }
+            processDeletedBookmarksFromFullSnapshot(previous: preSyncAutoBookmarks, current: sanitizedBookmarks, from: clientId)
+            backupService?.saveSnapshot(bookmarks: sanitizedBookmarks, sourceBrowser: clientId)
         }
 
         if category == "bookmarks_removed" {
             if case .bookmarksRemoved(let bm) = filteredMessage.payload {
+                backupService?.addDeletedBookmarks([
+                    DeletedBookmark(
+                        id: bm.id,
+                        title: bm.title,
+                        url: bm.url ?? nil,
+                        parentId: bm.parentId,
+                        isFolder: bm.isFolder,
+                        deletedAt: Date(),
+                        sourceBrowser: clientId,
+                        children: nil
+                    )
+                ])
                 safariBookmarks.removeBookmark(id: bm.id, title: bm.title, url: bm.url ?? nil)
                 log("Removed bookmark '\(bm.title)' from Safari (triggered by [\(clientId)])")
                 // Refresh Safari count after removal
@@ -470,7 +498,8 @@ final class SyncService: ObservableObject {
                 let isPro = AppState.shared.purchaseService.isProUnlocked
                 let shouldSync = (isPro && settings.bookmarkAutoSync) || isSyncing
                 if shouldSync {
-                    daemon?.broadcast(filteredMessage, excluding: clientId)
+                    logSyncPayload(filteredMessage, direction: "outgoing", clientId: clientId, note: "rebroadcast-bookmark-removal")
+                    daemon?.broadcast(filteredMessage, excluding: nil)
                     // NOTE: Do NOT save bookmarks_removed to GlobalStateStore.
                     // These are point-in-time events; replaying them to reconnecting
                     // clients causes destructive false deletions.
@@ -487,6 +516,7 @@ final class SyncService: ObservableObject {
                             timestamp: Date().timeIntervalSince1970
                         )
                         await MainActor.run {
+                            self.logSyncPayload(req, direction: "outgoing", clientId: "all-bookmark-participants", note: "post-removal-pull-request")
                             self.daemon?.broadcast(req, participatingBrowsers: self.settings.bookmarkParticipatingBrowsers)
                         }
                     }
@@ -871,6 +901,155 @@ final class SyncService: ObservableObject {
         return roots
     }
 
+    private func processDeletedBookmarksFromFullSnapshot(previous: [Bookmark], current: [Bookmark], from clientId: String) {
+        guard !clientId.lowercased().contains("safari"),
+              !previous.isEmpty,
+              !current.isEmpty else { return }
+
+        let rootIds = Set(["0", "1", "2", "3"])
+        let currentIds = Set(current.map(\.id))
+        let currentUrls = Set(current.compactMap { bookmarkURL($0)?.lowercased() })
+        let currentFolderKeys = Set(current.filter { $0.isFolder }.map { folderKey($0) })
+        let currentFolderTitles = Set(current.filter { $0.isFolder }.map { $0.title.lowercased() })
+
+        let deleted = previous.filter { bookmark in
+            if rootIds.contains(bookmark.id) { return false }
+            if isBrowserMobileRoot(bookmark) { return false }
+            if currentIds.contains(bookmark.id) { return false }
+
+            if bookmark.isFolder {
+                // If IDs were regenerated but the same folder title still exists, do
+                // not treat it as deleted. This avoids the old idMap mass-delete bug.
+                if currentFolderKeys.contains(folderKey(bookmark)) { return false }
+                if currentFolderTitles.contains(bookmark.title.lowercased()) { return false }
+                return true
+            }
+
+            guard let url = bookmarkURL(bookmark)?.lowercased() else { return false }
+            return !currentUrls.contains(url)
+        }
+
+        guard !deleted.isEmpty else { return }
+
+        let deletionLimit = max(50, previous.count / 2)
+        if deleted.count > deletionLimit {
+            log("Skipped inferred deletions from [\(clientId)] full snapshot: \(deleted.count)/\(previous.count) looked unsafe")
+            return
+        }
+
+        log("Detected \(deleted.count) inferred bookmark deletions from [\(clientId)] full snapshot")
+        let deletedItems = buildDeletedBookmarkForest(from: deleted, sourceBrowser: clientId)
+        backupService?.addDeletedBookmarks(deletedItems)
+
+        for deletedBm in deleted {
+            safariBookmarks.removeBookmark(id: deletedBm.id, title: deletedBm.title, url: deletedBm.url ?? nil)
+
+            let msg = WSMessage(
+                type: .sync,
+                site: "*",
+                category: "bookmarks_removed",
+                payload: .bookmarksRemoved(deletedBm),
+                messageId: UUID().uuidString,
+                timestamp: Date().timeIntervalSince1970
+            )
+            logSyncPayload(msg, direction: "outgoing", clientId: clientId, note: "inferred-bookmark-deletion")
+            daemon?.broadcast(msg, excluding: clientId)
+        }
+
+        if isSyncing {
+            currentManualSyncStats.bookmarksDeleted += deleted.count
+        }
+    }
+
+    private func bookmarkURL(_ bookmark: Bookmark) -> String? {
+        bookmark.url.flatMap { $0 }
+    }
+
+    private func folderKey(_ bookmark: Bookmark) -> String {
+        "\(bookmark.parentId ?? "")|\(bookmark.title.lowercased())"
+    }
+
+    private func isBrowserMobileRoot(_ bookmark: Bookmark) -> Bool {
+        guard bookmark.isFolder, bookmarkURL(bookmark) == nil else { return false }
+        let id = bookmark.id.lowercased()
+        return bookmark.id == "3" || id.hasPrefix("mobile")
+    }
+
+    private func sanitizeIncomingBookmarksForSafari(_ bookmarks: [Bookmark], from clientId: String) -> [Bookmark] {
+        guard !clientId.lowercased().contains("safari") else { return bookmarks }
+
+        let rootIds = Set(["0", "1", "2", "3"])
+        let bookmarksById = Dictionary(bookmarks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let childrenByParent = Dictionary(grouping: bookmarks, by: { $0.parentId ?? "" })
+
+        func deletedSignatures(from items: [DeletedBookmark]) -> (folders: Set<String>, urls: Set<String>) {
+            var folderSignatures = Set<String>()
+            var urls = Set<String>()
+            let recentCutoff = Date().addingTimeInterval(-24 * 60 * 60)
+
+            func visit(_ item: DeletedBookmark) {
+                if item.deletedAt >= recentCutoff {
+                    if item.isFolder, item.url == nil {
+                        let parent = item.parentId ?? ""
+                        folderSignatures.insert("\(parent)|\(item.title.lowercased())")
+                    } else if let url = item.url?.lowercased() {
+                        urls.insert(url)
+                    }
+                }
+                item.children?.forEach(visit)
+            }
+
+            items.forEach(visit)
+            return (folderSignatures, urls)
+        }
+
+        let deleted = deletedSignatures(from: backupService?.deletedBookmarks ?? [])
+
+        func isDeletedByTombstone(_ bookmark: Bookmark) -> Bool {
+            if bookmark.isFolder, bookmarkURL(bookmark) == nil {
+                let parent = bookmark.parentId ?? ""
+                return deleted.folders.contains("\(parent)|\(bookmark.title.lowercased())")
+            }
+            if let url = bookmarkURL(bookmark)?.lowercased() {
+                return deleted.urls.contains(url)
+            }
+            return false
+        }
+
+        func shouldDropNode(_ bookmark: Bookmark) -> Bool {
+            if rootIds.contains(bookmark.id) { return true }
+            if isBrowserMobileRoot(bookmark) { return true }
+            if isDeletedByTombstone(bookmark) { return true }
+            return false
+        }
+
+        func shouldDropDescendants(of bookmark: Bookmark) -> Bool {
+            bookmark.id == "0" ||
+            bookmark.id == "3" ||
+            isBrowserMobileRoot(bookmark) ||
+            isDeletedByTombstone(bookmark)
+        }
+
+        var excludedIds = Set(bookmarks.filter(shouldDropNode).map(\.id))
+        var queue = bookmarks.filter(shouldDropDescendants).map(\.id)
+        while let current = queue.popLast() {
+            for child in childrenByParent[current] ?? [] {
+                if excludedIds.insert(child.id).inserted {
+                    queue.append(child.id)
+                }
+            }
+        }
+
+        guard !excludedIds.isEmpty else { return bookmarks }
+
+        return bookmarks.filter { bookmark in
+            if excludedIds.contains(bookmark.id) { return false }
+            if let parentId = bookmark.parentId, excludedIds.contains(parentId) { return false }
+            if let parentId = bookmark.parentId, let parent = bookmarksById[parentId], shouldDropDescendants(of: parent) { return false }
+            return true
+        }
+    }
+
     // MARK: - Persistence
 
     private func persist(payload: WSPayload, category: String, from clientId: String, isFullMirror: Bool = false) {
@@ -915,14 +1094,14 @@ final class SyncService: ObservableObject {
                                 let urlStr: String?
                                 if let urlOpt = b.url { urlStr = urlOpt } else { urlStr = nil }
                                 if !b.isFolder && urlStr == nil { return nil }
-                                return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar ?? false)
+                                return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar ?? false, dateAdded: b.dateAdded)
                             }
                         } else {
                             finalSyncBookmarks = bookmarks.compactMap { b -> SyncBookmark? in
                                 let urlStr: String?
                                 if let urlOpt = b.url { urlStr = urlOpt } else { urlStr = nil }
                                 if !b.isFolder && urlStr == nil { return nil }
-                                return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar ?? false)
+                                return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar ?? false, dateAdded: b.dateAdded)
                             }
                         }
                         
@@ -968,14 +1147,14 @@ final class SyncService: ObservableObject {
                             let urlStr: String?
                             if let urlOpt = b.url { urlStr = urlOpt } else { urlStr = nil }
                             if !b.isFolder && urlStr == nil { return nil }
-                            return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar ?? false)
+                            return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar ?? false, dateAdded: b.dateAdded)
                         }
                     } else {
                         finalSyncBookmarks = bookmarks.compactMap { b -> SyncBookmark? in
                             let urlStr: String?
                             if let urlOpt = b.url { urlStr = urlOpt } else { urlStr = nil }
                             if !b.isFolder && urlStr == nil { return nil }
-                            return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar ?? false)
+                            return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar ?? false, dateAdded: b.dateAdded)
                         }
                     }
                     
@@ -1017,6 +1196,45 @@ final class SyncService: ObservableObject {
             try data.write(to: url, options: .atomicWrite)
         } catch {
             logger.error("Failed to save sync data: \(error)")
+        }
+    }
+
+    private func logSyncPayload(_ message: WSMessage, direction: String, clientId: String, note: String) {
+        let payloadDir = dataDir.appendingPathComponent("logs/payloads")
+        try? FileManager.default.createDirectory(at: payloadDir, withIntermediateDirectories: true)
+
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+            .replacingOccurrences(of: ":", with: "-")
+            .replacingOccurrences(of: ".", with: "-")
+        let category = message.category ?? "unknown"
+        let messageId = message.messageId ?? UUID().uuidString
+        let safeClientId = clientId.replacingOccurrences(of: "/", with: "_")
+        let safeNote = note.replacingOccurrences(of: "/", with: "_")
+        let fileURL = payloadDir.appendingPathComponent("\(timestamp)_\(direction)_\(safeClientId)_\(category)_\(safeNote)_\(messageId).json")
+
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(message)
+            try data.write(to: fileURL, options: .atomic)
+            log("Payload \(direction) [\(clientId)] \(category) \(payloadSummary(message.payload)) note=\(note) file=\(fileURL.path)")
+        } catch {
+            logger.error("Failed to save sync payload log: \(error)")
+        }
+    }
+
+    private func payloadSummary(_ payload: WSPayload?) -> String {
+        guard let payload else { return "(request/no payload)" }
+        switch payload {
+        case .bookmarks(let items): return "(\(items.count) bookmarks)"
+        case .tabs(let items): return "(\(items.count) tabs)"
+        case .browserState(let items): return "(\(items.count) browserState tabs)"
+        case .localStorage(let items): return "(\(items.count) localStorage)"
+        case .sessionStorage(let items): return "(\(items.count) sessionStorage)"
+        case .cookies(let items): return "(\(items.count) cookies)"
+        case .history(let items): return "(\(items.count) history)"
+        case .bookmarksRemoved(let item): return "(removed id=\(item.id) title=\(item.title))"
+        case .raw(let raw): return "(\(raw.count) raw fields)"
         }
     }
 

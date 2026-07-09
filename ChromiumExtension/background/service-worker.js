@@ -760,6 +760,37 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
 }
 
 let bookmarkDebounceTimer = null;
+let bookmarkRemovalDebounceTimer = null;
+let pendingRemovedBookmarks = [];
+
+function queueRemovedBookmark(deletedBm) {
+  pendingRemovedBookmarks.push(deletedBm);
+  if (bookmarkRemovalDebounceTimer) {
+    clearTimeout(bookmarkRemovalDebounceTimer);
+  }
+
+  bookmarkRemovalDebounceTimer = setTimeout(() => {
+    const unique = new Map();
+    for (const bm of pendingRemovedBookmarks) {
+      unique.set(bm.id, bm);
+    }
+    pendingRemovedBookmarks = [];
+    bookmarkRemovalDebounceTimer = null;
+
+    for (const bm of unique.values()) {
+      console.log('[BrowSync] Debounced explicit bookmark removed:', bm);
+      send({
+        type: 'sync',
+        browser: CURRENT_BROWSER_ID,
+        category: 'bookmarks_removed',
+        payload: { kind: 'bookmarksRemoved', bookmarksRemoved: bm },
+        messageId: crypto.randomUUID(),
+        timestamp: Date.now()
+      });
+    }
+  }, 10000);
+}
+
 async function handleBookmarkChange(reason) {
   if (isApplyingSync) return;
   
@@ -842,17 +873,9 @@ if (chrome.bookmarks) {
       sourceBrowser: CURRENT_BROWSER_ID
     };
     
-    console.log('[BrowSync] Explicit bookmark removed:', deletedBm);
-    send({
-      type: 'sync',
-      browser: CURRENT_BROWSER_ID,
-      category: 'bookmarks_removed',
-      payload: { kind: 'bookmarksRemoved', bookmarksRemoved: deletedBm },
-      messageId: crypto.randomUUID(),
-      timestamp: Date.now()
-    });
+    queueRemovedBookmark(deletedBm);
     
-    // Do NOT call handleBookmarkChange here. The bookmarks_removed event above is sufficient
+    // Do NOT call handleBookmarkChange here. The debounced bookmarks_removed event above is sufficient
     // for cross-browser deletion. Calling handleBookmarkChange would trigger a full resync
     // after a 10s debounce which would then call applyBookmarkSync — that merges Chrome's
     // state into Safari preserving Safari-only items, potentially undoing the deletion if

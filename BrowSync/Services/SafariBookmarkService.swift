@@ -140,12 +140,83 @@ final class SafariBookmarkService {
         guard var children = plist["Children"] as? [[String: Any]] else { return 0 }
 
         let systemRootIds = Set(["0", "1", "2", "3"])
-        // Exclude system root folders themselves, and any item parented to the mobile bookmarks root ("3")
-        // Mobile bookmarks have no corresponding location in Safari's plist structure.
-        let validBookmarks = bookmarks.filter {
-            !systemRootIds.contains($0.id) && ($0.parentId == nil || !systemRootIds.subtracting(["1","2"]).contains($0.parentId!))
+        let syncableRootIds = Set(["1", "2"])
+        let shouldFilterBrowserSystemRoots = !sourceBrowser.localizedCaseInsensitiveContains("safari") && sourceBrowser != "Local UI"
+        var byId: [String: SyncBookmark] = [:]
+        for bookmark in bookmarks {
+            byId[bookmark.id] = bookmark
         }
+        var exclusionMemo: [String: Bool] = [:]
+        var visitingIds = Set<String>()
+
+        func isBrowserSystemRoot(_ bookmark: SyncBookmark) -> Bool {
+            let rootLikeId = bookmark.id == "3" || bookmark.id.lowercased().hasPrefix("mobile")
+            return shouldFilterBrowserSystemRoots &&
+            bookmark.isFolder &&
+            bookmark.url == nil &&
+            (rootLikeId ||
+             (bookmark.dateAdded == nil &&
+              (bookmark.parentId.map { $0 == "0" || syncableRootIds.contains($0) } ?? true)))
+        }
+
+        func isExcludedFromSafari(_ bookmark: SyncBookmark) -> Bool {
+            if let cached = exclusionMemo[bookmark.id] { return cached }
+            if visitingIds.contains(bookmark.id) { return true }
+            visitingIds.insert(bookmark.id)
+            defer { visitingIds.remove(bookmark.id) }
+
+            let excluded: Bool
+            if systemRootIds.contains(bookmark.id) {
+                excluded = true
+            } else if isBrowserSystemRoot(bookmark) {
+                excluded = true
+            } else if let parentId = bookmark.parentId {
+                if syncableRootIds.contains(parentId) {
+                    excluded = false
+                } else if parentId == "0" || systemRootIds.contains(parentId) {
+                    excluded = true
+                } else if let parent = byId[parentId] {
+                    excluded = isExcludedFromSafari(parent)
+                } else {
+                    excluded = false
+                }
+            } else {
+                excluded = false
+            }
+
+            exclusionMemo[bookmark.id] = excluded
+            return excluded
+        }
+
+        // Exclude browser system roots and every descendant of non-syncable roots.
+        // This intentionally uses structural parent IDs, not localized folder titles.
+        let validBookmarks = bookmarks.filter { !isExcludedFromSafari($0) }
         var addedCount = 0
+
+        func syncServerId(of node: [String: Any]) -> String? {
+            (node["Sync"] as? [String: Any])?["ServerID"] as? String
+        }
+
+        func isBookmarksBarNode(_ node: [String: Any]) -> Bool {
+            (node["Title"] as? String) == "BookmarksBar" ||
+            (node["WebBookmarkIdentifier"] as? String) == "BookmarksBar" ||
+            syncServerId(of: node) == "Favorites Bar"
+        }
+
+        func isBookmarksMenuNode(_ node: [String: Any]) -> Bool {
+            (node["Title"] as? String) == "BookmarksMenu" ||
+            (node["WebBookmarkIdentifier"] as? String) == "BookmarksMenu" ||
+            syncServerId(of: node) == "Bookmarks Menu"
+        }
+
+        func isSafariSystemNode(_ node: [String: Any]) -> Bool {
+            if isBookmarksBarNode(node) || isBookmarksMenuNode(node) { return true }
+            if (node["WebBookmarkIdentifier"] as? String) == "History" { return true }
+            if (node["Title"] as? String) == "History" || (node["Title"] as? String) == "com.apple.ReadingList" { return true }
+            if (node["ReadingListNonSync"] as? Bool) == true { return true }
+            if let type = node["WebBookmarkType"] as? String, type != "WebBookmarkTypeList" && type != "WebBookmarkTypeLeaf" { return true }
+            return false
+        }
 
         var extractedLeaves = [String: [[String: Any]]]()
         var extractedFolders = [String: [[String: Any]]]()
@@ -232,19 +303,14 @@ final class SafariBookmarkService {
 
         let rootChromeIds = Set(["0", "1", "2", "3"])
 
-        func mergeLevel(chromeNodes: [SyncBookmark], safariNodes: inout [[String: Any]], isRoot: Bool = false) {
+        func mergeLevel(chromeNodes: [SyncBookmark], safariNodes: inout [[String: Any]], isRoot: Bool = false, pruneOrphanedManagedFolders: Bool = false) {
             var newSafariNodes = [[String: Any]]()
             var systemNodes = [(Int, [String: Any])]() // index, node
+            let incomingFolderTitles = Set(chromeNodes.filter(\.isFolder).map(\.title))
             
             if isRoot {
-                let systemTitles = Set(["BookmarksBar", "BookmarksMenu", "History", "com.apple.ReadingList"])
                 for (i, child) in safariNodes.enumerated().reversed() {
-                    let isSystemTitle = (child["Title"] as? String).map { systemTitles.contains($0) } ?? false
-                    let isReadingList = (child["ReadingListNonSync"] as? Bool) ?? false
-                    let type = child["WebBookmarkType"] as? String
-                    let isSystemType = (type != "WebBookmarkTypeList" && type != "WebBookmarkTypeLeaf")
-                    
-                    if isSystemTitle || isReadingList || isSystemType {
+                    if isSafariSystemNode(child) {
                         systemNodes.append((i, safariNodes.remove(at: i)))
                     }
                 }
@@ -261,7 +327,7 @@ final class SafariBookmarkService {
                         existingFolder["Children"] = subChildren
                         newSafariNodes.append(existingFolder)
                     } else {
-                        if let node = buildNode(from: bookmark, allBookmarks: bookmarks) {
+                        if let node = buildNode(from: bookmark, allBookmarks: validBookmarks) {
                             newSafariNodes.append(node)
                             addedCount += 1
                         }
@@ -278,7 +344,7 @@ final class SafariBookmarkService {
                         newSafariNodes.append(existingNode)
                         addedCount += 1
                     } else {
-                        if let node = buildNode(from: bookmark, allBookmarks: bookmarks) {
+                        if let node = buildNode(from: bookmark, allBookmarks: validBookmarks) {
                             newSafariNodes.append(node)
                             addedCount += 1
                         }
@@ -286,8 +352,21 @@ final class SafariBookmarkService {
                 }
             }
             
-            // Append any remaining Safari-only items that were not in Chrome
-            newSafariNodes.append(contentsOf: safariNodes)
+            // Append remaining Safari-only items. At the managed top level, drop
+            // folders that BrowSync previously wrote but the current source tree no
+            // longer has; this removes stale browser-system-root contamination
+            // without relying on localized folder names.
+            let retainedSafariOnlyNodes = safariNodes.filter { node in
+                guard pruneOrphanedManagedFolders,
+                      (node["WebBookmarkType"] as? String) == "WebBookmarkTypeList",
+                      node["BrowSyncSourceRoot"] != nil,
+                      let title = node["Title"] as? String else {
+                    return true
+                }
+                return incomingFolderTitles.contains(title)
+            }
+            addedCount += safariNodes.count - retainedSafariOnlyNodes.count
+            newSafariNodes.append(contentsOf: retainedSafariOnlyNodes)
             
             if isRoot {
                 // Re-insert system nodes at their original indices (or as close as possible)
@@ -300,8 +379,8 @@ final class SafariBookmarkService {
             safariNodes = newSafariNodes
         }
 
-        func processRoot(chromeParentId: String, safariTitle: String?, children: inout [[String: Any]]) {
-            let topLevelBookmarks = bookmarks.filter {
+        func processRoot(chromeParentId: String, rootMatcher: (([String: Any]) -> Bool)?, children: inout [[String: Any]]) {
+            let topLevelBookmarks = validBookmarks.filter {
                 guard !rootChromeIds.contains($0.id) else { return false }
                 let pid = $0.parentId ?? "1"
                 if chromeParentId == "1" {
@@ -311,37 +390,33 @@ final class SafariBookmarkService {
                 }
             }
 
-            if let safariTitle = safariTitle {
-                guard let idx = children.firstIndex(where: { ($0["Title"] as? String) == safariTitle }),
+            if let rootMatcher = rootMatcher {
+                guard let idx = children.firstIndex(where: rootMatcher),
                       var nodeChildren = children[idx]["Children"] as? [[String: Any]] else { return }
 
                 if isFullMirror {
-                    nodeChildren = topLevelBookmarks.compactMap { buildNode(from: $0, allBookmarks: bookmarks) }
+                    nodeChildren = topLevelBookmarks.compactMap { buildNode(from: $0, allBookmarks: validBookmarks) }
                     addedCount += topLevelBookmarks.count
                 } else {
-                    mergeLevel(chromeNodes: topLevelBookmarks, safariNodes: &nodeChildren, isRoot: false)
+                    mergeLevel(chromeNodes: topLevelBookmarks, safariNodes: &nodeChildren, isRoot: false, pruneOrphanedManagedFolders: true)
                 }
                 children[idx]["Children"] = nodeChildren
             } else {
                 if isFullMirror {
-                    let systemTitles = Set(["BookmarksBar", "BookmarksMenu", "History", "com.apple.ReadingList"])
                     children.removeAll { child in
-                        if let title = child["Title"] as? String, systemTitles.contains(title) { return false }
-                        if let isReadingList = child["ReadingListNonSync"] as? Bool, isReadingList { return false }
-                        if let type = child["WebBookmarkType"] as? String, type != "WebBookmarkTypeList" && type != "WebBookmarkTypeLeaf" { return false }
-                        return true
+                        !isSafariSystemNode(child)
                     }
-                    let newNodes = topLevelBookmarks.compactMap { buildNode(from: $0, allBookmarks: bookmarks) }
+                    let newNodes = topLevelBookmarks.compactMap { buildNode(from: $0, allBookmarks: validBookmarks) }
                     children.append(contentsOf: newNodes)
                     addedCount += newNodes.count
                 } else {
-                    mergeLevel(chromeNodes: topLevelBookmarks, safariNodes: &children, isRoot: true)
+                    mergeLevel(chromeNodes: topLevelBookmarks, safariNodes: &children, isRoot: true, pruneOrphanedManagedFolders: true)
                 }
             }
         }
 
-        processRoot(chromeParentId: "1", safariTitle: "BookmarksBar", children: &children)
-        processRoot(chromeParentId: "2", safariTitle: nil, children: &children)
+        processRoot(chromeParentId: "1", rootMatcher: isBookmarksBarNode, children: &children)
+        processRoot(chromeParentId: "2", rootMatcher: nil, children: &children)
 
         // Restore any extracted nodes that weren't placed back (e.g., they were moved to a system folder not managed here)
         for (_, nodesList) in extractedLeaves {
@@ -391,27 +466,47 @@ final class SafariBookmarkService {
                         }
                     }
                 }
+
+                func syncServerId(of node: [String: Any]) -> String? {
+                    (node["Sync"] as? [String: Any])?["ServerID"] as? String
+                }
+
+                func isBookmarksBarNode(_ node: [String: Any]) -> Bool {
+                    (node["Title"] as? String) == "BookmarksBar" ||
+                    (node["WebBookmarkIdentifier"] as? String) == "BookmarksBar" ||
+                    syncServerId(of: node) == "Favorites Bar"
+                }
+
+                func isBookmarksMenuNode(_ node: [String: Any]) -> Bool {
+                    (node["Title"] as? String) == "BookmarksMenu" ||
+                    (node["WebBookmarkIdentifier"] as? String) == "BookmarksMenu" ||
+                    syncServerId(of: node) == "Bookmarks Menu"
+                }
+
+                func isSafariSystemNode(_ node: [String: Any]) -> Bool {
+                    if isBookmarksBarNode(node) || isBookmarksMenuNode(node) { return true }
+                    if (node["WebBookmarkIdentifier"] as? String) == "History" { return true }
+                    if (node["Title"] as? String) == "History" || (node["Title"] as? String) == "com.apple.ReadingList" { return true }
+                    if (node["ReadingListNonSync"] as? Bool) == true { return true }
+                    if let type = node["WebBookmarkType"] as? String, type != "WebBookmarkTypeList" && type != "WebBookmarkTypeLeaf" { return true }
+                    return false
+                }
                 
-                if let barIdx = children.firstIndex(where: { ($0["Title"] as? String) == "BookmarksBar" }),
+                if let barIdx = children.firstIndex(where: isBookmarksBarNode),
                    let barChildren = children[barIdx]["Children"] as? [[String: Any]] {
                     result.append(SyncBookmark(id: "1", title: String(localized: "Favorites", bundle: Bundle.main), url: nil, parentId: "0", isFolder: true, inBookmarksBar: true))
                     traverse(nodes: barChildren, parentId: nil, rootChromeId: "1")
                 }
                 
-                if let menuIdx = children.firstIndex(where: { ($0["Title"] as? String) == "BookmarksMenu" }),
+                if let menuIdx = children.firstIndex(where: isBookmarksMenuNode),
                    let menuChildren = children[menuIdx]["Children"] as? [[String: Any]] {
                     result.append(SyncBookmark(id: "2", title: String(localized: "Bookmarks Menu", bundle: Bundle.main), url: nil, parentId: "0", isFolder: true, inBookmarksBar: false))
                     traverse(nodes: menuChildren, parentId: nil, rootChromeId: "2")
                 }
                 
                 // Process any root-level bookmarks that are not system folders
-                let systemTitles = Set(["BookmarksBar", "BookmarksMenu", "History", "com.apple.ReadingList"])
                 let rootItems = children.filter { child in
-                    if let title = child["Title"] as? String, systemTitles.contains(title) { return false }
-                    if let isReadingList = child["ReadingListNonSync"] as? Bool, isReadingList { return false }
-                    // Check if it's a proxy or something we shouldn't sync
-                    if let type = child["WebBookmarkType"] as? String, type != "WebBookmarkTypeList" && type != "WebBookmarkTypeLeaf" { return false }
-                    return true
+                    !isSafariSystemNode(child)
                 }
                 if !rootItems.isEmpty {
                     traverse(nodes: rootItems, parentId: nil, rootChromeId: "2")
@@ -598,6 +693,7 @@ struct SyncBookmark {
     let parentId: String?
     let isFolder: Bool
     var inBookmarksBar: Bool = false
+    var dateAdded: Date? = nil
 }
 import Foundation
 import os.log

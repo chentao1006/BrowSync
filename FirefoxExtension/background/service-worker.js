@@ -761,6 +761,37 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
 }
 
 let bookmarkDebounceTimer = null;
+let bookmarkRemovalDebounceTimer = null;
+let pendingRemovedBookmarks = [];
+
+function queueRemovedBookmark(deletedBm) {
+  pendingRemovedBookmarks.push(deletedBm);
+  if (bookmarkRemovalDebounceTimer) {
+    clearTimeout(bookmarkRemovalDebounceTimer);
+  }
+
+  bookmarkRemovalDebounceTimer = setTimeout(() => {
+    const unique = new Map();
+    for (const bm of pendingRemovedBookmarks) {
+      unique.set(bm.id, bm);
+    }
+    pendingRemovedBookmarks = [];
+    bookmarkRemovalDebounceTimer = null;
+
+    for (const bm of unique.values()) {
+      console.log('[BrowSync] Debounced explicit bookmark removed:', bm);
+      send({
+        type: 'sync',
+        browser: DETECTED_BROWSER,
+        category: 'bookmarks_removed',
+        payload: { kind: 'bookmarksRemoved', bookmarksRemoved: bm },
+        messageId: crypto.randomUUID(),
+        timestamp: Date.now()
+      });
+    }
+  }, 10000);
+}
+
 async function handleBookmarkChange(reason) {
   if (isApplyingSync) return;
   
@@ -846,17 +877,9 @@ if (chrome.bookmarks) {
       sourceBrowser: DETECTED_BROWSER
     };
     
-    console.log('[BrowSync] Explicit bookmark removed:', deletedBm);
-    send({
-      type: 'sync',
-      browser: DETECTED_BROWSER,
-      category: 'bookmarks_removed',
-      payload: { kind: 'bookmarksRemoved', bookmarksRemoved: deletedBm },
-      messageId: crypto.randomUUID(),
-      timestamp: Date.now()
-    });
+    queueRemovedBookmark(deletedBm);
     
-    // Cancel any pending debounce — the explicit bookmarks_removed above is sufficient.
+    // Cancel any pending full-sync debounce — the debounced bookmarks_removed is sufficient.
     // A full resync after deletion risks mergeLevel preserving the deleted item in Safari.
     if (bookmarkDebounceTimer) {
       clearTimeout(bookmarkDebounceTimer);
