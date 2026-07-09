@@ -25,6 +25,7 @@ final class AppState: ObservableObject {
     // Published state
     @Published var browserInfos: [BrowserInfo] = Browser.allCases.map { .placeholder(for: $0) }
     @Published var isScanning: Bool = false
+    @Published var bookmarkFolderManagerOpenRequest: Int = 0
 
     // Active domain mock fields
     @Published var activeDomain: String? = "github.com"
@@ -214,6 +215,11 @@ final class AppState: ObservableObject {
         if let appURL = targetAppURL {
             NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration())
         }
+    }
+
+    func requestOpenBookmarkFolderManager() {
+        openWindowAction?("SettingsWindow")
+        bookmarkFolderManagerOpenRequest += 1
     }
 
     private func appURL(forBrowserId browserId: String) -> URL? {
@@ -443,20 +449,25 @@ extension AppState: DaemonServerDelegate {
                 var currentFolderTitles = Set(currentSafariBms.filter { $0.isFolder }.map { $0.title.lowercased() })
                 var snapshotToCheck = clientSnapshot
                 
-                // If syncing a specific folder, restrict deletion check to that folder
-                if let syncFolder = self.settingsService.syncSettings.bookmarkSyncFolder {
-                    let (urls, titles) = BookmarkTreeMerger.getIdentifiersInFolder(tree: bookmarks, folderPath: syncFolder)
+                if let sourceSyncFolder = self.settingsService.syncSettings.bookmarkFolder(for: sourceBrowser) {
+                    guard BookmarkTreeMerger.folderExists(tree: bookmarks, folderPath: sourceSyncFolder) else {
+                        self.syncService.missingBookmarkFolders[sourceBrowser.rawValue] = sourceSyncFolder
+                        self.notificationService.notifyBookmarkSyncFailed(browser: sourceBrowser, folder: sourceSyncFolder)
+                        return
+                    }
+                    let (urls, titles) = BookmarkTreeMerger.getIdentifiersInFolder(tree: bookmarks, folderPath: sourceSyncFolder)
                     currentUrls = urls
                     currentFolderTitles = titles
-                    
-                    if let targetFolderId = BookmarkTreeMerger.getIdentifiersInFolder(tree: clientSnapshot, folderPath: syncFolder).urls.isEmpty ? nil : "" {
-                        // We actually just filter the snapshotToCheck to only include items in the sync folder
-                        let (_, clientTitles) = BookmarkTreeMerger.getIdentifiersInFolder(tree: clientSnapshot, folderPath: syncFolder)
-                        // Wait, it's easier to just use `extractSubtreeAndMapRoot` to get the items
-                        snapshotToCheck = BookmarkTreeMerger.extractSubtreeAndMapRoot(sourceTree: clientSnapshot, targetTree: clientSnapshot, folderPath: syncFolder)
+                }
+
+                if let clientBrowser = Browser(rawValue: clientId.components(separatedBy: "-").first ?? clientId),
+                   let targetSyncFolder = self.settingsService.syncSettings.bookmarkFolder(for: clientBrowser) {
+                    if let targetSnapshot = BookmarkTreeMerger.extractExistingSubtreeAsRoot(sourceTree: clientSnapshot, folderPath: targetSyncFolder) {
+                        snapshotToCheck = targetSnapshot
                     } else {
-                        // If we can't cleanly extract, we just filter by descendants
-                        snapshotToCheck = BookmarkTreeMerger.extractSubtreeAndMapRoot(sourceTree: clientSnapshot, targetTree: clientSnapshot, folderPath: syncFolder)
+                        self.syncService.missingBookmarkFolders[clientBrowser.rawValue] = targetSyncFolder
+                        self.notificationService.notifyBookmarkSyncFailed(browser: clientBrowser, folder: targetSyncFolder)
+                        snapshotToCheck = []
                     }
                 }
                 
@@ -469,7 +480,7 @@ extension AppState: DaemonServerDelegate {
                 if !offlineDeleted.isEmpty {
                     self.syncService.log("Sending \(offlineDeleted.count) offline deletions to [\(clientId)]")
                     for deletedBm in offlineDeleted {
-                        let delMsg = WSMessage(
+                        var delMsg = WSMessage(
                             type: .sync,
                             site: "*",
                             category: "bookmarks_removed",
@@ -477,6 +488,9 @@ extension AppState: DaemonServerDelegate {
                             messageId: UUID().uuidString,
                             timestamp: Date().timeIntervalSince1970
                         )
+                        if let browser = Browser(rawValue: clientId.components(separatedBy: "-").first ?? clientId) {
+                            delMsg.targetBookmarkFolder = self.settingsService.syncSettings.bookmarkFolder(for: browser)
+                        }
                         server.send(delMsg, toClientId: clientId)
                     }
                 }
@@ -484,12 +498,15 @@ extension AppState: DaemonServerDelegate {
             // ────────────────────────────────────────────────────────────────────
             
             var finalBookmarksToSend = bookmarks
-            var isFullMirror = (strategy == .oneWay)
+            let isFullMirror = (strategy == .oneWay)
             
-            if let syncFolder = self.settingsService.syncSettings.bookmarkSyncFolder {
-                let targetSnapshot = self.backupService.getSnapshot(sourceBrowser: clientId) ?? []
-                finalBookmarksToSend = BookmarkTreeMerger.extractSubtreeAndMapRoot(sourceTree: bookmarks, targetTree: targetSnapshot, folderPath: syncFolder)
-                isFullMirror = false
+            if let syncFolder = self.settingsService.syncSettings.bookmarkFolder(for: sourceBrowser) {
+                guard let sourceRoot = BookmarkTreeMerger.extractExistingSubtreeAsRoot(sourceTree: bookmarks, folderPath: syncFolder) else {
+                    self.syncService.missingBookmarkFolders[sourceBrowser.rawValue] = syncFolder
+                    self.notificationService.notifyBookmarkSyncFailed(browser: sourceBrowser, folder: syncFolder)
+                    return
+                }
+                finalBookmarksToSend = sourceRoot
             }
             
             var msg = WSMessage(
@@ -501,6 +518,9 @@ extension AppState: DaemonServerDelegate {
                 timestamp: Date().timeIntervalSince1970
             )
             msg.isFullMirror = isFullMirror
+            if let browser = Browser(rawValue: clientId.components(separatedBy: "-").first ?? clientId) {
+                msg.targetBookmarkFolder = self.settingsService.syncSettings.bookmarkFolder(for: browser)
+            }
             // Only send to the requesting client
             let sourceName = sourceBrowser == .safari ? "Safari" : "Chrome"
             self.syncService.log("Answering pull request from [\(clientId)]: Pushed \(finalBookmarksToSend.count) \(sourceName) bookmarks (isFullMirror: \(msg.isFullMirror ?? false))")
@@ -641,6 +661,7 @@ extension AppState: DaemonServerDelegate {
         }
         payload["stateParticipatingBrowsers"] = AnyCodable(stateMap)
         payload["bookmarkParticipatingBrowsers"] = AnyCodable(bookmarkMap)
+        payload["bookmarkSyncFolders"] = AnyCodable(settingsService.syncSettings.bookmarkSyncFolders.compactMapValues { BookmarkFolderPath.canonicalized($0) })
         payload["tabSharingParticipatingBrowsers"] = AnyCodable(tabSharingMap)
         
         let effectiveWebsiteSettings = ProLimits.limitedWebsiteSettings(settingsService.syncSettings.websiteSettings, isProUnlocked: isProUnlocked)

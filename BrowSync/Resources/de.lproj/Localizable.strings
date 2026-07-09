@@ -457,3 +457,13 @@
 "Bookmarks Menu" = "Lesezeichenmenü";
 
 "Other Bookmarks" = "Andere Lesezeichen";
+"Mobile Bookmarks" = "Mobile Lesezeichen";
+"Manage Folders" = "Ordner verwalten";
+"Manage Bookmarks" = "Lesezeichen verwalten";
+"Manage Sync Folders" = "Synchronisierungsordner verwalten";
+"Confirm" = "Bestätigen";
+"Bookmark Sync Failed" = "Lesezeichensynchronisierung fehlgeschlagen";
+"The selected folder for %@ no longer exists: %@" = "Der ausgewählte Ordner für %@ existiert nicht mehr: %@";
+"Selected folder not found: %@" = "Ausgewählter Ordner nicht gefunden: %@";
+"Data not retrieved" = "Daten nicht abgerufen";
+"Please open this browser and ensure the BrowSync extension is active." = "Bitte öffnen Sie diesen Browser und stellen Sie sicher, dass die BrowSync-Erweiterung aktiv ist.";

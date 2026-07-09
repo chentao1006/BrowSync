@@ -459,3 +459,13 @@
 "Bookmarks Menu" = "북마크 메뉴";
 
 "Other Bookmarks" = "기타 북마크";
+"Mobile Bookmarks" = "모바일 북마크";
+"Manage Folders" = "폴더 관리";
+"Manage Bookmarks" = "북마크 관리";
+"Manage Sync Folders" = "동기화 폴더 관리";
+"Confirm" = "확인";
+"Bookmark Sync Failed" = "북마크 동기화 실패";
+"The selected folder for %@ no longer exists: %@" = "%@에서 선택한 폴더가 더 이상 없습니다: %@";
+"Selected folder not found: %@" = "선택한 폴더를 찾을 수 없습니다: %@";
+"Data not retrieved" = "데이터를 가져오지 못함";
+"Please open this browser and ensure the BrowSync extension is active." = "이 브라우저를 열고 BrowSync 확장 프로그램이 활성화되어 있는지 확인하세요.";

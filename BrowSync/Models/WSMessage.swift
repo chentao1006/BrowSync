@@ -32,6 +32,7 @@ struct WSMessage: Codable {
     var timestamp: Double?
     var error: String?
     var isFullMirror: Bool?
+    var targetBookmarkFolder: String?
 
     // MARK: Factory Methods
 

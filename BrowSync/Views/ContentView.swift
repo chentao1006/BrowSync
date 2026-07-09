@@ -7,6 +7,7 @@ struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var langBundle: LanguageBundle
     @State private var selectedTab: AppTab? = .browsers
+    @State private var handledBookmarkFolderManagerOpenRequest = 0
 
     var body: some View {
         NavigationSplitView {
@@ -70,6 +71,18 @@ struct ContentView: View {
             }
         }
         // Note: locale is set by BrowSyncApp via .environment(\.locale) — do NOT add another one here
+        .onAppear {
+            handleBookmarkFolderManagerOpenRequest()
+        }
+        .onChange(of: appState.bookmarkFolderManagerOpenRequest) { _ in
+            handleBookmarkFolderManagerOpenRequest()
+        }
+    }
+
+    private func handleBookmarkFolderManagerOpenRequest() {
+        guard appState.bookmarkFolderManagerOpenRequest != handledBookmarkFolderManagerOpenRequest else { return }
+        handledBookmarkFolderManagerOpenRequest = appState.bookmarkFolderManagerOpenRequest
+        selectedTab = .bookmarkSync
     }
 }
 

@@ -38,13 +38,7 @@ async function setCookieTimestamp(cookie, updatedAt) {
 // ─── Browser detection ────────────────────────────────────────────────────────
 
 function detectBrowserId() {
-  const ua = navigator.userAgent;
-  if (ua.includes('Firefox/')) return 'firefox';
-  if (ua.includes('Edg/')) return 'edge';
-  if (ua.includes('Safari/') && !ua.includes('Chrome/')) return 'safari';
-  if (ua.includes('Brave/') || navigator.brave) return 'brave';
-  // Arc detection: check for Arc-specific APIs
-  return 'chrome';
+  return 'firefox';
 }
 
 const DETECTED_BROWSER = detectBrowserId();
@@ -198,6 +192,7 @@ async function handleIncoming(message) {
           if (raw.tabSharingEnabled !== undefined) settings.tabSharingEnabled = raw.tabSharingEnabled;
           if (raw.stateParticipatingBrowsers) settings.stateParticipatingBrowsers = raw.stateParticipatingBrowsers;
           if (raw.bookmarkParticipatingBrowsers) settings.bookmarkParticipatingBrowsers = raw.bookmarkParticipatingBrowsers;
+          if (raw.bookmarkSyncFolders) settings.bookmarkSyncFolders = raw.bookmarkSyncFolders;
           if (raw.tabSharingParticipatingBrowsers) settings.tabSharingParticipatingBrowsers = raw.tabSharingParticipatingBrowsers;
           if (raw.websiteListPolicy !== undefined) settings.websiteListPolicy = raw.websiteListPolicy;
           if (raw.websiteSettings !== undefined) settings.websiteSettings = raw.websiteSettings;
@@ -229,7 +224,7 @@ async function applySync(message) {
   switch (category) {
     case 'bookmarks':
       console.log(`[BrowSync] Applying ${(payload.bookmarks || []).length} bookmarks... isFullMirror: ${message.isFullMirror}`);
-      await applyBookmarkSync(payload.bookmarks || [], message.isFullMirror);
+      await applyBookmarkSync(payload.bookmarks || [], message.isFullMirror, message.targetBookmarkFolder || null);
       break;
     case 'bookmarks_removed':
       if (chrome.bookmarks && payload.bookmark) {
@@ -240,21 +235,52 @@ async function applySync(message) {
         const syncIdMap = storageData.syncIdMap || {};
         const chromeId = syncIdMap[bm.id];
         let targetId = chromeId || bm.id;
+        const targetFolder = message.targetBookmarkFolder ? await findBookmarkFolderByPath(message.targetBookmarkFolder) : null;
+        if (message.targetBookmarkFolder && !targetFolder) {
+          send({
+            type: 'sync',
+            browser: DETECTED_BROWSER,
+            category: 'bookmark_folder_missing',
+            payload: { kind: 'raw', raw: { folder: message.targetBookmarkFolder } },
+            messageId: crypto.randomUUID(),
+            timestamp: Date.now()
+          });
+          break;
+        }
+
+        async function isInsideRemovalTarget(nodeId) {
+          if (!targetFolder) return true;
+          let currentId = nodeId;
+          const seen = new Set();
+          while (currentId && !seen.has(currentId)) {
+            if (currentId === targetFolder.id) return true;
+            seen.add(currentId);
+            const nodes = await chrome.bookmarks.get(currentId).catch(() => []);
+            const node = nodes && nodes[0];
+            if (!node) return false;
+            currentId = node.parentId;
+          }
+          return false;
+        }
         
         isApplyingSync = true;
         try {
-          await chrome.bookmarks.removeTree(targetId);
+          if (await isInsideRemovalTarget(targetId)) {
+            await chrome.bookmarks.removeTree(targetId);
+          } else {
+            throw new Error('Mapped bookmark is outside selected sync folder');
+          }
         } catch(e) {
           if (bm.url) {
             const results = await chrome.bookmarks.search({ url: bm.url });
             for (const r of results) {
-               if (r.title === bm.title) {
+               if (r.title === bm.title && await isInsideRemovalTarget(r.id)) {
                  await chrome.bookmarks.remove(r.id).catch(()=>{});
                  break;
                }
             }
           } else {
-            const tree = await chrome.bookmarks.getTree();
+            const tree = targetFolder ? (await chrome.bookmarks.getSubTree(targetFolder.id).catch(() => []))[0]?.children || [] : await chrome.bookmarks.getTree();
             let foundFolderId = null;
             function searchFolder(nodes) {
               for (const n of nodes) {
@@ -427,9 +453,11 @@ async function sendStorageSnapshot(storageType, site) {
 async function handlePullRequest(category, site) {
   console.log('[BrowSync] Received pull request for:', category, site);
   switch (category) {
+    case 'bookmark_backup':
     case 'bookmarks': {
       if (!chrome.bookmarks) return;
       const tree = await chrome.bookmarks.getTree();
+      updateLocalRoots(tree);
       const storageData = await chrome.storage.local.get('syncIdMap');
       const syncIdMap = storageData.syncIdMap || {};
       const chromeToSafariId = new Map();
@@ -440,33 +468,68 @@ async function handlePullRequest(category, site) {
       }
 
       const flat = [];
+      const isBackupOnly = category === 'bookmark_backup';
+      const backupRoots = isBackupOnly ? [
+        { actualId: localBarId, snapshotId: 'firefox-toolbar-root', title: 'Bookmarks Bar' },
+        { actualId: localMenuId, snapshotId: 'firefox-menu-root', title: 'Bookmarks Menu' },
+        { actualId: localOtherId, snapshotId: 'firefox-other-root', title: 'Other Bookmarks' },
+        { actualId: localMobileId, snapshotId: 'firefox-mobile-root', title: 'Mobile Bookmarks' }
+      ].filter(root => root.actualId) : [];
+      const backupRootByActualId = new Map(backupRoots.map(root => [root.actualId, root]));
+      if (isBackupOnly) {
+        for (const root of backupRoots) {
+          flat.push({
+            id: root.snapshotId,
+            title: root.title,
+            url: null,
+            parentId: '0',
+            isFolder: true,
+            dateAdded: Date.now(),
+            sourceBrowser: DETECTED_BROWSER
+          });
+        }
+      }
+
+      function appendNode(node) {
+        let normalizedParentId = node.parentId;
+        if (isBackupOnly && backupRootByActualId.has(node.parentId)) normalizedParentId = backupRootByActualId.get(node.parentId).snapshotId;
+        else if (node.parentId === localBarId) normalizedParentId = '1';
+        else if (node.parentId === localMenuId) normalizedParentId = '2';
+        else if (node.parentId === localOtherId) normalizedParentId = '2';
+        else if (node.parentId === localMobileId) normalizedParentId = '3';
+        else if (node.parentId === 'unfiled_____') normalizedParentId = '2';
+        else if (node.parentId === '0' || node.parentId === 'root________') normalizedParentId = '1';
+
+        let mappedId = isBackupOnly ? node.id : (chromeToSafariId.get(node.id) || node.id);
+        let mappedParentId = isBackupOnly ? normalizedParentId : (chromeToSafariId.get(normalizedParentId) || normalizedParentId);
+
+        flat.push({
+          id: mappedId,
+          title: node.title,
+          url: node.url,
+          parentId: mappedParentId,
+          isFolder: !node.url,
+          dateAdded: node.dateAdded,
+          sourceBrowser: DETECTED_BROWSER
+        });
+      }
+
       function traverse(nodes) {
         for (const node of nodes) {
           if (!systemRoots.has(node.id)) { // Skip root and system folders
-            let normalizedParentId = node.parentId;
-            if (node.parentId === localBarId) normalizedParentId = '1';
-            else if (node.parentId === localOtherId) normalizedParentId = '2';
-            else if (node.parentId === localMobileId) normalizedParentId = '3';
-            else if (node.parentId === 'unfiled_____') normalizedParentId = '2';
-            else if (node.parentId === '0' || node.parentId === 'root________') normalizedParentId = '1';
-
-            let mappedId = chromeToSafariId.get(node.id) || node.id;
-            let mappedParentId = chromeToSafariId.get(normalizedParentId) || normalizedParentId;
-
-            flat.push({ 
-              id: mappedId, 
-              title: node.title, 
-              url: node.url, 
-              parentId: mappedParentId,
-              isFolder: !node.url, 
-              dateAdded: node.dateAdded, 
-              sourceBrowser: DETECTED_BROWSER 
-            });
+            appendNode(node);
           }
           if (node.children) traverse(node.children);
         }
       }
-      traverse(tree);
+      if (isBackupOnly) {
+        for (const root of backupRoots) {
+          const subtree = await chrome.bookmarks.getSubTree(root.actualId).catch(() => []);
+          traverse(subtree[0]?.children || []);
+        }
+      } else {
+        traverse(tree);
+      }
       console.log(`[BrowSync] Sending ${flat.length} bookmarks...`);
       send({
         type: 'sync', browser: DETECTED_BROWSER, category: category === 'bookmark_backup' ? 'bookmark_backup' : 'bookmarks',
@@ -517,6 +580,7 @@ async function handlePullRequest(category, site) {
 let localBarId = '1';
 let localOtherId = '2';
 let localMobileId = '3';
+let localMenuId = null;
 let systemRoots = new Set(['0', '1', '2', '3']);
 
 function updateLocalRoots(tree) {
@@ -524,15 +588,26 @@ function updateLocalRoots(tree) {
   const isFirefox = localRoots.some(n => n.id === 'toolbar_____');
   if (isFirefox) {
     localBarId = localRoots.find(n => n.id === 'toolbar_____')?.id || 'toolbar_____';
-    localOtherId = localRoots.find(n => n.id === 'menu________')?.id || 'menu________';
+    localMenuId = localRoots.find(n => n.id === 'menu________')?.id || 'menu________';
+    localOtherId = localRoots.find(n => n.id === 'unfiled_____')?.id || 'unfiled_____';
     localMobileId = localRoots.find(n => n.id === 'mobile____')?.id || 'mobile____';
-    systemRoots = new Set(['0', 'root________', 'unfiled_____', localBarId, localOtherId, localMobileId]);
+    systemRoots = new Set(['0', 'root________', localBarId, localMenuId, localOtherId, localMobileId].filter(Boolean));
   } else {
     localBarId = localRoots[0]?.id || '1';
     localOtherId = localRoots[1]?.id || '2';
     localMobileId = localRoots[2]?.id || '3';
+    localMenuId = null;
     systemRoots = new Set(['0', localBarId, localOtherId, localMobileId]);
   }
+}
+
+function localizedRootLabels() {
+  return {
+    bar: new Set(['browsync-root-bar', 'browsync-root-favorites', 'Bookmarks Bar', 'Bookmarks Toolbar', 'Favorites', 'Favorites Bar', 'Favorites bar', '书签栏', '收藏夹栏', '書籤列', '收藏列', 'Lesezeichenleiste', 'Barra de favoritos', 'Barre de favoris', 'Barra dei preferiti', 'ブックマークバー', '북마크 바']),
+    menu: new Set(['browsync-root-menu', 'Bookmarks Menu', '书签菜单', '書籤選單', 'Lesezeichenmenü', 'Menú de marcadores', 'Menu des signets', 'Menu preferiti', 'ブックマークメニュー', '북마크 메뉴']),
+    other: new Set(['browsync-root-other', 'Other Bookmarks', 'Other Favorites', 'Other favorites', 'Other Favourites', 'Other favourites', '其他书签', '其他收藏夹', '其他收藏', '其他書籤', 'Andere Lesezeichen', 'Otros marcadores', 'Autres favoris', 'Altri preferiti', 'その他のブックマーク', '기타 북마크']),
+    mobile: new Set(['browsync-root-mobile', 'Mobile Bookmarks', '移动书签', '移动设备书签', '行動裝置書籤', 'Mobile Lesezeichen', 'Marcadores móviles', 'Favoris mobiles', 'Segnalibri mobili', 'モバイルブックマーク', '모바일 북마크'])
+  };
 }
 
 if (chrome.bookmarks) {
@@ -556,17 +631,121 @@ if (chrome.bookmarks) {
 
 let isApplyingSync = false;
 
-async function applyBookmarkSync(bookmarks, isFullMirror = false) {
+async function findBookmarkFolderByPath(folderPath) {
+  if (!folderPath) return null;
+  const parts = folderPath.split('/').map(p => p.trim()).filter(Boolean);
+  if (!parts.length) return null;
+  const tree = await chrome.bookmarks.getTree();
+  updateLocalRoots(tree);
+  let candidates = tree[0]?.children || [];
+  let current = null;
+  const labels = localizedRootLabels();
+  const first = parts[0];
+  if (labels.bar.has(first)) current = candidates.find(node => node.id === localBarId) || null;
+  else if (labels.menu.has(first)) current = candidates.find(node => node.id === localMenuId) || null;
+  else if (labels.other.has(first)) current = candidates.find(node => node.id === localOtherId) || null;
+  else if (labels.mobile.has(first)) current = candidates.find(node => node.id === localMobileId) || null;
+
+  if (current) {
+    parts.shift();
+    if (!parts.length) return current;
+    candidates = await chrome.bookmarks.getChildren(current.id).catch(() => []);
+  }
+
+  for (const part of parts) {
+    current = candidates.find(node => !node.url && node.title === part);
+    if (!current) return null;
+    candidates = await chrome.bookmarks.getChildren(current.id).catch(() => []);
+  }
+  return current;
+}
+
+async function currentBookmarkSyncFolderPath() {
+  const { appSettings } = await chrome.storage.local.get('appSettings').catch(() => ({}));
+  const folders = appSettings?.bookmarkSyncFolders || {};
+  return folders[DETECTED_BROWSER] || null;
+}
+
+async function isNodeInsideFolder(nodeId, folderId) {
+  if (!folderId) return true;
+  let currentId = nodeId;
+  const seen = new Set();
+  while (currentId && !seen.has(currentId)) {
+    if (currentId === folderId) return true;
+    seen.add(currentId);
+    const nodes = await chrome.bookmarks.get(currentId).catch(() => []);
+    const node = nodes && nodes[0];
+    if (!node) return false;
+    currentId = node.parentId;
+  }
+  return false;
+}
+
+async function isBookmarkEventInSelectedFolder(event = {}) {
+  const folderPath = await currentBookmarkSyncFolderPath();
+  if (!folderPath) return true;
+  const folder = await findBookmarkFolderByPath(folderPath);
+  if (!folder) {
+    send({
+      type: 'sync',
+      browser: DETECTED_BROWSER,
+      category: 'bookmark_folder_missing',
+      payload: { kind: 'raw', raw: { folder: folderPath } },
+      messageId: crypto.randomUUID(),
+      timestamp: Date.now()
+    });
+    return false;
+  }
+  const ids = [event.id, event.parentId, event.oldParentId, event.newParentId].filter(Boolean);
+  for (const id of ids) {
+    if (await isNodeInsideFolder(id, folder.id)) return true;
+  }
+  return false;
+}
+
+async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmarkFolder = null) {
   if (isApplyingSync) return;
   isApplyingSync = true;
   try {
   if (!chrome.bookmarks) return;
 
-  console.log(`[BrowSync] applyBookmarkSync: ${bookmarks.length} bookmarks, isFullMirror=${isFullMirror}`);
+  console.log(`[BrowSync] applyBookmarkSync: ${bookmarks.length} bookmarks, isFullMirror=${isFullMirror}, targetBookmarkFolder=${targetBookmarkFolder || '(root)'}`);
 
   // Ensure system roots are up to date
   const localTree = await chrome.bookmarks.getTree();
   updateLocalRoots(localTree);
+  let targetRootId = null;
+  if (targetBookmarkFolder) {
+    const targetFolder = await findBookmarkFolderByPath(targetBookmarkFolder);
+    if (!targetFolder) {
+      console.warn(`[BrowSync] Selected bookmark folder no longer exists: ${targetBookmarkFolder}`);
+      send({
+        type: 'sync',
+        browser: DETECTED_BROWSER,
+        category: 'bookmark_folder_missing',
+        payload: { kind: 'raw', raw: { folder: targetBookmarkFolder } },
+        messageId: crypto.randomUUID(),
+        timestamp: Date.now()
+      });
+      return;
+    }
+    targetRootId = targetFolder.id;
+  }
+
+  async function isInsideTargetFolder(nodeId) {
+    if (!targetRootId) return true;
+    let currentId = nodeId;
+    const seen = new Set();
+    while (currentId && !seen.has(currentId)) {
+      if (currentId === targetRootId) return true;
+      seen.add(currentId);
+      const nodes = await chrome.bookmarks.get(currentId).catch(() => []);
+      const node = nodes && nodes[0];
+      if (!node) return false;
+      currentId = node.parentId;
+    }
+    return false;
+  }
 
   // STEP 1: If full mirror, snapshot current Chrome state and send back as backup
   if (isFullMirror) {
@@ -577,6 +756,7 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
         if (!systemRoots.has(node.id)) {
           let pId = node.parentId;
           if (pId === localBarId) pId = '1';
+          else if (pId === localMenuId) pId = '2';
           else if (pId === localOtherId) pId = '2';
           else if (pId === localMobileId) pId = '3';
           else if (pId === 'unfiled_____') pId = '2';
@@ -635,7 +815,9 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
     if (ignoreIds.has(bm.id)) continue; // Defensively ignore system folders
     
     let effectiveParent = bm.parentId;
-    if (!effectiveParent || effectiveParent === '1' || effectiveParent === '0' || effectiveParent === localBarId) {
+    if (targetRootId && (!effectiveParent || effectiveParent === '1' || effectiveParent === '0' || effectiveParent === '2' || effectiveParent === localBarId || effectiveParent === localOtherId)) {
+      rootsBar.push(bm);
+    } else if (!effectiveParent || effectiveParent === '1' || effectiveParent === '0' || effectiveParent === localBarId) {
       rootsBar.push(bm);
     } else if (effectiveParent === '2' || effectiveParent === localOtherId) {
       rootsOther.push(bm);
@@ -655,7 +837,11 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
         const mappedId = idMap.get(bm.id);
         const results = await chrome.bookmarks.get(mappedId).catch(() => []);
         if (results && results.length > 0) {
-          existingNode = results[0];
+          if (await isInsideTargetFolder(results[0].id)) {
+            existingNode = results[0];
+          } else {
+            idMap.delete(bm.id);
+          }
         } else {
           idMap.delete(bm.id); // Stale map
         }
@@ -669,7 +855,7 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
         } else if (bm.url) {
           const searchResults = await chrome.bookmarks.search({ url: bm.url });
           existingNode = searchResults.find(r => r.parentId === localParentId);
-          if (!existingNode && searchResults.length > 0) {
+          if (!existingNode && !targetRootId && searchResults.length > 0) {
             existingNode = searchResults[0];
           }
         }
@@ -704,8 +890,10 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
     }
   }
 
-  await processNodes(rootsBar, localBarId);
-  await processNodes(rootsOther, localOtherId);
+  await processNodes(rootsBar, targetRootId || localBarId);
+  if (!targetRootId) {
+    await processNodes(rootsOther, localOtherId);
+  }
   
   // Persist mapping to prevent duplicates/deletions on restart or subsequent syncs
   await chrome.storage.local.set({ syncIdMap: Object.fromEntries(idMap) });
@@ -747,11 +935,16 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false) {
       }
     }
 
-    // Prune inside all safe system roots
-    const rootNodes = freshTree[0]?.children || [];
-    for (const rootNode of rootNodes) {
-      if (rootNode?.children) {
-        await pruneTree(rootNode.children);
+    if (targetRootId) {
+      const children = await chrome.bookmarks.getChildren(targetRootId).catch(() => []);
+      await pruneTree(children);
+    } else {
+      // Prune inside all safe system roots
+      const rootNodes = freshTree[0]?.children || [];
+      for (const rootNode of rootNodes) {
+        if (rootNode?.children) {
+          await pruneTree(rootNode.children);
+        }
       }
     }
     console.log('[BrowSync] Pruning complete');
@@ -792,8 +985,12 @@ function queueRemovedBookmark(deletedBm) {
   }, 10000);
 }
 
-async function handleBookmarkChange(reason) {
+async function handleBookmarkChange(reason, event = {}) {
   if (isApplyingSync) return;
+  if (!(await isBookmarkEventInSelectedFolder(event))) {
+    console.log(`[BrowSync] Ignored bookmark ${reason} outside selected sync folder`);
+    return;
+  }
   
   // Clear existing timer to debounce
   if (bookmarkDebounceTimer) {
@@ -803,6 +1000,7 @@ async function handleBookmarkChange(reason) {
   // Wait for 3 seconds of silence
   bookmarkDebounceTimer = setTimeout(async () => {
     if (isApplyingSync) return; // double check
+    if (!(await isBookmarkEventInSelectedFolder(event))) return;
     console.log(`[BrowSync] Bookmark changed (${reason}), preparing to sync after debounce...`);
     const preTree = await chrome.bookmarks.getTree();
     const snapshot = [];
@@ -845,9 +1043,13 @@ async function handleBookmarkChange(reason) {
 }
 
 if (chrome.bookmarks) {
-  chrome.bookmarks.onCreated.addListener(() => handleBookmarkChange('created'));
+  chrome.bookmarks.onCreated.addListener((id, node) => handleBookmarkChange('created', { id, parentId: node?.parentId }));
   chrome.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
     if (isApplyingSync) return;
+    if (!(await isBookmarkEventInSelectedFolder({ id, parentId: removeInfo.parentId || removeInfo.node?.parentId }))) {
+      console.log('[BrowSync] Ignored bookmark removal outside selected sync folder');
+      return;
+    }
     
     // Explicitly send the removed bookmark to the server
     const storageData = await chrome.storage.local.get('syncIdMap');
@@ -886,8 +1088,8 @@ if (chrome.bookmarks) {
       bookmarkDebounceTimer = null;
     }
   });
-  chrome.bookmarks.onChanged.addListener(() => handleBookmarkChange('changed'));
-  chrome.bookmarks.onMoved.addListener(() => handleBookmarkChange('moved'));
+  chrome.bookmarks.onChanged.addListener((id) => handleBookmarkChange('changed', { id }));
+  chrome.bookmarks.onMoved.addListener((id, moveInfo) => handleBookmarkChange('moved', { id, oldParentId: moveInfo?.oldParentId, newParentId: moveInfo?.parentId }));
 }
 
 // ─── Cookies ─────────────────────────────────────────────────────────────────

@@ -3,6 +3,79 @@
 
 import Foundation
 
+enum BookmarkFolderPath {
+    static let rootBar = "browsync-root-bar"
+    static let rootMenu = "browsync-root-menu"
+    static let rootOther = "browsync-root-other"
+    static let rootMobile = "browsync-root-mobile"
+    static let rootFavorites = "browsync-root-favorites"
+
+    static func displayComponent(_ component: String, bundle: Bundle = .main) -> String {
+        switch component {
+        case rootBar:
+            return String(localized: "Bookmarks Bar", bundle: bundle)
+        case rootMenu:
+            return String(localized: "Bookmarks Menu", bundle: bundle)
+        case rootOther:
+            return String(localized: "Other Bookmarks", bundle: bundle)
+        case rootMobile:
+            return String(localized: "Mobile Bookmarks", bundle: bundle)
+        case rootFavorites:
+            return String(localized: "Favorites", bundle: bundle)
+        default:
+            return component
+        }
+    }
+
+    static func displayPath(_ path: String?, bundle: Bundle = .main) -> String? {
+        guard let path, !path.isEmpty else { return nil }
+        return path.components(separatedBy: "/")
+            .filter { !$0.isEmpty }
+            .map { displayComponent($0, bundle: bundle) }
+            .joined(separator: "/")
+    }
+
+    static func canonicalized(_ path: String?) -> String? {
+        guard let path, !path.isEmpty else { return nil }
+        var components = path.components(separatedBy: "/").filter { !$0.isEmpty }
+        guard let first = components.first else { return nil }
+        components[0] = canonicalRootComponent(first) ?? first
+        return components.joined(separator: "/")
+    }
+
+    private static func canonicalRootComponent(_ component: String) -> String? {
+        let barNames = [
+            rootBar, rootFavorites,
+            "Bookmarks Bar", "Bookmarks Toolbar", "Favorites", "Favorites Bar", "Favorites bar",
+            "书签栏", "收藏夹栏", "書籤列", "收藏列",
+            String(localized: "Bookmarks Bar", bundle: Bundle.main),
+            String(localized: "Favorites", bundle: Bundle.main)
+        ]
+        let menuNames = [
+            rootMenu,
+            "Bookmarks Menu", "书签菜单", "書籤選單",
+            String(localized: "Bookmarks Menu", bundle: Bundle.main)
+        ]
+        let otherNames = [
+            rootOther,
+            "Other Bookmarks", "Other Favorites", "Other favorites", "Other Favourites", "Other favourites",
+            "其他书签", "其他收藏夹", "其他收藏", "其他書籤",
+            String(localized: "Other Bookmarks", bundle: Bundle.main)
+        ]
+        let mobileNames = [
+            rootMobile,
+            "Mobile Bookmarks", "移动书签", "移动设备书签", "行動裝置書籤",
+            String(localized: "Mobile Bookmarks", bundle: Bundle.main)
+        ]
+
+        if barNames.contains(component) { return rootBar }
+        if menuNames.contains(component) { return rootMenu }
+        if otherNames.contains(component) { return rootOther }
+        if mobileNames.contains(component) { return rootMobile }
+        return nil
+    }
+}
+
 // MARK: - Bookmark
 
 struct Bookmark: Identifiable, Codable, Equatable {
@@ -210,6 +283,7 @@ struct SyncSettings: Codable, Equatable {
     var bookmarkSyncStrategy: BookmarkSyncStrategy = .twoWayMerge
     var bookmarkSourceBrowser: Browser = .safari
     var bookmarkSyncFolder: String? = nil
+    var bookmarkSyncFolders: [String: String] = [:]
     var bookmarkAutoSync: Bool = false
     var bookmarkParticipatingBrowsers: Set<Browser> = []
     
@@ -229,7 +303,7 @@ struct SyncSettings: Codable, Equatable {
     var iCloudSync: Bool = false     // PRO
 
     private enum CodingKeys: String, CodingKey {
-        case conflictStrategy, bookmarkSyncStrategy, bookmarkSourceBrowser, bookmarkSyncFolder, bookmarkAutoSync, bookmarkParticipatingBrowsers, browserDataSyncStrategy, stateSourceBrowser, stateParticipatingBrowsers, websiteListPolicy, websiteSettings, tabSharingParticipatingBrowsers, tabSharingEnabled, enabledCategories, automaticSync, iCloudSync
+        case conflictStrategy, bookmarkSyncStrategy, bookmarkSourceBrowser, bookmarkSyncFolder, bookmarkSyncFolders, bookmarkAutoSync, bookmarkParticipatingBrowsers, browserDataSyncStrategy, stateSourceBrowser, stateParticipatingBrowsers, websiteListPolicy, websiteSettings, tabSharingParticipatingBrowsers, tabSharingEnabled, enabledCategories, automaticSync, iCloudSync
     }
 
     init() {}
@@ -240,6 +314,12 @@ struct SyncSettings: Codable, Equatable {
         bookmarkSyncStrategy = try container.decodeIfPresent(BookmarkSyncStrategy.self, forKey: .bookmarkSyncStrategy) ?? .twoWayMerge
         bookmarkSourceBrowser = try container.decodeIfPresent(Browser.self, forKey: .bookmarkSourceBrowser) ?? .safari
         bookmarkSyncFolder = try container.decodeIfPresent(String.self, forKey: .bookmarkSyncFolder)
+        bookmarkSyncFolders = try container.decodeIfPresent([String: String].self, forKey: .bookmarkSyncFolders) ?? [:]
+        if bookmarkSyncFolders.isEmpty, let bookmarkSyncFolder {
+            for browser in Browser.allCases {
+                bookmarkSyncFolders[browser.rawValue] = bookmarkSyncFolder
+            }
+        }
         bookmarkAutoSync = try container.decodeIfPresent(Bool.self, forKey: .bookmarkAutoSync) ?? false
         bookmarkParticipatingBrowsers = try container.decodeIfPresent(Set<Browser>.self, forKey: .bookmarkParticipatingBrowsers) ?? []
         browserDataSyncStrategy = try container.decodeIfPresent(BrowserDataSyncStrategy.self, forKey: .browserDataSyncStrategy) ?? .latestWins
@@ -252,6 +332,19 @@ struct SyncSettings: Codable, Equatable {
         enabledCategories = try container.decodeIfPresent(Set<SyncCategory>.self, forKey: .enabledCategories) ?? []
         automaticSync = try container.decodeIfPresent(Bool.self, forKey: .automaticSync) ?? false
         iCloudSync = try container.decodeIfPresent(Bool.self, forKey: .iCloudSync) ?? false
+    }
+
+    func bookmarkFolder(for browser: Browser) -> String? {
+        BookmarkFolderPath.canonicalized(bookmarkSyncFolders[browser.rawValue].flatMap { $0.isEmpty ? nil : $0 })
+    }
+
+    mutating func setBookmarkFolder(_ folder: String?, for browser: Browser) {
+        if let folder, !folder.isEmpty {
+            bookmarkSyncFolders[browser.rawValue] = folder
+        } else {
+            bookmarkSyncFolders.removeValue(forKey: browser.rawValue)
+        }
+        bookmarkSyncFolder = bookmarkSyncFolders.isEmpty ? nil : bookmarkSyncFolder
     }
 }
 // BookmarkTreeMerger.swift
@@ -359,27 +452,166 @@ struct BookmarkTreeMerger {
         
         return (urls, titles)
     }
+
+    static func folderExists(tree: [Bookmark], folderPath: String) -> Bool {
+        let components = folderPath.components(separatedBy: "/").filter { !$0.isEmpty }
+        guard !components.isEmpty else { return true }
+        return findFolderId(pathComponents: components, in: tree) != nil
+    }
+
+    static func idsInFolderIncludingRoot(tree: [Bookmark], folderPath: String?) -> Set<String> {
+        guard let folderPath, !folderPath.isEmpty else { return Set(tree.map(\.id)) }
+        let components = folderPath.components(separatedBy: "/").filter { !$0.isEmpty }
+        guard let folderId = findFolderId(pathComponents: components, in: tree) else { return [] }
+        var ids = Set([folderId])
+        ids.formUnion(extractDescendants(of: folderId, in: tree).map(\.id))
+        return ids
+    }
+
+    static func extractExistingSubtreeAsRoot(sourceTree: [Bookmark], folderPath: String?) -> [Bookmark]? {
+        guard let folderPath, !folderPath.isEmpty else { return sourceTree }
+        let components = folderPath.components(separatedBy: "/").filter { !$0.isEmpty }
+        guard let folderId = findFolderId(pathComponents: components, in: sourceTree) else { return nil }
+        var descendants = extractDescendants(of: folderId, in: sourceTree)
+        for index in descendants.indices where descendants[index].parentId == folderId {
+            descendants[index].parentId = "1"
+        }
+        return descendants
+    }
+
+    static func replaceExistingFolderContents(sourceTree: [Bookmark], targetTree: [Bookmark], targetFolderPath: String?) -> [Bookmark]? {
+        guard let targetFolderPath, !targetFolderPath.isEmpty else { return sourceTree }
+        let components = targetFolderPath.components(separatedBy: "/").filter { !$0.isEmpty }
+        guard let targetFolderId = findFolderId(pathComponents: components, in: targetTree) else { return nil }
+        let topSourceIds = Set(sourceTree.filter { ($0.parentId ?? "1") == "1" || ($0.parentId ?? "1") == "0" || ($0.parentId ?? "1") == "2" }.map(\.id))
+        let existingDescendants = Set(extractDescendants(of: targetFolderId, in: targetTree).map(\.id))
+        var result = targetTree.filter { !existingDescendants.contains($0.id) }
+        for var bookmark in sourceTree {
+            if topSourceIds.contains(bookmark.id) {
+                bookmark.parentId = targetFolderId
+            }
+            result.append(bookmark)
+        }
+        return result
+    }
+
+    static func mergeIntoExistingFolder(sourceTree: [Bookmark], targetTree: [Bookmark], targetFolderPath: String?) -> [Bookmark]? {
+        guard let targetFolderPath, !targetFolderPath.isEmpty else { return sourceTree }
+        let components = targetFolderPath.components(separatedBy: "/").filter { !$0.isEmpty }
+        guard let targetFolderId = findFolderId(pathComponents: components, in: targetTree) else { return nil }
+        let topSourceIds = Set(sourceTree.filter { ($0.parentId ?? "1") == "1" || ($0.parentId ?? "1") == "0" || ($0.parentId ?? "1") == "2" }.map(\.id))
+        let targetDescendants = extractDescendants(of: targetFolderId, in: targetTree)
+        let duplicateTargetIds = duplicateURLBookmarkIds(in: targetDescendants)
+        var existingURLs = Set(targetDescendants.filter { !duplicateTargetIds.contains($0.id) }.compactMap { normalizedURL($0) })
+        var existingFoldersByParentAndTitle: [String: String] = [:]
+        for bookmark in targetDescendants where bookmark.isFolder {
+            existingFoldersByParentAndTitle[folderIdentityKey(bookmark)] = bookmark.id
+        }
+
+        var result = targetTree.filter { !duplicateTargetIds.contains($0.id) }
+        var remappedFolderIds: [String: String] = [:]
+
+        for var bookmark in sourceTree {
+            if let parentId = bookmark.parentId, let remappedParentId = remappedFolderIds[parentId] {
+                bookmark.parentId = remappedParentId
+            } else if topSourceIds.contains(bookmark.id) {
+                bookmark.parentId = targetFolderId
+            }
+
+            if bookmark.isFolder {
+                let key = folderIdentityKey(bookmark)
+                if let existingFolderId = existingFoldersByParentAndTitle[key] {
+                    remappedFolderIds[bookmark.id] = existingFolderId
+                    continue
+                }
+                existingFoldersByParentAndTitle[key] = bookmark.id
+                result.append(bookmark)
+                continue
+            }
+
+            if let url = normalizedURL(bookmark) {
+                if existingURLs.contains(url) {
+                    continue
+                }
+                existingURLs.insert(url)
+            }
+            result.append(bookmark)
+        }
+        return result
+    }
+
+    static func deduplicatedBookmarksInFolder(tree: [Bookmark], folderPath: String?) -> [Bookmark]? {
+        guard let folderPath, !folderPath.isEmpty else {
+            return tree
+        }
+        let components = folderPath.components(separatedBy: "/").filter { !$0.isEmpty }
+        guard let folderId = findFolderId(pathComponents: components, in: tree) else { return nil }
+        let duplicateIds = duplicateURLBookmarkIds(in: extractDescendants(of: folderId, in: tree))
+        return tree.filter { !duplicateIds.contains($0.id) }
+    }
+
+    private static func duplicateURLBookmarkIds(in bookmarks: [Bookmark]) -> Set<String> {
+        var seenURLs = Set<String>()
+        var duplicateIds = Set<String>()
+        for bookmark in bookmarks where !bookmark.isFolder {
+            guard let url = normalizedURL(bookmark) else { continue }
+            if seenURLs.contains(url) {
+                duplicateIds.insert(bookmark.id)
+            } else {
+                seenURLs.insert(url)
+            }
+        }
+        return duplicateIds
+    }
+
+    private static func normalizedURL(_ bookmark: Bookmark) -> String? {
+        guard let url = bookmark.url.flatMap({ $0 })?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !url.isEmpty else {
+            return nil
+        }
+        return url.lowercased()
+    }
+
+    private static func folderIdentityKey(_ bookmark: Bookmark) -> String {
+        let parentId = bookmark.parentId ?? ""
+        let title = bookmark.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return "\(parentId)|\(title)"
+    }
     
     private static func matchRootComponent(_ component: String) -> String? {
+        rootIdsMatching(component).first
+    }
+
+    private static func rootIdsMatching(_ component: String) -> [String] {
         let barNames = [
-            "Bookmarks Bar", "书签栏", "書籤列", "Favorites", "Favorites Bar",
+            BookmarkFolderPath.rootBar, BookmarkFolderPath.rootFavorites,
+            "Bookmarks Bar", "书签栏", "書籤列", "Favorites", "Favorites Bar", "Favorites bar",
+            "收藏夹栏", "收藏列",
             String(localized: "Bookmarks Bar", bundle: Bundle.main),
             String(localized: "Favorites", bundle: Bundle.main)
         ]
-        let otherNames = [
-            "Other Bookmarks", "其他书签", "其他書籤", "Bookmarks Menu", "Other Favorites",
-            String(localized: "Other Bookmarks", bundle: Bundle.main),
+        let menuNames = [
+            BookmarkFolderPath.rootMenu,
+            "Bookmarks Menu", "书签菜单", "書籤選單",
             String(localized: "Bookmarks Menu", bundle: Bundle.main)
         ]
+        let otherNames = [
+            BookmarkFolderPath.rootOther,
+            "Other Bookmarks", "其他书签", "其他書籤", "Other Favorites", "Other favorites", "Other Favourites", "Other favourites",
+            "其他收藏夹", "其他收藏", "其他我的收藏",
+            String(localized: "Other Bookmarks", bundle: Bundle.main),
+        ]
         let mobileNames = [
-            "Mobile Bookmarks", "移动设备书签", "行動裝置書籤",
+            BookmarkFolderPath.rootMobile,
+            "Mobile Bookmarks", "移动书签", "移动设备书签", "行動裝置書籤",
             String(localized: "Mobile Bookmarks", bundle: Bundle.main)
         ]
         
-        if barNames.contains(component) { return "1" }
-        if otherNames.contains(component) { return "2" }
-        if mobileNames.contains(component) { return "3" }
-        return nil
+        if barNames.contains(component) { return ["1", BookmarkFolderPath.rootBar, BookmarkFolderPath.rootFavorites, "firefox-toolbar-root"] }
+        if menuNames.contains(component) { return ["2", BookmarkFolderPath.rootMenu, "firefox-menu-root"] }
+        if otherNames.contains(component) { return ["2", BookmarkFolderPath.rootOther, "firefox-other-root"] }
+        if mobileNames.contains(component) { return ["3", BookmarkFolderPath.rootMobile, "firefox-mobile-root"] }
+        return []
     }
 
     private static func findFolderId(pathComponents: [String], in tree: [Bookmark]) -> String? {
@@ -389,9 +621,35 @@ struct BookmarkTreeMerger {
         var currentId: String? = nil
         
         for (index, component) in pathComponents.enumerated() {
-            if index == 0, let rootId = matchRootComponent(component) {
-                currentId = rootId
-                currentParentIds = [rootId]
+            if index == 0 {
+                let matchingRootIds = rootIdsMatching(component)
+                if !matchingRootIds.isEmpty {
+                    let canonicalComponent = BookmarkFolderPath.canonicalized(component) ?? component
+                    var preferredRootIds: [String] = []
+                    for rootId in [component, canonicalComponent] + matchingRootIds where !preferredRootIds.contains(rootId) {
+                        preferredRootIds.append(rootId)
+                    }
+
+                    let existingRootId = preferredRootIds.first { rootId in
+                        tree.contains { $0.id == rootId }
+                    } ?? preferredRootIds.first { rootId in
+                        rootIds.contains(rootId)
+                    } ?? preferredRootIds[0]
+                    currentId = existingRootId
+                    currentParentIds = Set(preferredRootIds)
+                    currentParentIds.formUnion(tree.filter {
+                        $0.isFolder && preferredRootIds.contains($0.id)
+                    }.map(\.id))
+                    continue
+                }
+            }
+
+            let directRootMatches = tree.filter {
+                $0.isFolder && $0.title == component && currentParentIds.contains($0.id)
+            }
+            if let match = directRootMatches.first {
+                currentId = match.id
+                currentParentIds = [match.id]
                 continue
             }
             

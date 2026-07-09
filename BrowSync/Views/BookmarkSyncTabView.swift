@@ -3,6 +3,36 @@
 
 import SwiftUI
 
+@MainActor
+private func openBookmarkManager(for browser: Browser, appState: AppState) {
+    let managerURL: URL?
+    switch browser.id {
+    case "chrome", "arc", "orion", "helium", "browseros":
+        managerURL = URL(string: "chrome://bookmarks")
+    case "edge":
+        managerURL = URL(string: "edge://favorites")
+    case "brave":
+        managerURL = URL(string: "brave://bookmarks")
+    case "firefox":
+        managerURL = nil
+    case "vivaldi":
+        managerURL = URL(string: "vivaldi://bookmarks")
+    case "opera":
+        managerURL = URL(string: "opera://bookmarks")
+    case "yandex":
+        managerURL = URL(string: "browser://bookmarks")
+    default:
+        managerURL = nil
+    }
+
+    let appURL = appState.browserInfos.first(where: { $0.browser == browser })?.appURL ?? browser.appURL
+    if let managerURL, let appURL {
+        NSWorkspace.shared.open([managerURL], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration())
+    } else if let appURL {
+        NSWorkspace.shared.open(appURL)
+    }
+}
+
 struct BookmarkSyncTabView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var backupService: BackupService
@@ -17,7 +47,8 @@ struct BookmarkSyncTabView: View {
     @State private var showSandboxAlert = false
     @State private var showAutoSyncUpgradeAlert = false
     
-    @State private var showFolderSheet = false
+    @State private var showFolderManager = false
+    @State private var handledFolderManagerOpenRequest = 0
     
     @StateObject private var sandboxManager = SandboxAccessManager.shared
     
@@ -34,6 +65,14 @@ struct BookmarkSyncTabView: View {
     
     private var availableBrowsers: [BrowserInfo] {
         return appState.browserInfos.filter { $0.isInstalled }
+    }
+
+    private var hasMissingManagedFolder: Bool {
+        let participants = syncSettings.bookmarkParticipatingBrowsers.wrappedValue
+        return participants.contains { browser in
+            if appState.syncService.missingBookmarkFolders[browser.rawValue] != nil { return true }
+            return appState.syncService.bookmarkFolderMissing(browser, folder: syncSettings.wrappedValue.bookmarkFolder(for: browser))
+        }
     }
 
     var body: some View {
@@ -180,11 +219,11 @@ struct BookmarkSyncTabView: View {
                     }
                     .pickerStyle(.menu)
                     
-                    if syncSettings.bookmarkSyncStrategy.wrappedValue == .twoWayMerge {
-                        Text(String(localized: "Merge Warning Note", bundle: langBundle.bundle))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    // if syncSettings.bookmarkSyncStrategy.wrappedValue == .twoWayMerge {
+                    //     Text(String(localized: "Merge Warning Note", bundle: langBundle.bundle))
+                    //         .font(.caption)
+                    //         .foregroundStyle(.secondary)
+                    // }
                 
                     if syncSettings.bookmarkSyncStrategy.wrappedValue == .oneWay {
                         Picker(String(localized: "Bookmark Source Browser", bundle: langBundle.bundle), selection: syncSettings.bookmarkSourceBrowser) {
@@ -246,34 +285,22 @@ struct BookmarkSyncTabView: View {
                         Text(String(localized: "Sync Folder", bundle: langBundle.bundle))
                         Spacer()
                         Button {
-                            showFolderSheet = true
+                            showFolderManager = true
                         } label: {
-                                HStack(spacing: 6) {
-                                    if let appURL = appState.browserInfos.first(where: { $0.browser == syncSettings.bookmarkSourceBrowser.wrappedValue })?.appURL {
-                                        AppIconImage(appURL: appURL)
-                                            .frame(width: 16, height: 16)
-                                    }
-                                    Text(syncSettings.bookmarkSyncFolder.wrappedValue ?? String(localized: "Root Directory (All Bookmarks)", bundle: langBundle.bundle))
-                                        .truncationMode(.middle)
-                                    Image(systemName: "chevron.up.chevron.down")
-                                        .font(.caption)
+                            HStack(spacing: 6) {
+                                if hasMissingManagedFolder {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundStyle(.orange)
                                 }
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color(NSColor.controlBackgroundColor))
-                            .cornerRadius(6)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(NSColor.separatorColor), lineWidth: 1))
-                            .popover(isPresented: $showFolderSheet, arrowEdge: .bottom) {
-                                FolderSelectionSheet(
-                                    selectedFolder: syncSettings.bookmarkSyncFolder,
-                                    sourceBrowser: syncSettings.bookmarkSourceBrowser,
-                                    langBundle: langBundle.bundle
-                                )
-                                .environmentObject(appState)
+                                Text(String(localized: "Manage Folders", bundle: langBundle.bundle))
                             }
                         }
+                        .buttonStyle(.bordered)
+                    }
+                    .sheet(isPresented: $showFolderManager) {
+                        BookmarkFolderManagementWindow(langBundle: langBundle.bundle)
+                            .environmentObject(appState)
+                    }
                     .onChange(of: syncSettings.bookmarkSyncStrategy.wrappedValue) { _ in
                         appState.settingsService.save()
                     }
@@ -446,6 +473,18 @@ struct BookmarkSyncTabView: View {
                 Text(String(localized: "Real-time auto sync is a Professional feature. Unlock Professional to enable it.", bundle: langBundle.bundle))
             }
         }
+        .onAppear {
+            handleFolderManagerOpenRequest()
+        }
+        .onChange(of: appState.bookmarkFolderManagerOpenRequest) { _ in
+            handleFolderManagerOpenRequest()
+        }
+    }
+
+    private func handleFolderManagerOpenRequest() {
+        guard appState.bookmarkFolderManagerOpenRequest != handledFolderManagerOpenRequest else { return }
+        handledFolderManagerOpenRequest = appState.bookmarkFolderManagerOpenRequest
+        showFolderManager = true
     }
     
     
@@ -583,14 +622,14 @@ class FolderNodeClass {
         self.orderIndex = orderIndex
     }
     
-    func toStruct() -> FolderNode {
-        let sortedChildren = children.values.sorted { $0.orderIndex < $1.orderIndex }.map { $0.toStruct() }
-        return FolderNode(id: fullPath, name: name, children: sortedChildren.isEmpty ? nil : sortedChildren)
+    func toStruct(bundle: Bundle) -> FolderNode {
+        let sortedChildren = children.values.sorted { $0.orderIndex < $1.orderIndex }.map { $0.toStruct(bundle: bundle) }
+        return FolderNode(id: fullPath, name: BookmarkFolderPath.displayComponent(name, bundle: bundle), children: sortedChildren.isEmpty ? nil : sortedChildren)
     }
 }
 
 extension BookmarkSyncTabView {
-    static func buildTree(from paths: [String]) -> [FolderNode] {
+    static func buildTree(from paths: [String], bundle: Bundle = .main) -> [FolderNode] {
         let root = FolderNodeClass(name: "", fullPath: "", orderIndex: -1)
         for (i, path) in paths.enumerated() {
             let components = path.components(separatedBy: "/")
@@ -604,11 +643,450 @@ extension BookmarkSyncTabView {
                 current = current.children[component]!
             }
         }
-        return root.children.values.sorted { $0.orderIndex < $1.orderIndex }.map { $0.toStruct() }
+        return root.children.values.sorted { $0.orderIndex < $1.orderIndex }.map { $0.toStruct(bundle: bundle) }
     }
 }
 
-// MARK: - Folder Selection Sheet
+// MARK: - Bookmark Folder Management
+
+struct BookmarkFolderManagementWindow: View {
+    @EnvironmentObject var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    let langBundle: Bundle
+
+    @State private var draftFolders: [String: String] = [:]
+    @State private var snapshotRefreshTick = 0
+
+    private var browsers: [Browser] {
+        appState.browserInfos
+            .filter { $0.isInstalled && appState.settingsService.syncSettings.bookmarkParticipatingBrowsers.contains($0.browser) }
+            .map(\.browser)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(String(localized: "Manage Sync Folders", bundle: langBundle))
+                    .font(.title3.bold())
+                Spacer()
+            }
+            .padding()
+
+            Divider()
+
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(browsers, id: \.self) { browser in
+                        BookmarkFolderManagementRow(
+                            browser: browser,
+                            selection: Binding(
+                                get: { draftFolders[browser.rawValue] },
+                                set: { newValue in
+                                    if let newValue, !newValue.isEmpty {
+                                        draftFolders[browser.rawValue] = newValue
+                                    } else {
+                                        draftFolders.removeValue(forKey: browser.rawValue)
+                                    }
+                                }
+                            ),
+                            langBundle: langBundle
+                        )
+                        .environmentObject(appState)
+                        Divider()
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+
+            HStack {
+                Button(String(localized: "Cancel", bundle: langBundle)) {
+                    dismiss()
+                }
+                .keyboardShortcut(.escape, modifiers: [])
+
+                Spacer()
+
+                Button(String(localized: "Confirm", bundle: langBundle)) {
+                    appState.settingsService.syncSettings.bookmarkSyncFolders = draftFolders.compactMapValues { BookmarkFolderPath.canonicalized($0) }
+                    appState.settingsService.syncSettings.bookmarkSyncFolder = nil
+                    appState.settingsService.save()
+                    appState.broadcastSettings()
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding()
+        }
+        .frame(width: 640, height: 460)
+        .onAppear {
+            draftFolders = appState.settingsService.syncSettings.bookmarkSyncFolders.compactMapValues { BookmarkFolderPath.canonicalized($0) }
+            requestLatestFolderSnapshots()
+        }
+        .onReceive(appState.backupService.$lastSnapshotUpdate) { _ in
+            snapshotRefreshTick += 1
+        }
+    }
+
+    private func requestLatestFolderSnapshots() {
+        let message = WSMessage.pull(site: nil, category: "bookmark_backup")
+        for browser in browsers where browser != .safari {
+            appState.daemon.broadcast(message, participatingBrowsers: [browser])
+        }
+    }
+}
+
+struct BookmarkFolderManagementRow: View {
+    @EnvironmentObject var appState: AppState
+    let browser: Browser
+    @Binding var selection: String?
+    let langBundle: Bundle
+
+    @State private var showingPicker = false
+
+    private var displayName: String {
+        BookmarkFolderPath.displayPath(selection, bundle: langBundle) ?? String(localized: "Root Directory (All Bookmarks)", bundle: langBundle)
+    }
+
+    private var missing: Bool {
+        let canonicalSelection = BookmarkFolderPath.canonicalized(selection)
+        if appState.syncService.bookmarkFolderKnownExists(browser, folder: canonicalSelection) {
+            return false
+        }
+        if appState.syncService.missingBookmarkFolders[browser.rawValue] != nil {
+            return true
+        }
+        return appState.syncService.bookmarkFolderMissing(browser, folder: canonicalSelection)
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if let appURL = appState.browserInfos.first(where: { $0.browser == browser })?.appURL {
+                AppIconImage(appURL: appURL)
+                    .frame(width: 24, height: 24)
+            } else {
+                Image(systemName: browser.sfSymbol)
+                    .frame(width: 24, height: 24)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(browser.displayName)
+                    .font(.headline)
+                if missing, let selection {
+                    Text(String(format: String(localized: "Selected folder not found: %@", bundle: langBundle), BookmarkFolderPath.displayPath(selection, bundle: langBundle) ?? selection))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+
+            Spacer()
+
+            Button {
+                showingPicker = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: missing ? "exclamationmark.triangle.fill" : "folder")
+                        .foregroundStyle(missing ? .orange : .primary)
+                    Text(displayName)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: 240, alignment: .leading)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.bordered)
+            .popover(isPresented: $showingPicker, arrowEdge: .bottom) {
+                FolderSelectionPopover(
+                    browser: browser,
+                    selectedFolder: $selection,
+                    langBundle: langBundle
+                )
+                .environmentObject(appState)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+    }
+}
+
+struct FolderSelectionPopover: View {
+    @EnvironmentObject var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    let browser: Browser
+    @Binding var selectedFolder: String?
+    let langBundle: Bundle
+
+    @State private var localSelection: String?
+    @State private var nodes: [FolderNode] = []
+    @State private var isLoading = false
+    @State private var hasSnapshot = true
+    @State private var expandedNodes: Set<String> = []
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(browser.displayName)
+                    .font(.headline)
+                Spacer()
+                Button {
+                    requestBookmarkSnapshot()
+                    loadFolders()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .help(String(localized: "Refresh", bundle: langBundle))
+            }
+            .padding()
+
+            Divider()
+
+            if isLoading {
+                ProgressView()
+                    .frame(width: 320, height: 280)
+            } else if !hasSnapshot {
+                VStack(spacing: 10) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 28))
+                        .foregroundStyle(.secondary)
+                    Text(String(localized: "Data not retrieved", bundle: langBundle))
+                        .font(.headline)
+                    Text(String(localized: "Please open this browser and ensure the BrowSync extension is active.", bundle: langBundle))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button(String(format: String(localized: "Open %@", bundle: langBundle), browser.displayName)) {
+                        openBrowserAndRequestSnapshot()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top, 6)
+                }
+                .padding()
+                .frame(width: 320, height: 280)
+            } else {
+                List {
+                    DisclosureGroup(isExpanded: .constant(true)) {
+                        ForEach(nodes) { node in
+                            RecursiveFolderPickerNodeView(node: node, localSelection: $localSelection, expandedNodes: $expandedNodes)
+                        }
+                    } label: {
+                        FolderPickerRow(
+                            title: String(localized: "Root Directory (All Bookmarks)", bundle: langBundle),
+                            isSelected: localSelection == nil
+                        ) {
+                            localSelection = nil
+                        }
+                    }
+                }
+                .listStyle(.sidebar)
+                .frame(width: 340, height: 300)
+            }
+
+            Divider()
+            HStack {
+                Button {
+                    openBookmarkManager(for: browser, appState: appState)
+                } label: {
+                    Label(String(localized: "Manage Bookmarks", bundle: langBundle), systemImage: "book")
+                }
+                .buttonStyle(.bordered)
+
+                Spacer()
+
+                Button(String(localized: "Confirm", bundle: langBundle)) {
+                    selectedFolder = localSelection
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isLoading || !hasSnapshot)
+            }
+            .padding()
+        }
+        .onAppear {
+            localSelection = selectedFolder
+            loadFolders()
+            if browser != .safari {
+                requestBookmarkSnapshot()
+            }
+        }
+        .onReceive(appState.backupService.$lastSnapshotUpdate) { _ in
+            loadFolders()
+        }
+    }
+
+    private func openBrowserAndRequestSnapshot() {
+        if let appURL = appState.browserInfos.first(where: { $0.browser == browser })?.appURL ?? browser.appURL {
+            NSWorkspace.shared.open(appURL)
+        }
+        requestBookmarkSnapshot()
+        Task {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            await MainActor.run {
+                requestBookmarkSnapshot()
+            }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            await MainActor.run {
+                requestBookmarkSnapshot()
+            }
+        }
+    }
+
+    private func requestBookmarkSnapshot() {
+        guard browser != .safari else {
+            loadFolders()
+            return
+        }
+        let msg = WSMessage.pull(site: nil, category: "bookmark_backup")
+        appState.daemon.broadcast(msg, participatingBrowsers: [browser])
+    }
+
+    private func loadFolders() {
+        isLoading = true
+        hasSnapshot = true
+        Task {
+            var rawFolders: [(id: String, parentId: String?, title: String)] = []
+            var foundSnapshot = true
+
+            if browser == .safari {
+                rawFolders = SafariBookmarkService().readBookmarks().filter(\.isFolder).map { ($0.id, $0.parentId, $0.title) }
+            } else if let snapshot = appState.backupService.getSnapshot(sourceBrowser: browser.rawValue) {
+                rawFolders = snapshot.filter(\.isFolder).map { ($0.id, $0.parentId, $0.title) }
+            } else {
+                foundSnapshot = false
+            }
+
+            let paths = folderPaths(from: rawFolders, browser: browser)
+            let loadedNodes = BookmarkSyncTabView.buildTree(from: paths, bundle: langBundle)
+
+            await MainActor.run {
+                nodes = loadedNodes
+                expandedNodes = Set(paths.flatMap { path in
+                    var result: [String] = []
+                    var current = ""
+                    for component in path.components(separatedBy: "/") where !component.isEmpty {
+                        current = current.isEmpty ? component : current + "/" + component
+                        result.append(current)
+                    }
+                    return result
+                })
+                hasSnapshot = foundSnapshot
+                isLoading = false
+            }
+        }
+    }
+
+    private func folderPaths(from rawFolders: [(id: String, parentId: String?, title: String)], browser: Browser) -> [String] {
+        var idToFolder: [String: (id: String, parentId: String?, title: String)] = [:]
+        for folder in rawFolders { idToFolder[folder.id] = folder }
+
+        func pathComponent(for folder: (id: String, parentId: String?, title: String)) -> String {
+            switch folder.id {
+            case "1", BookmarkFolderPath.rootBar, BookmarkFolderPath.rootFavorites:
+                return BookmarkFolderPath.rootBar
+            case "2", BookmarkFolderPath.rootOther:
+                return BookmarkFolderPath.rootOther
+            case "3", BookmarkFolderPath.rootMobile:
+                return BookmarkFolderPath.rootMobile
+            case "firefox-toolbar-root":
+                return BookmarkFolderPath.rootBar
+            case "firefox-menu-root":
+                return BookmarkFolderPath.rootMenu
+            case "firefox-other-root":
+                return BookmarkFolderPath.rootOther
+            case "firefox-mobile-root":
+                return BookmarkFolderPath.rootMobile
+            default:
+                return folder.title
+            }
+        }
+
+        return rawFolders.compactMap { folder in
+            if ["0", "1", "2", "3"].contains(folder.id) { return nil }
+            var path = pathComponent(for: folder)
+            var currentId = folder.parentId
+            while let parentId = currentId, parentId != "0" {
+                if let parent = idToFolder[parentId], !["0", "1", "2", "3"].contains(parent.id) {
+                    path = pathComponent(for: parent) + "/" + path
+                    currentId = parent.parentId
+                } else {
+                    if browser != .safari {
+                        if parentId == "1" { path = BookmarkFolderPath.rootBar + "/" + path }
+                        else if parentId == "2" { path = BookmarkFolderPath.rootOther + "/" + path }
+                        else if parentId == "3" { path = BookmarkFolderPath.rootMobile + "/" + path }
+                    } else if parentId == "1" {
+                        path = BookmarkFolderPath.rootFavorites + "/" + path
+                    }
+                    break
+                }
+            }
+            return path
+        }
+    }
+}
+
+struct RecursiveFolderPickerNodeView: View {
+    let node: FolderNode
+    @Binding var localSelection: String?
+    @Binding var expandedNodes: Set<String>
+
+    var body: some View {
+        let label = FolderPickerRow(title: node.name, isSelected: localSelection == node.id) {
+            localSelection = node.id
+        }
+
+        if let children = node.children, !children.isEmpty {
+            DisclosureGroup(isExpanded: Binding(
+                get: { expandedNodes.contains(node.id) },
+                set: { isExpanded in
+                    if isExpanded {
+                        expandedNodes.insert(node.id)
+                    } else {
+                        expandedNodes.remove(node.id)
+                    }
+                }
+            )) {
+                ForEach(children) { child in
+                    RecursiveFolderPickerNodeView(node: child, localSelection: $localSelection, expandedNodes: $expandedNodes)
+                }
+            } label: {
+                label
+            }
+        } else {
+            label
+        }
+    }
+}
+
+struct FolderPickerRow: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "folder")
+                Text(title)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 12)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .foregroundColor(isSelected ? .white : .primary)
+            .background(isSelected ? Color.accentColor : Color.clear)
+            .cornerRadius(6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
 
 // MARK: - Folder Selection Sheet
 
@@ -620,8 +1098,6 @@ struct FolderSelectionSheet: View {
     
     @Environment(\.dismiss) var dismiss
     @State private var localSelection: String? = nil
-    @State private var showingAddFolder = false
-    @State private var newFolderName = ""
     
     @State private var localSelectionBrowser: Browser?
     @State private var selectedBrowser: Browser = .safari
@@ -714,13 +1190,11 @@ struct FolderSelectionSheet: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                     
-                    if let url = selectedBrowser.appURL {
-                        Button(String(format: String(localized: "Open %@", bundle: langBundle), selectedBrowser.displayName)) {
-                            NSWorkspace.shared.open(url)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .padding(.top, 8)
+                    Button(String(format: String(localized: "Open %@", bundle: langBundle), selectedBrowser.displayName)) {
+                        openBrowserAndRequestSnapshot()
                     }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top, 8)
                 }
                 .padding()
                 Spacer()
@@ -777,43 +1251,12 @@ struct FolderSelectionSheet: View {
             
             HStack {
                 Button {
-                    showingAddFolder = true
+                    openBookmarkManager(for: selectedBrowser, appState: appState)
                 } label: {
-                    Image(systemName: "folder.badge.plus")
-                    Text(String(localized: "Add Folder", bundle: langBundle))
+                    Image(systemName: "book")
+                    Text(String(localized: "Manage Bookmarks", bundle: langBundle))
                 }
                 .disabled(isLoading || !hasSnapshot)
-                .popover(isPresented: $showingAddFolder) {
-                    VStack(spacing: 12) {
-                        Text(String(localized: "New Folder Name", bundle: langBundle))
-                            .font(.headline)
-                        TextField("", text: $newFolderName)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 200)
-                        HStack {
-                            Button(String(localized: "Cancel", bundle: langBundle)) {
-                                showingAddFolder = false
-                                newFolderName = ""
-                            }
-                            Button(String(localized: "Add", bundle: langBundle)) {
-                                if !newFolderName.isEmpty {
-                                    let newPath = localSelection == nil ? newFolderName : localSelection! + "/" + newFolderName
-                                    if selectedBrowser == .safari {
-                                        SafariBookmarkService().ensureFolderExists(path: newPath)
-                                    }
-                                    localSelection = newPath
-                                    localSelectionBrowser = selectedBrowser
-                                    loadFolders()
-                                }
-                                showingAddFolder = false
-                                newFolderName = ""
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(newFolderName.isEmpty)
-                        }
-                    }
-                    .padding()
-                }
                 
                 Spacer()
                 
@@ -853,12 +1296,41 @@ struct FolderSelectionSheet: View {
                 selectedBrowser = source
             }
             loadFolders()
+            if selectedBrowser != .safari {
+                requestBookmarkSnapshot()
+            }
         }
         .onReceive(appState.backupService.$lastSnapshotUpdate) { _ in
             loadFolders()
         }
     }
     
+    private func openBrowserAndRequestSnapshot() {
+        if let appURL = appState.browserInfos.first(where: { $0.browser == selectedBrowser })?.appURL ?? selectedBrowser.appURL {
+            NSWorkspace.shared.open(appURL)
+        }
+        requestBookmarkSnapshot()
+        Task {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            await MainActor.run {
+                requestBookmarkSnapshot()
+            }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            await MainActor.run {
+                requestBookmarkSnapshot()
+            }
+        }
+    }
+
+    private func requestBookmarkSnapshot() {
+        guard selectedBrowser != .safari else {
+            loadFolders()
+            return
+        }
+        let msg = WSMessage.pull(site: nil, category: "bookmark_backup")
+        appState.daemon.broadcast(msg, participatingBrowsers: [selectedBrowser])
+    }
+
     private func loadFolders() {
         isLoading = true
         hasSnapshot = true
@@ -882,6 +1354,27 @@ struct FolderSelectionSheet: View {
 
             var idToFolder: [String: (id: String, parentId: String?, title: String)] = [:]
             for f in rawFolders { idToFolder[f.id] = f }
+
+            func pathComponent(for folder: (id: String, parentId: String?, title: String)) -> String {
+                switch folder.id {
+                case "1", BookmarkFolderPath.rootBar, BookmarkFolderPath.rootFavorites:
+                    return BookmarkFolderPath.rootBar
+                case "2", BookmarkFolderPath.rootOther:
+                    return BookmarkFolderPath.rootOther
+                case "3", BookmarkFolderPath.rootMobile:
+                    return BookmarkFolderPath.rootMobile
+                case "firefox-toolbar-root":
+                    return BookmarkFolderPath.rootBar
+                case "firefox-menu-root":
+                    return BookmarkFolderPath.rootMenu
+                case "firefox-other-root":
+                    return BookmarkFolderPath.rootOther
+                case "firefox-mobile-root":
+                    return BookmarkFolderPath.rootMobile
+                default:
+                    return folder.title
+                }
+            }
             
             if browserToLoad == .safari {
                 let hasChildren = rawFolders.contains(where: { $0.parentId == "2" })
@@ -894,24 +1387,24 @@ struct FolderSelectionSheet: View {
             var paths: [String] = []
             
             for f in rawFolders {
-                var path = f.title
+                var path = pathComponent(for: f)
                 var currentId = f.parentId
                 while let pid = currentId {
                     if pid == "0" { break }
                     
                     if let parent = idToFolder[pid] {
-                        path = parent.title + "/" + path
+                        path = pathComponent(for: parent) + "/" + path
                         currentId = parent.parentId
                     } else {
                         if browserToLoad == .safari {
                             if pid == "1" {
-                                path = String(localized: "Favorites", bundle: langBundle) + "/" + path
+                                path = BookmarkFolderPath.rootFavorites + "/" + path
                             }
                             // If pid == "2" for Safari, it's the root Bookmarks Menu, so we prepend nothing.
                         } else {
-                            if pid == "1" { path = String(localized: "Bookmarks Bar", bundle: langBundle) + "/" + path }
-                            else if pid == "2" { path = String(localized: "Other Bookmarks", bundle: langBundle) + "/" + path }
-                            else if pid == "3" { path = String(localized: "Mobile Bookmarks", bundle: langBundle) + "/" + path }
+                            if pid == "1" { path = BookmarkFolderPath.rootBar + "/" + path }
+                            else if pid == "2" { path = BookmarkFolderPath.rootOther + "/" + path }
+                            else if pid == "3" { path = BookmarkFolderPath.rootMobile + "/" + path }
                         }
                         break
                     }
@@ -919,7 +1412,7 @@ struct FolderSelectionSheet: View {
                 paths.append(path)
             }
 
-            let loadedNodes = BookmarkSyncTabView.buildTree(from: paths)
+            let loadedNodes = BookmarkSyncTabView.buildTree(from: paths, bundle: langBundle)
             
             await MainActor.run {
                 self.nodes = loadedNodes

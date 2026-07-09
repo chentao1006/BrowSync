@@ -2,6 +2,7 @@
 // BrowSync — Local notifications via UNUserNotificationCenter
 
 import Foundation
+import AppKit
 import UserNotifications
 import os.log
 
@@ -100,8 +101,40 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
             }
         }
     }
+
+    func notifyBookmarkSyncFailed(browser: Browser, folder: String) {
+        Task {
+            await requestPermission()
+            let content = UNMutableNotificationContent()
+            content.title = String(localized: "Bookmark Sync Failed", bundle: langBundle)
+            content.body = String(format: String(localized: "The selected folder for %@ no longer exists: %@", bundle: langBundle), browser.displayName, folder)
+            content.userInfo = [
+                "browsyncAction": "openBookmarkFolderManager",
+                "browser": browser.rawValue
+            ]
+            content.sound = .default
+
+            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+            do {
+                try await UNUserNotificationCenter.current().add(request)
+            } catch {
+                self.logger.error("Failed to schedule bookmark sync failure notification: \(error.localizedDescription)")
+            }
+        }
+    }
     
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         return [.banner, .sound]
+    }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        let userInfo = response.notification.request.content.userInfo
+        guard userInfo["browsyncAction"] as? String == "openBookmarkFolderManager" else { return }
+
+        await MainActor.run {
+            _ = AppDelegate.shared?.showExistingSettingsWindowIfPossible()
+            AppState.shared.requestOpenBookmarkFolderManager()
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 }

@@ -527,5 +527,13 @@
 "Bookmarks Menu" = "书签菜单";
 
 "Other Bookmarks" = "其他书签";
+"Mobile Bookmarks" = "移动书签";
 "Data not retrieved" = "未获取数据";
 "Please open this browser and ensure the BrowSync extension is active." = "请打开该浏览器，并确保 BrowSync 扩展已安装并启用。";
+"Manage Folders" = "管理文件夹";
+"Manage Bookmarks" = "管理书签";
+"Manage Sync Folders" = "管理同步文件夹";
+"Confirm" = "确认";
+"Bookmark Sync Failed" = "书签同步失败";
+"The selected folder for %@ no longer exists: %@" = "%@ 所选文件夹已不存在：%@";
+"Selected folder not found: %@" = "所选文件夹不存在：%@";

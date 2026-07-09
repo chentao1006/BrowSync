@@ -63,6 +63,7 @@ final class SyncService: ObservableObject {
     private var safariMonitorFileDescriptor: Int32 = -1
     private var safariBookmarkDebounceTask: Task<Void, Never>?
     private var lastNetworkSyncTime: Date = Date.distantPast
+    @Published var missingBookmarkFolders: [String: String] = [:]
 
     init() {
 #if !APP_STORE
@@ -75,6 +76,178 @@ final class SyncService: ObservableObject {
 #if !APP_STORE
         startSafariBookmarkMonitor()
 #endif
+    }
+
+    func bookmarkFolderMissing(_ browser: Browser, folder: String?) -> Bool {
+        guard let folder, !folder.isEmpty else { return false }
+        let tree = bookmarkTreeSnapshot(for: browser)
+        guard !tree.isEmpty else { return false }
+        return !BookmarkTreeMerger.folderExists(tree: tree, folderPath: folder)
+    }
+
+    func bookmarkFolderKnownExists(_ browser: Browser, folder: String?) -> Bool {
+        guard let folder, !folder.isEmpty else { return true }
+        let tree = bookmarkTreeSnapshot(for: browser)
+        guard !tree.isEmpty else { return false }
+        return BookmarkTreeMerger.folderExists(tree: tree, folderPath: folder)
+    }
+
+    private func bookmarkTreeSnapshot(for browser: Browser) -> [Bookmark] {
+        if browser == .safari {
+            return safariBookmarks.readBookmarks().map {
+                Bookmark(id: $0.id, title: $0.title, url: $0.url.flatMap { $0 }, parentId: $0.parentId, isFolder: $0.isFolder, inBookmarksBar: $0.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
+            }
+        }
+        return backupService?.getSnapshot(sourceBrowser: browser.rawValue) ?? []
+    }
+
+    private func markMissingBookmarkFolder(_ browser: Browser, folder: String) {
+        missingBookmarkFolders[browser.rawValue] = folder
+        log("Bookmark sync skipped for \(browser.displayName): selected folder not found: \(folder)")
+        AppState.shared.notificationService.notifyBookmarkSyncFailed(browser: browser, folder: folder)
+    }
+
+    private func clearMissingBookmarkFolder(_ browser: Browser) {
+        missingBookmarkFolders.removeValue(forKey: browser.rawValue)
+    }
+
+    private func folderAdjustedBookmarksForSource(_ bookmarks: [Bookmark], browser: Browser) -> [Bookmark]? {
+        let folder = settings.bookmarkFolder(for: browser)
+        if let folder, !folder.isEmpty, !BookmarkTreeMerger.folderExists(tree: bookmarks, folderPath: folder) {
+            markMissingBookmarkFolder(browser, folder: folder)
+            return nil
+        }
+        clearMissingBookmarkFolder(browser)
+        return BookmarkTreeMerger.extractExistingSubtreeAsRoot(sourceTree: bookmarks, folderPath: folder)
+    }
+
+    private func bookmarkDeletionIsInsideSelectedFolder(_ bookmark: Bookmark, browser: Browser, clientId: String) -> Bool {
+        guard let folder = settings.bookmarkFolder(for: browser), !folder.isEmpty else { return true }
+        guard let selectedSnapshot = BookmarkTreeMerger.extractExistingSubtreeAsRoot(sourceTree: snapshotForClient(clientId), folderPath: folder) else {
+            markMissingBookmarkFolder(browser, folder: folder)
+            return false
+        }
+
+        if selectedSnapshot.contains(where: { $0.id == bookmark.id }) { return true }
+        if let url = bookmarkURL(bookmark)?.lowercased(),
+           selectedSnapshot.contains(where: { bookmarkURL($0)?.lowercased() == url }) {
+            return true
+        }
+        if bookmark.isFolder {
+            let title = bookmark.title.lowercased()
+            return selectedSnapshot.contains { $0.isFolder && $0.title.lowercased() == title }
+        }
+        return false
+    }
+
+    private func sendBookmarkMessage(_ message: WSMessage, to browser: Browser, excluding excludedId: String? = nil) {
+        guard let daemon else { return }
+        for client in daemon.connectedClients where client.browser == browser && client.id != excludedId {
+            var targeted = message
+            targeted.targetBookmarkFolder = settings.bookmarkFolder(for: browser)
+            daemon.sendWSMessage(targeted, to: client)
+        }
+    }
+
+    private func broadcastBookmarkMessage(_ message: WSMessage, excluding excludedId: String? = nil) {
+        for browser in settings.bookmarkParticipatingBrowsers {
+            sendBookmarkMessage(message, to: browser, excluding: excludedId)
+        }
+    }
+
+    private func pushFinalSafariBookmarksToBookmarkParticipantsIfNeeded() {
+        guard settings.bookmarkSyncStrategy == .twoWayMerge,
+              settings.bookmarkParticipatingBrowsers.contains(.safari) else {
+            return
+        }
+
+        var safariBookmarksToPush = safariBookmarks.readBookmarks().map {
+            Bookmark(
+                id: $0.id,
+                title: $0.title,
+                url: $0.url.flatMap { $0 },
+                parentId: $0.parentId,
+                isFolder: $0.isFolder,
+                inBookmarksBar: $0.inBookmarksBar,
+                dateAdded: Date(),
+                sourceBrowser: .safari
+            )
+        }
+
+        if let dedupedBookmarks = BookmarkTreeMerger.deduplicatedBookmarksInFolder(
+            tree: safariBookmarksToPush,
+            folderPath: settings.bookmarkFolder(for: .safari)
+        ), dedupedBookmarks.count != safariBookmarksToPush.count {
+            let syncBookmarks = dedupedBookmarks.compactMap { bookmark -> SyncBookmark? in
+                let url = bookmark.url.flatMap { $0 }
+                if !bookmark.isFolder && url == nil { return nil }
+                return SyncBookmark(
+                    id: bookmark.id,
+                    title: bookmark.title,
+                    url: url,
+                    parentId: bookmark.parentId,
+                    isFolder: bookmark.isFolder,
+                    inBookmarksBar: bookmark.inBookmarksBar ?? false,
+                    dateAdded: bookmark.dateAdded
+                )
+            }
+            let removedCount = safariBookmarksToPush.count - dedupedBookmarks.count
+            let writeCount = safariBookmarks.applyBookmarks(syncBookmarks, from: "safari", isFullMirror: true)
+            if writeCount >= 0 {
+                safariBookmarksToPush = safariBookmarks.readBookmarks().map {
+                    Bookmark(
+                        id: $0.id,
+                        title: $0.title,
+                        url: $0.url.flatMap { $0 },
+                        parentId: $0.parentId,
+                        isFolder: $0.isFolder,
+                        inBookmarksBar: $0.inBookmarksBar,
+                        dateAdded: Date(),
+                        sourceBrowser: .safari
+                    )
+                }
+                log("Removed \(removedCount) duplicate Safari bookmarks inside the selected sync folder before final convergence.")
+            } else {
+                safariBookmarksToPush = dedupedBookmarks
+                log("Prepared duplicate-free Safari bookmark payload, but Safari native write did not complete.")
+            }
+        }
+
+        guard !safariBookmarksToPush.isEmpty,
+              let adjustedBookmarks = folderAdjustedBookmarksForSource(safariBookmarksToPush, browser: .safari) else {
+            return
+        }
+
+        var message = WSMessage(
+            type: .sync,
+            site: "*",
+            category: SyncCategory.bookmarks.rawValue,
+            payload: .bookmarks(adjustedBookmarks),
+            messageId: UUID().uuidString,
+            timestamp: Date().timeIntervalSince1970
+        )
+        message.isFullMirror = false
+
+        logSyncPayload(message, direction: "outgoing", clientId: "safari", note: "final-safari-convergence")
+        for browser in settings.bookmarkParticipatingBrowsers where browser != .safari {
+            sendBookmarkMessage(message, to: browser)
+        }
+        log("Pushed final Safari bookmark state to non-Safari participants (\(adjustedBookmarks.count) bookmarks)")
+    }
+
+    private func snapshotForClient(_ clientId: String) -> [Bookmark] {
+        let browserId = clientId.components(separatedBy: "-").first ?? clientId
+        return backupService?.getSnapshot(sourceBrowser: clientId)
+            ?? backupService?.getSnapshot(sourceBrowser: browserId)
+            ?? []
+    }
+
+    private func saveSnapshotAliases(bookmarks: [Bookmark], clientId: String) {
+        backupService?.saveSnapshot(bookmarks: bookmarks, sourceBrowser: clientId)
+        let browserId = clientId.components(separatedBy: "-").first ?? clientId
+        if browserId != clientId {
+            backupService?.saveSnapshot(bookmarks: bookmarks, sourceBrowser: browserId)
+        }
     }
     
     deinit {
@@ -186,6 +359,7 @@ final class SyncService: ObservableObject {
         
         let connectedClients = daemon?.connectedClients.map { "\($0.browser.rawValue)-\($0.id)" }.joined(separator: ", ") ?? "none"
         log("Starting manual sync... Connected clients: \(connectedClients)")
+        AppState.shared.broadcastSettings()
 
         let targetCategories = categories ?? settings.enabledCategories
         // Clean up any mobile bookmark contamination in Safari before syncing
@@ -204,6 +378,10 @@ final class SyncService: ObservableObject {
         let hasClients = (daemon?.connectedClients.isEmpty == false)
         if hasClients {
             try? await Task.sleep(nanoseconds: 8_000_000_000)
+        }
+
+        if targetCategories.contains(.bookmarks) {
+            pushFinalSafariBookmarksToBookmarkParticipantsIfNeeded()
         }
 
         lastSyncDate = Date()
@@ -284,7 +462,7 @@ final class SyncService: ObservableObject {
                                     timestamp: Date().timeIntervalSince1970
                                 )
                                 logSyncPayload(msg, direction: "outgoing", clientId: "safari", note: "safari-deletion")
-                                daemon?.broadcast(msg, participatingBrowsers: settings.bookmarkParticipatingBrowsers)
+                                broadcastBookmarkMessage(msg)
                                 // NOTE: Do NOT save bookmarks_removed to GlobalStateStore.
                                 // These are point-in-time events; replaying them to reconnecting
                                 // clients causes destructive false deletions.
@@ -299,36 +477,35 @@ final class SyncService: ObservableObject {
                         Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
                     }
                     
-                    if let syncFolder = settings.bookmarkSyncFolder {
-                        bookmarks = BookmarkTreeMerger.extractSubtreeAndMapRoot(sourceTree: bookmarks, targetTree: [], folderPath: syncFolder)
-                        log("Filtered bookmarks for sync folder \(syncFolder). Resulting count: \(bookmarks.count)")
-                    }
+                    if let adjustedBookmarks = folderAdjustedBookmarksForSource(bookmarks, browser: .safari) {
+                        bookmarks = adjustedBookmarks
 
-
-                    
-                    backupService?.saveSnapshot(bookmarks: bookmarks, sourceBrowser: "safari")
-                    bookmarkCounts["safari"] = bookmarks.count
-                    
-                    var pushMsg = WSMessage(
-                        type: .sync,
-                        site: "*",
-                        category: category.rawValue,
-                        payload: .bookmarks(bookmarks),
-                        messageId: UUID().uuidString,
-                        timestamp: Date().timeIntervalSince1970
-                    )
-                    pushMsg.isFullMirror = (strategy == .oneWay && settings.bookmarkSyncFolder == nil) // Full mirror if one-way AND no sync folder
-                    logSyncPayload(pushMsg, direction: "outgoing", clientId: "safari", note: "push-safari-bookmarks")
-                    daemon?.broadcast(pushMsg, participatingBrowsers: settings.bookmarkParticipatingBrowsers)
-                    log("Pushed \(bookmarks.count) Safari bookmarks to clients")
-                    
-                    // After pushing, update expected counts for all non-Safari receiving browsers
-                    // so the UI reflects what was just sent (avoids stale counts after sync)
-                    let targetDir = dataDir.appendingPathComponent("bookmarks")
-                    for browser in settings.bookmarkParticipatingBrowsers where browser.id != "safari" {
-                        bookmarkCounts[browser.id] = bookmarks.count
-                        // Also persist this pushed state so it survives app restart
-                        save(bookmarks, to: targetDir.appendingPathComponent("\(browser.id)-main.json"))
+                        backupService?.saveSnapshot(bookmarks: bookmarks, sourceBrowser: "safari")
+                        bookmarkCounts["safari"] = bookmarks.count
+                        
+                        var pushMsg = WSMessage(
+                            type: .sync,
+                            site: "*",
+                            category: category.rawValue,
+                            payload: .bookmarks(bookmarks),
+                            messageId: UUID().uuidString,
+                            timestamp: Date().timeIntervalSince1970
+                        )
+                        pushMsg.isFullMirror = (strategy == .oneWay) // Root selection keeps the old full mirror behavior; targeted folders are handled per receiver.
+                        logSyncPayload(pushMsg, direction: "outgoing", clientId: "safari", note: "push-safari-bookmarks")
+                        broadcastBookmarkMessage(pushMsg)
+                        log("Pushed \(bookmarks.count) Safari bookmarks to clients")
+                        
+                        // After pushing, update expected counts for all non-Safari receiving browsers
+                        // so the UI reflects what was just sent (avoids stale counts after sync)
+                        let targetDir = dataDir.appendingPathComponent("bookmarks")
+                        for browser in settings.bookmarkParticipatingBrowsers where browser.id != "safari" {
+                            bookmarkCounts[browser.id] = bookmarks.count
+                            // Also persist this pushed state so it survives app restart
+                            save(bookmarks, to: targetDir.appendingPathComponent("\(browser.id)-main.json"))
+                        }
+                    } else {
+                        log("Skipped Safari bookmark push because its selected sync folder is missing; continuing with other browsers.")
                     }
                 } else {
                     log("No Safari bookmarks found to sync")
@@ -407,9 +584,19 @@ final class SyncService: ObservableObject {
         
         var filteredMessage = message
         logSyncPayload(message, direction: "incoming", clientId: clientId, note: "raw-received")
+
+        if category == "bookmark_folder_missing" {
+            let browserId = clientId.components(separatedBy: "-").first ?? clientId
+            if let browser = Browser(rawValue: browserId),
+               case .raw(let raw) = message.payload,
+               let folder = raw["folder"]?.value as? String {
+                markMissingBookmarkFolder(browser, folder: folder)
+            }
+            return
+        }
         
-        // Capture previous snapshot for auto-sync notifications before it gets overwritten
-        let preSyncAutoBookmarks = backupService?.getSnapshot(sourceBrowser: clientId) ?? []
+        // Capture previous snapshot for auto-sync notifications before it gets overwritten.
+        let preSyncAutoBookmarks = snapshotForClient(clientId)
         
         if category == "bookmarks" || category == "bookmark_incremental" || category == "bookmarks_removed" || category == "bookmark_backup" || category == "tabSharing" {
             let browserId = clientId.components(separatedBy: "-").first ?? clientId
@@ -460,6 +647,14 @@ final class SyncService: ObservableObject {
             // Setting isFullMirror = true ensures the target prunes local items not present in the payload.
             filteredMessage.isFullMirror = true
         }
+        if category == "bookmark_backup", case .bookmarks(let bms) = filteredMessage.payload {
+            let sanitizedBookmarks = sanitizeIncomingBookmarksForSafari(bms, from: clientId)
+            saveSnapshotAliases(bookmarks: sanitizedBookmarks, clientId: clientId)
+            let browserId = clientId.components(separatedBy: "-").first ?? clientId
+            bookmarkCounts[browserId] = sanitizedBookmarks.count
+            log("Saved bookmark backup from [\(clientId)] with \(sanitizedBookmarks.count) items; backup is not broadcast as sync data.")
+            return
+        }
         if category == "bookmarks", case .bookmarks(let bms) = filteredMessage.payload {
             // Explicit bookmarks_removed is preferred, but manual sync may only receive
             // a fresh full snapshot. Diff it against the previous same-browser snapshot
@@ -471,12 +666,29 @@ final class SyncService: ObservableObject {
                 filteredMessage.payload = .bookmarks(sanitizedBookmarks)
                 logSyncPayload(filteredMessage, direction: "incoming", clientId: clientId, note: "sanitized-bookmarks")
             }
-            processDeletedBookmarksFromFullSnapshot(previous: preSyncAutoBookmarks, current: sanitizedBookmarks, from: clientId)
-            backupService?.saveSnapshot(bookmarks: sanitizedBookmarks, sourceBrowser: clientId)
+            let browserId = clientId.components(separatedBy: "-").first ?? clientId
+            let browser = Browser(rawValue: browserId)
+            guard let sourceBrowserForFolder = browser,
+                  let sourceAdjustedBookmarks = folderAdjustedBookmarksForSource(sanitizedBookmarks, browser: sourceBrowserForFolder) else {
+                return
+            }
+            let previousForDeletion = BookmarkTreeMerger.extractExistingSubtreeAsRoot(
+                sourceTree: preSyncAutoBookmarks,
+                folderPath: settings.bookmarkFolder(for: sourceBrowserForFolder)
+            ) ?? preSyncAutoBookmarks
+            processDeletedBookmarksFromFullSnapshot(previous: previousForDeletion, current: sourceAdjustedBookmarks, from: clientId)
+            saveSnapshotAliases(bookmarks: sanitizedBookmarks, clientId: clientId)
+            filteredMessage.payload = .bookmarks(sourceAdjustedBookmarks)
         }
 
         if category == "bookmarks_removed" {
             if case .bookmarksRemoved(let bm) = filteredMessage.payload {
+                let browserId = clientId.components(separatedBy: "-").first ?? clientId
+                if let browser = Browser(rawValue: browserId),
+                   !bookmarkDeletionIsInsideSelectedFolder(bm, browser: browser, clientId: clientId) {
+                    log("Ignored bookmark deletion from [\(clientId)] outside selected sync folder: \(bm.title)")
+                    return
+                }
                 backupService?.addDeletedBookmarks([
                     DeletedBookmark(
                         id: bm.id,
@@ -499,7 +711,7 @@ final class SyncService: ObservableObject {
                 let shouldSync = (isPro && settings.bookmarkAutoSync) || isSyncing
                 if shouldSync {
                     logSyncPayload(filteredMessage, direction: "outgoing", clientId: clientId, note: "rebroadcast-bookmark-removal")
-                    daemon?.broadcast(filteredMessage, excluding: nil)
+                    broadcastBookmarkMessage(filteredMessage, excluding: nil)
                     // NOTE: Do NOT save bookmarks_removed to GlobalStateStore.
                     // These are point-in-time events; replaying them to reconnecting
                     // clients causes destructive false deletions.
@@ -711,6 +923,8 @@ final class SyncService: ObservableObject {
                     } else {
                         daemon?.broadcast(filteredMessage, excluding: clientId)
                     }
+                } else if isBookmarkCategory {
+                    broadcastBookmarkMessage(filteredMessage, excluding: clientId)
                 } else {
                     daemon?.broadcast(filteredMessage, excluding: clientId)
                 }
@@ -914,6 +1128,7 @@ final class SyncService: ObservableObject {
 
         let deleted = previous.filter { bookmark in
             if rootIds.contains(bookmark.id) { return false }
+            if bookmark.id.hasPrefix("firefox-") && bookmark.id.hasSuffix("-root") { return false }
             if isBrowserMobileRoot(bookmark) { return false }
             if currentIds.contains(bookmark.id) { return false }
 
@@ -953,7 +1168,7 @@ final class SyncService: ObservableObject {
                 timestamp: Date().timeIntervalSince1970
             )
             logSyncPayload(msg, direction: "outgoing", clientId: clientId, note: "inferred-bookmark-deletion")
-            daemon?.broadcast(msg, excluding: clientId)
+            broadcastBookmarkMessage(msg, excluding: clientId)
         }
 
         if isSyncing {
@@ -981,6 +1196,12 @@ final class SyncService: ObservableObject {
         let rootIds = Set(["0", "1", "2", "3"])
         let bookmarksById = Dictionary(bookmarks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let childrenByParent = Dictionary(grouping: bookmarks, by: { $0.parentId ?? "" })
+        let browserId = clientId.components(separatedBy: "-").first ?? clientId
+        let browser = Browser(rawValue: browserId)
+        let selectedFolderIds: Set<String> = {
+            guard let browser, let folder = settings.bookmarkFolder(for: browser) else { return [] }
+            return BookmarkTreeMerger.idsInFolderIncludingRoot(tree: bookmarks, folderPath: folder)
+        }()
 
         func deletedSignatures(from items: [DeletedBookmark]) -> (folders: Set<String>, urls: Set<String>) {
             var folderSignatures = Set<String>()
@@ -1019,12 +1240,13 @@ final class SyncService: ObservableObject {
         func shouldDropNode(_ bookmark: Bookmark) -> Bool {
             if rootIds.contains(bookmark.id) { return true }
             if isBrowserMobileRoot(bookmark) { return true }
-            if isDeletedByTombstone(bookmark) { return true }
+            if !selectedFolderIds.contains(bookmark.id), isDeletedByTombstone(bookmark) { return true }
             return false
         }
 
         func shouldDropDescendants(of bookmark: Bookmark) -> Bool {
-            bookmark.id == "0" ||
+            if selectedFolderIds.contains(bookmark.id) { return false }
+            return bookmark.id == "0" ||
             bookmark.id == "3" ||
             isBrowserMobileRoot(bookmark) ||
             isDeletedByTombstone(bookmark)
@@ -1078,18 +1300,18 @@ final class SyncService: ObservableObject {
                         var finalSyncBookmarks: [SyncBookmark] = []
                         var finalIsFullMirror = isFullMirror
                         
-                        if let syncFolder = settings.bookmarkSyncFolder {
+                        if let targetFolder = settings.bookmarkFolder(for: .safari) {
                             let safariTargetBms = safariBookmarks.readBookmarks().map { b in
                                 Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
                             }
-                            let finalBookmarksToSend: [Bookmark]
-                            if strategy == .oneWay {
-                                finalBookmarksToSend = BookmarkTreeMerger.overlay(sourceTree: bookmarks, targetTree: safariTargetBms, folderPath: syncFolder)
-                                finalIsFullMirror = true
-                            } else {
-                                finalBookmarksToSend = BookmarkTreeMerger.extractSubtreeAndMapRoot(sourceTree: bookmarks, targetTree: safariTargetBms, folderPath: syncFolder)
-                                finalIsFullMirror = false
+                            let mergedBookmarks = strategy == .oneWay
+                                ? BookmarkTreeMerger.replaceExistingFolderContents(sourceTree: bookmarks, targetTree: safariTargetBms, targetFolderPath: targetFolder)
+                                : BookmarkTreeMerger.mergeIntoExistingFolder(sourceTree: bookmarks, targetTree: safariTargetBms, targetFolderPath: targetFolder)
+                            guard let finalBookmarksToSend = mergedBookmarks else {
+                                markMissingBookmarkFolder(.safari, folder: targetFolder)
+                                return
                             }
+                            finalIsFullMirror = strategy == .oneWay
                             finalSyncBookmarks = finalBookmarksToSend.compactMap { b -> SyncBookmark? in
                                 let urlStr: String?
                                 if let urlOpt = b.url { urlStr = urlOpt } else { urlStr = nil }
@@ -1131,18 +1353,18 @@ final class SyncService: ObservableObject {
                     var finalSyncBookmarks: [SyncBookmark] = []
                     var finalIsFullMirror = isFullMirror
                     
-                    if let syncFolder = settings.bookmarkSyncFolder {
+                    if let targetFolder = settings.bookmarkFolder(for: .safari) {
                         let safariTargetBms = safariBookmarks.readBookmarks().map { b in
                             Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
                         }
-                        let finalBookmarksToSend: [Bookmark]
-                        if strategy == .oneWay {
-                            finalBookmarksToSend = BookmarkTreeMerger.overlay(sourceTree: bookmarks, targetTree: safariTargetBms, folderPath: syncFolder)
-                            finalIsFullMirror = true
-                        } else {
-                            finalBookmarksToSend = BookmarkTreeMerger.extractSubtreeAndMapRoot(sourceTree: bookmarks, targetTree: safariTargetBms, folderPath: syncFolder)
-                            finalIsFullMirror = false
+                        let mergedBookmarks = strategy == .oneWay
+                            ? BookmarkTreeMerger.replaceExistingFolderContents(sourceTree: bookmarks, targetTree: safariTargetBms, targetFolderPath: targetFolder)
+                            : BookmarkTreeMerger.mergeIntoExistingFolder(sourceTree: bookmarks, targetTree: safariTargetBms, targetFolderPath: targetFolder)
+                        guard let finalBookmarksToSend = mergedBookmarks else {
+                            markMissingBookmarkFolder(.safari, folder: targetFolder)
+                            return
                         }
+                        finalIsFullMirror = strategy == .oneWay
                         finalSyncBookmarks = finalBookmarksToSend.compactMap { b -> SyncBookmark? in
                             let urlStr: String?
                             if let urlOpt = b.url { urlStr = urlOpt } else { urlStr = nil }

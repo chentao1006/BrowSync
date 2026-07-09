@@ -457,3 +457,13 @@
 "Bookmarks Menu" = "Menu des signets";
 
 "Other Bookmarks" = "Autres favoris";
+"Mobile Bookmarks" = "Favoris mobiles";
+"Manage Folders" = "Gérer les dossiers";
+"Manage Bookmarks" = "Gérer les favoris";
+"Manage Sync Folders" = "Gérer les dossiers de synchronisation";
+"Confirm" = "Confirmer";
+"Bookmark Sync Failed" = "Échec de la synchronisation des favoris";
+"The selected folder for %@ no longer exists: %@" = "Le dossier sélectionné pour %@ n’existe plus : %@";
+"Selected folder not found: %@" = "Dossier sélectionné introuvable : %@";
+"Data not retrieved" = "Données non récupérées";
+"Please open this browser and ensure the BrowSync extension is active." = "Ouvrez ce navigateur et assurez-vous que l’extension BrowSync est active.";

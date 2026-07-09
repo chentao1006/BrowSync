@@ -499,5 +499,13 @@
 "Bookmarks Menu" = "Bookmarks Menu";
 
 "Other Bookmarks" = "Other Bookmarks";
+"Mobile Bookmarks" = "Mobile Bookmarks";
 "Data not retrieved" = "Data not retrieved";
 "Please open this browser and ensure the BrowSync extension is active." = "Please open this browser and ensure the BrowSync extension is active.";
+"Manage Folders" = "Manage Folders";
+"Manage Bookmarks" = "Manage Bookmarks";
+"Manage Sync Folders" = "Manage Sync Folders";
+"Confirm" = "Confirm";
+"Bookmark Sync Failed" = "Bookmark Sync Failed";
+"The selected folder for %@ no longer exists: %@" = "The selected folder for %@ no longer exists: %@";
+"Selected folder not found: %@" = "Selected folder not found: %@";

@@ -459,3 +459,13 @@
 "Bookmarks Menu" = "ブックマークメニュー";
 
 "Other Bookmarks" = "その他のブックマーク";
+"Mobile Bookmarks" = "モバイルブックマーク";
+"Manage Folders" = "フォルダを管理";
+"Manage Bookmarks" = "ブックマークを管理";
+"Manage Sync Folders" = "同期フォルダを管理";
+"Confirm" = "確認";
+"Bookmark Sync Failed" = "ブックマーク同期に失敗";
+"The selected folder for %@ no longer exists: %@" = "%@ の選択フォルダが存在しません: %@";
+"Selected folder not found: %@" = "選択したフォルダが見つかりません: %@";
+"Data not retrieved" = "データを取得していません";
+"Please open this browser and ensure the BrowSync extension is active." = "このブラウザを開き、BrowSync 拡張機能が有効になっていることを確認してください。";
