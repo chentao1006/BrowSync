@@ -618,6 +618,248 @@
       justify-content: space-between;
     }
 
+    .plan-compare {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .plan-compare-head {
+      max-width: 760px;
+    }
+
+    .plan-compare-head p {
+      color: var(--muted);
+      font-size: 1.05rem;
+    }
+
+    .plan-table {
+      display: grid;
+      grid-template-columns: minmax(180px, 1.1fr) minmax(0, 1fr) minmax(0, 1fr);
+      gap: 0;
+      border-radius: 24px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .plan-kicker {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      margin-bottom: 14px;
+    }
+
+    .plan-free-head .plan-kicker {
+      background: rgba(255, 255, 255, 0.08);
+      color: #d4d4d8;
+    }
+
+    .plan-pro-head .plan-kicker {
+      background: rgba(120, 53, 15, 0.16);
+      color: #fcd34d;
+    }
+
+    .plan-tier-head h3 {
+      margin-bottom: 10px;
+      font-size: 1.1rem;
+    }
+
+    .plan-summary {
+      color: var(--muted);
+      font-size: 0.98rem;
+      line-height: 1.6;
+    }
+
+    .plan-recommend {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #facc15, #f59e0b);
+      color: #3b2f07;
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      box-shadow: 0 10px 24px rgba(245, 158, 11, 0.28);
+    }
+
+    .plan-head-spacer,
+    .plan-tier-head,
+    .plan-row-label,
+    .plan-cell {
+      padding: 26px 24px 20px;
+    }
+
+    .plan-head-spacer,
+    .plan-tier-head {
+      min-height: 188px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: flex-start;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .plan-head-spacer {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .plan-head-spacer strong {
+      display: block;
+      font-size: 1.1rem;
+      margin-bottom: 10px;
+      color: var(--text);
+    }
+
+    .plan-head-spacer p {
+      color: var(--muted);
+      font-size: 0.98rem;
+      line-height: 1.6;
+      max-width: 22rem;
+    }
+
+    .plan-tier-head {
+      position: relative;
+    }
+
+    .plan-free-head {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+      border-left: 1px solid var(--border);
+    }
+
+    .plan-pro-head {
+      background: linear-gradient(180deg, rgba(250, 204, 21, 0.2), rgba(161, 98, 7, 0.08));
+      border-left: 1px solid rgba(250, 204, 21, 0.18);
+      box-shadow: inset 0 1px 0 rgba(250, 204, 21, 0.12);
+    }
+
+    .plan-row-label,
+    .plan-cell {
+      padding: 18px 24px;
+      display: flex;
+      align-items: center;
+      border-top: 1px solid var(--border);
+    }
+
+    .plan-row-label {
+      color: var(--text);
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .plan-row-label strong {
+      display: block;
+      font-size: 1rem;
+      margin-bottom: 3px;
+    }
+
+    .plan-row-label span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.92rem;
+      font-weight: 500;
+      line-height: 1.45;
+    }
+
+    .plan-cell {
+      gap: 12px;
+      line-height: 1.5;
+    }
+
+    .plan-free-cell {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+      border-left: 1px solid var(--border);
+    }
+
+    .plan-pro-cell {
+      background: linear-gradient(180deg, rgba(250, 204, 21, 0.2), rgba(161, 98, 7, 0.08));
+      border-left: 1px solid rgba(250, 204, 21, 0.18);
+    }
+
+    .plan-mark {
+      flex: 0 0 auto;
+      width: 24px;
+      text-align: center;
+      font-weight: 800;
+      font-size: 1rem;
+    }
+
+    .plan-free-cell .plan-mark {
+      color: #a3a3a3;
+    }
+
+    .plan-pro-cell .plan-mark {
+      color: #facc15;
+    }
+
+    .plan-pro-cell {
+      color: #fef3c7;
+    }
+
+    .plan-free-cell {
+      color: rgba(255, 255, 255, 0.92);
+    }
+
+    html[data-theme="light"] .plan-free-head,
+    html[data-theme="light"] .plan-free-cell {
+      background: linear-gradient(180deg, rgba(24, 24, 27, 0.03), rgba(24, 24, 27, 0.01));
+    }
+
+    html[data-theme="light"] .plan-pro-head,
+    html[data-theme="light"] .plan-pro-cell {
+      background: linear-gradient(180deg, rgba(250, 204, 21, 0.16), rgba(251, 191, 36, 0.08));
+    }
+
+    html[data-theme="light"] .plan-free-head .plan-kicker {
+      background: rgba(24, 24, 27, 0.06);
+      color: #3f3f46;
+    }
+
+    html[data-theme="light"] .plan-pro-head .plan-kicker {
+      background: rgba(146, 64, 14, 0.12);
+      color: #92400e;
+    }
+
+    html[data-theme="light"] .plan-free-head .plan-summary,
+    html[data-theme="light"] .plan-row-label span {
+      color: #52525b;
+    }
+
+    html[data-theme="light"] .plan-free-cell,
+    html[data-theme="light"] .plan-row-label {
+      color: #27272a;
+    }
+
+    html[data-theme="light"] .plan-head-spacer {
+      background: rgba(24, 24, 27, 0.02);
+    }
+
+    html[data-theme="light"] .plan-head-spacer strong {
+      color: #27272a;
+    }
+
+    html[data-theme="light"] .plan-pro-cell {
+      color: #713f12;
+    }
+
+    html[data-theme="light"] .plan-free-cell .plan-mark {
+      color: #71717a;
+    }
+
+    html[data-theme="light"] .plan-pro-cell .plan-mark {
+      color: #b45309;
+    }
+
+    .plan-note {
+      margin-top: 24px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
     /* Footer */
     footer {
       border-top: 1px solid var(--border);
@@ -695,6 +937,10 @@
         margin-top: 40px;
         width: 100%;
       }
+
+      .plan-table {
+        grid-template-columns: 1fr;
+      }
     }
 
     @media (max-width: 600px) {
@@ -731,6 +977,19 @@
       .bento-card {
         padding: 32px 24px;
       }
+
+      .plan-head-spacer,
+      .plan-tier-head,
+      .plan-row-label,
+      .plan-cell {
+        padding-left: 18px;
+        padding-right: 18px;
+      }
+
+      .plan-head-spacer,
+      .plan-tier-head {
+        min-height: 0;
+      }
     }
   </style>
 </head>
@@ -761,7 +1020,7 @@
         <div class="cta-container">
           <div class="cta-group">
             <div class="main-downloads" style="display: flex; gap: 16px; align-items: center; justify-content: center; flex-wrap: wrap;">
-              <a href="https://github.com/chentao1006/browsync/releases/latest" target="_blank" rel="noopener"
+              <!-- <a href="https://github.com/chentao1006/browsync/releases/latest" target="_blank" rel="noopener"
                 class="btn-primary">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                   stroke-linecap="round" stroke-linejoin="round">
@@ -770,7 +1029,7 @@
                   <line x1="12" y1="15" x2="12" y2="3"></line>
                 </svg>
                 <span data-i18n="hero.cta">免费下载 macOS 版</span>
-              </a>
+              </a> -->
               <a href="https://apps.apple.com/cn/app/id6784604835?mt=12" target="_blank" rel="noopener"
                 class="store-badge app-store-badge">
                 <img data-app-store-badge src="BrowSync/Resources/Marketing/download-on-app-store-zh.svg"
@@ -791,7 +1050,7 @@
             </div>
           </div>
 
-          <div style="display: flex; align-items: center; gap: 8px; margin-top: 16px; flex-wrap: wrap;">
+          <!-- <div style="display: flex; align-items: center; gap: 8px; margin-top: 16px; flex-wrap: wrap;">
             <span style="color: var(--muted); font-size: 0.95rem;" data-i18n="install.desc">或者使用 Homebrew 安装：</span>
             <div
               style="display: flex; align-items: stretch; background: var(--bg); border-radius: 8px; border: 1px solid var(--border); overflow: hidden;">
@@ -803,7 +1062,7 @@
                 onmouseover="this.style.background='var(--border)'"
                 onmouseout="this.style.background='var(--card-bg)'">Copy</button>
             </div>
-          </div>
+          </div> -->
 
         </div>
       </div>
@@ -859,7 +1118,7 @@
         <!-- Feature 2 -->
         <div class="bento-card card-medium">
           <h3 data-i18n="feat2.title">🔖 书签同步</h3>
-          <p data-i18n="feat2.desc">在 Safari、Chromium 和 Firefox 浏览器之间实时同步书签。</p>
+          <p data-i18n="feat2.desc">在 Safari、Chromium 和 Firefox 浏览器之间实时同步书签。支持为每个浏览器单独选择同步文件夹，不影响其他书签文件夹。</p>
         </div>
 
         <!-- Feature 3 -->
@@ -961,13 +1220,94 @@
             按钮，选择您的浏览器 .app 文件即可轻松添加！</p>
         </div>
 
+        <div class="bento-card card-full" style="flex-direction: column; align-items: stretch; text-align: left;">
+          <div class="plan-compare">
+            <div class="plan-compare-head">
+              <h3 data-i18n="plans.title" style="font-size: 2rem; margin-bottom: 12px;">免费版 vs 专业版</h3>
+              <p data-i18n="plans.desc">两档都支持 BrowSync 的核心分流与同步能力，区别主要在同步方式、数量限制，以及跨设备能力。</p>
+            </div>
+            <div class="plan-table">
+              <div class="plan-head-spacer">
+                <strong data-i18n="plans.axis.title">对比维度</strong>
+                <p data-i18n="plans.axis.desc">按功能范围、同步方式和跨设备能力逐项对照，方便快速判断哪一档更适合你的使用场景。</p>
+              </div>
+              <div class="plan-tier-head plan-free-head">
+                <div class="plan-kicker" data-i18n="plans.free.kicker">免费版</div>
+                <h3 data-i18n="plans.free.title">适合轻量使用和先体验完整流程</h3>
+                <p class="plan-summary" data-i18n="plans.free.summary">可以进行书签和状态同步，但以手动同步为主，并带有免费额度限制。</p>
+              </div>
+              <div class="plan-tier-head plan-pro-head">
+                <div class="plan-recommend" data-i18n="plans.pro.badge">推荐</div>
+                <div class="plan-kicker" data-i18n="plans.pro.kicker">专业版</div>
+                <h3 data-i18n="plans.pro.title">适合长期、多浏览器、多设备工作流</h3>
+                <p class="plan-summary" data-i18n="plans.pro.summary">解锁无限制同步配置，以及实时自动同步和 iCloud 跨 Mac 能力。</p>
+              </div>
+
+              <div class="plan-row-label">
+                <div>
+                  <strong data-i18n="plans.row1.title">分流规则</strong>
+                  <span data-i18n="plans.row1.desc">管理可自动分流到不同浏览器的规则数量。</span>
+                </div>
+              </div>
+              <div class="plan-cell plan-free-cell"><span class="plan-mark">•</span><span data-i18n="plans.free.f1">最多 3 条分流规则</span></div>
+              <div class="plan-cell plan-pro-cell"><span class="plan-mark">✓</span><span data-i18n="plans.pro.f1">不限分流规则</span></div>
+
+              <div class="plan-row-label">
+                <div>
+                  <strong data-i18n="plans.row2.title">同步浏览器</strong>
+                  <span data-i18n="plans.row2.desc">参与书签和状态同步的浏览器数量上限。</span>
+                </div>
+              </div>
+              <div class="plan-cell plan-free-cell"><span class="plan-mark">•</span><span data-i18n="plans.free.f2">最多 2 个同步浏览器</span></div>
+              <div class="plan-cell plan-pro-cell"><span class="plan-mark">✓</span><span data-i18n="plans.pro.f2">不限同步浏览器</span></div>
+
+              <div class="plan-row-label">
+                <div>
+                  <strong data-i18n="plans.row3.title">站点同步策略</strong>
+                  <span data-i18n="plans.row3.desc">按网站单独配置同步策略的数量。</span>
+                </div>
+              </div>
+              <div class="plan-cell plan-free-cell"><span class="plan-mark">•</span><span data-i18n="plans.free.f3">最多 3 个站点同步策略</span></div>
+              <div class="plan-cell plan-pro-cell"><span class="plan-mark">✓</span><span data-i18n="plans.pro.f3">不限站点同步策略</span></div>
+
+              <div class="plan-row-label">
+                <div>
+                  <strong data-i18n="plans.row4.title">书签与状态同步</strong>
+                  <span data-i18n="plans.row4.desc">决定是手动触发，还是实时自动保持同步。</span>
+                </div>
+              </div>
+              <div class="plan-cell plan-free-cell"><span class="plan-mark">•</span><span data-i18n="plans.free.f4">书签与状态支持手动同步</span></div>
+              <div class="plan-cell plan-pro-cell"><span class="plan-mark">✓</span><span data-i18n="plans.pro.f4">书签与状态支持实时自动同步</span></div>
+
+              <div class="plan-row-label">
+                <div>
+                  <strong data-i18n="plans.row5.title">标签共享</strong>
+                  <span data-i18n="plans.row5.desc">可共享当前标签页，或全部已打开标签页。</span>
+                </div>
+              </div>
+              <div class="plan-cell plan-free-cell"><span class="plan-mark">•</span><span data-i18n="plans.free.f5">标签共享仅同步当前活动标签页</span></div>
+              <div class="plan-cell plan-pro-cell"><span class="plan-mark">✓</span><span data-i18n="plans.pro.f5">标签共享可同步全部打开的标签页</span></div>
+
+              <div class="plan-row-label">
+                <div>
+                  <strong data-i18n="plans.row6.title">iCloud 跨设备</strong>
+                  <span data-i18n="plans.row6.desc">在多台 Mac 间同步设置、规则和标签页。</span>
+                </div>
+              </div>
+              <div class="plan-cell plan-free-cell"><span class="plan-mark">•</span><span data-i18n="plans.free.f6">不含 iCloud 同步</span></div>
+              <div class="plan-cell plan-pro-cell"><span class="plan-mark">✓</span><span data-i18n="plans.pro.f6">支持 iCloud 同步设置、规则和标签页</span></div>
+            </div>
+            <p class="plan-note" data-i18n="plans.note">说明：以上差异基于应用内当前专业版对比项整理。免费版可同步，但默认是受限额度下的手动同步体验。</p>
+          </div>
+        </div>
+
         <!-- Install Full Card -->
         <div id="download" class="bento-card card-full"
           style="flex-direction: column; align-items: center; text-align: center; background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(139, 92, 246, 0.05)); border-color: rgba(59, 130, 246, 0.15); padding: 56px 24px;">
           <h3 data-i18n="install.title" style="justify-content: center; font-size: 2rem; margin-bottom: 24px;">安装
             BrowSync</h3>
           <div class="cta-group" style="margin-bottom: 32px;">
-            <a href="https://github.com/chentao1006/browsync/releases/latest" target="_blank" rel="noopener"
+            <!-- <a href="https://github.com/chentao1006/browsync/releases/latest" target="_blank" rel="noopener"
               class="btn-primary">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                 stroke-linecap="round" stroke-linejoin="round">
@@ -976,7 +1316,7 @@
                 <line x1="12" y1="15" x2="12" y2="3"></line>
               </svg>
               <span data-i18n="hero.cta">免费下载 macOS 版</span>
-            </a>
+            </a> -->
             <a href="https://apps.apple.com/cn/app/id6784604835?mt=12" target="_blank" rel="noopener"
               class="store-badge app-store-badge">
               <img data-app-store-badge src="BrowSync/Resources/Marketing/download-on-app-store-zh.svg"
@@ -996,7 +1336,7 @@
             </div>
           </div>
 
-          <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+          <!-- <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
             <span style="color: var(--muted); font-size: 0.95rem;" data-i18n="install.desc">或者使用 Homebrew 安装：</span>
             <div
               style="display: flex; align-items: stretch; background: var(--bg); border-radius: 8px; border: 1px solid var(--border); overflow: hidden;">
@@ -1008,7 +1348,7 @@
                 onmouseover="this.style.background='var(--border)'"
                 onmouseout="this.style.background='var(--card-bg)'">Copy</button>
             </div>
-          </div>
+          </div> -->
         </div>
       </div>
     </section>
@@ -1022,7 +1362,7 @@
     <div data-i18n="footer.copy">© 2026 BrowSync. 纯本地浏览器协同工具。</div>
     <div style="display:flex; gap: 24px; flex-wrap: wrap;">
       <a href="https://github.com/chentao1006/browsync" data-i18n="footer.github">GitHub 源码</a>
-      <a href="README_zh.md" data-i18n="footer.readme">文档说明</a>
+      <a id="footer-readme-link" href="README_zh.md" data-i18n="footer.readme">文档说明</a>
       <a href="privacy.html" data-i18n="footer.privacy">隐私政策</a>
     </div>
   </footer>
@@ -1043,7 +1383,7 @@
         "feat1.title": "🔗 URL 分流",
         "feat1.desc": "将 BrowSync 设为系统默认浏览器后，可根据规则自动将链接在指定的浏览器（如 Chrome、Safari 或 Firefox）中打开。",
         "feat2.title": "🔖 书签同步",
-        "feat2.desc": "在 Safari、Chromium 和 Firefox 浏览器之间实时同步书签。",
+        "feat2.desc": "在 Safari、Chromium 和 Firefox 浏览器之间实时同步书签。支持为每个浏览器单独选择同步文件夹，不影响其他书签文件夹。",
         "feat3.title": "🔄 状态同步",
         "feat3.desc": "跨浏览器实时同步 Cookie 和缓存，保持各浏览器的登录状态一致。",
         "feat4.title": "🔒 本地运行",
@@ -1052,6 +1392,42 @@
         "feat5.desc": "采用原生 SwiftUI 开发，支持深色模式与菜单栏常驻，内存占用低。",
         "feat6.title": "☁️ iCloud 同步",
         "feat6.desc": "在您的所有 Mac 设备之间无缝同步分流规则与偏好设置。",
+        "plans.title": "免费版 vs 专业版",
+        "plans.desc": "两档都支持 BrowSync 的核心分流与同步能力，区别主要在同步方式、数量限制，以及跨设备能力。",
+        "plans.axis.title": "对比维度",
+        "plans.axis.desc": "按功能范围、同步方式和跨设备能力逐项对照，方便快速判断哪一档更适合你的使用场景。",
+        "plans.row1.title": "分流规则",
+        "plans.row1.desc": "管理可自动分流到不同浏览器的规则数量。",
+        "plans.row2.title": "同步浏览器",
+        "plans.row2.desc": "参与书签和状态同步的浏览器数量上限。",
+        "plans.row3.title": "站点同步策略",
+        "plans.row3.desc": "按网站单独配置同步策略的数量。",
+        "plans.row4.title": "书签与状态同步",
+        "plans.row4.desc": "决定是手动触发，还是实时自动保持同步。",
+        "plans.row5.title": "标签共享",
+        "plans.row5.desc": "可共享当前标签页，或全部已打开标签页。",
+        "plans.row6.title": "iCloud 跨设备",
+        "plans.row6.desc": "在多台 Mac 间同步设置、规则和标签页。",
+        "plans.free.kicker": "免费版",
+        "plans.free.title": "适合轻量使用和先体验完整流程",
+        "plans.free.summary": "可以进行书签和状态同步，但以手动同步为主，并带有免费额度限制。",
+        "plans.free.f1": "最多 3 条分流规则",
+        "plans.free.f2": "最多 2 个同步浏览器",
+        "plans.free.f3": "最多 3 个站点同步策略",
+        "plans.free.f4": "书签与状态支持手动同步",
+        "plans.free.f5": "标签共享仅同步当前活动标签页",
+        "plans.free.f6": "不含 iCloud 同步",
+        "plans.pro.badge": "推荐",
+        "plans.pro.kicker": "专业版",
+        "plans.pro.title": "适合长期、多浏览器、多设备工作流",
+        "plans.pro.summary": "解锁无限制同步配置，以及实时自动同步和 iCloud 跨 Mac 能力。",
+        "plans.pro.f1": "不限分流规则",
+        "plans.pro.f2": "不限同步浏览器",
+        "plans.pro.f3": "不限站点同步策略",
+        "plans.pro.f4": "书签与状态支持实时自动同步",
+        "plans.pro.f5": "标签共享可同步全部打开的标签页",
+        "plans.pro.f6": "支持 iCloud 同步设置、规则和标签页",
+        "plans.note": "说明：以上差异基于应用内当前专业版对比项整理。免费版可同步，但默认是受限额度下的手动同步体验。",
         "install.title": "安装 BrowSync",
         "install.extensions": "浏览器扩展：",
         "footer.copy": "© 2026 BrowSync. 纯本地浏览器协同工具。",
@@ -1077,7 +1453,7 @@
         "feat1.title": "🔗 URL Routing",
         "feat1.desc": "Set BrowSync as the default browser and use rules to automatically open links in specific browsers.",
         "feat2.title": "🔖 Bookmark Sync",
-        "feat2.desc": "Sync bookmarks in real-time across Safari, Chromium, and Firefox browsers.",
+        "feat2.desc": "Sync bookmarks in real-time across Safari, Chromium, and Firefox browsers. You can choose a dedicated sync folder for each browser without affecting its other bookmark folders.",
         "feat3.title": "🔄 State Sync",
         "feat3.desc": "Sync Cookies and caches across browsers to maintain consistent login states.",
         "feat4.title": "🔒 Local Execution",
@@ -1086,6 +1462,42 @@
         "feat5.desc": "Built with SwiftUI for macOS, featuring Dark Mode support and low memory footprint.",
         "feat6.title": "☁️ iCloud Sync",
         "feat6.desc": "Seamlessly sync your routing rules and preferences across all your Mac devices.",
+        "plans.title": "Free vs Pro",
+        "plans.desc": "Both tiers support BrowSync's core routing and sync workflow. The main differences are sync mode, usage limits, and cross-device capabilities.",
+        "plans.axis.title": "Comparison Dimensions",
+        "plans.axis.desc": "Compare the tiers side by side across feature scope, sync behavior, and cross-device capabilities so it's obvious which one fits your workflow.",
+        "plans.row1.title": "Routing Rules",
+        "plans.row1.desc": "How many browser routing rules you can keep active.",
+        "plans.row2.title": "Sync Browsers",
+        "plans.row2.desc": "How many browsers can participate in bookmark and state sync.",
+        "plans.row3.title": "Website Sync Rules",
+        "plans.row3.desc": "How many per-site sync policies you can configure.",
+        "plans.row4.title": "Bookmark and State Sync",
+        "plans.row4.desc": "Whether sync is manual or kept up to date automatically.",
+        "plans.row5.title": "Tab Sharing",
+        "plans.row5.desc": "Share only the current tab or all currently open tabs.",
+        "plans.row6.title": "iCloud Across Devices",
+        "plans.row6.desc": "Sync settings, rules, and tabs across multiple Macs.",
+        "plans.free.kicker": "Free",
+        "plans.free.title": "Best for lighter use and full-flow evaluation",
+        "plans.free.summary": "Bookmarks and browser state can still sync, but the experience is primarily manual and subject to free-tier limits.",
+        "plans.free.f1": "Up to 3 routing rules",
+        "plans.free.f2": "Up to 2 sync browsers",
+        "plans.free.f3": "Up to 3 website sync rules",
+        "plans.free.f4": "Manual sync for bookmarks and browser state",
+        "plans.free.f5": "Tab sharing syncs only the current active tab",
+        "plans.free.f6": "No iCloud sync",
+        "plans.pro.badge": "Recommended",
+        "plans.pro.kicker": "Pro",
+        "plans.pro.title": "Best for long-running multi-browser, multi-device workflows",
+        "plans.pro.summary": "Unlock unlimited sync configuration plus real-time automatic sync and iCloud continuity across Macs.",
+        "plans.pro.f1": "Unlimited routing rules",
+        "plans.pro.f2": "Unlimited sync browsers",
+        "plans.pro.f3": "Unlimited website sync rules",
+        "plans.pro.f4": "Real-time automatic sync for bookmarks and browser state",
+        "plans.pro.f5": "Tab sharing can sync all open tabs",
+        "plans.pro.f6": "iCloud sync for settings, rules, and open tabs",
+        "plans.note": "Note: This summary is based on the current in-app Professional comparison. Free can still sync, but it is primarily a manual experience with capped limits.",
         "install.title": "Install BrowSync",
         "install.extensions": "Extensions:",
         "footer.copy": "© 2026 BrowSync. Privacy-first browser sync tool.",
@@ -1105,6 +1517,10 @@
       document.querySelectorAll("[data-i18n]").forEach(el => {
         if (copy[lang][el.dataset.i18n]) el.innerText = copy[lang][el.dataset.i18n];
       });
+      const readmeLink = document.getElementById('footer-readme-link');
+      if (readmeLink) {
+        readmeLink.href = lang === "zh" ? "README_zh.md" : "README.md";
+      }
       document.querySelectorAll("[data-app-store-badge]").forEach(img => {
         img.src = copy[lang]["appStore.badge"];
         img.alt = copy[lang]["appStore.alt"];

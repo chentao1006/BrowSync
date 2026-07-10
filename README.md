@@ -15,7 +15,7 @@
 ## 🚀 Features
 
 - **URL Routing**: Register BrowSync as the default macOS browser to direct links to specific browsers based on domain, URL patterns, query strings, source application, or time of day.
-- **Bookmark Sync**: Sync bookmarks in real-time across Safari, all Chromium-based browsers, and Firefox.
+- **Bookmark Sync**: Sync bookmarks in real-time across Safari, all Chromium-based browsers, and Firefox. You can choose a dedicated sync folder for each browser without affecting that browser's other bookmark folders.
 - **State Sync**: Sync Cookies, LocalStorage, and sessionStorage across supported browsers to maintain login states.
 - **Tab Sharing**: View active tabs across browsers. It filters out incognito tabs and non-HTTP(S) local pages, and deduplicates URLs.
 - **Sync Strategies**: Supports unidirectional (master-slave), last-write-wins (based on access time), and bidirectional merging.
