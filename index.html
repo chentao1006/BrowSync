@@ -552,6 +552,13 @@
       padding: 0 24px;
     }
 
+    #features,
+    #browsers,
+    #plans,
+    #download {
+      scroll-margin-top: 96px;
+    }
+
     .section-title {
       text-align: center;
       font-size: clamp(2rem, 4vw, 2.8rem);
@@ -1003,6 +1010,8 @@
       </a>
       <div class="nav-links">
         <a href="#features" data-i18n="nav.features">功能体验</a>
+        <a href="#browsers" data-i18n="nav.browsers">支持浏览器</a>
+        <a href="#plans" data-i18n="nav.plans">版本对比</a>
         <a href="#download" data-i18n="nav.download">立即下载</a>
       </div>
       <div class="controls">
@@ -1148,7 +1157,7 @@
         </div>
 
         <!-- Supported Browsers -->
-        <div class="bento-card card-full"
+        <div id="browsers" class="bento-card card-full"
           style="flex-direction: column; align-items: flex-start; text-align: left; padding: 40px;">
           <h3 data-i18n="browsers.title" style="font-size: 2rem; margin-bottom: 16px;">🌐 支持的浏览器</h3>
           <p data-i18n="browsers.desc" style="margin-bottom: 24px;">同览 (BrowSync) 开箱即支持多种主流浏览器，并允许您手动添加几乎任何基于 Chromium
@@ -1220,7 +1229,7 @@
             按钮，选择您的浏览器 .app 文件即可轻松添加！</p>
         </div>
 
-        <div class="bento-card card-full" style="flex-direction: column; align-items: stretch; text-align: left;">
+        <div id="plans" class="bento-card card-full" style="flex-direction: column; align-items: stretch; text-align: left;">
           <div class="plan-compare">
             <div class="plan-compare-head">
               <h3 data-i18n="plans.title" style="font-size: 2rem; margin-bottom: 12px;">免费版 vs 专业版</h3>
@@ -1372,6 +1381,8 @@
       zh: {
         "brand": "同览 BrowSync",
         "nav.features": "功能体验",
+        "nav.browsers": "支持浏览器",
+        "nav.plans": "版本对比",
         "nav.download": "立即下载",
         "hero.eyebrow": "macOS 原生应用",
         "hero.title": "跨浏览器的分流与同步中枢",
@@ -1442,6 +1453,8 @@
       en: {
         "brand": "BrowSync",
         "nav.features": "Features",
+        "nav.browsers": "Browsers",
+        "nav.plans": "Compare",
         "nav.download": "Download",
         "hero.eyebrow": "Native macOS App",
         "hero.title": "Cross-Browser Routing & Sync Hub",
