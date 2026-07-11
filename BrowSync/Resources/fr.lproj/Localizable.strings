@@ -159,6 +159,7 @@
 "Sync Warning Header" = "Certains sites peuvent échouer à la synchronisation";
 "Sync Warning Reason" = "Raison :";
 "Sync Warning Reason Detail" = "De nombreux sites utilisent des jetons de sécurité.";
+"Known Unsyncable Domains" = "Domaines connus impossibles à synchroniser :";
 "Sync Warning Solution" = "Solution :";
 "Sync Warning Solution Detail" = "Connectez-vous manuellement ou désactivez la synchronisation.";
 "Participating Browsers" = "Navigateurs participants";

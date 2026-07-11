@@ -159,6 +159,7 @@
 "Sync Warning Header" = "일부 사이트는 상태 동기화에 실패할 수 있습니다";
 "Sync Warning Reason" = "이유:";
 "Sync Warning Reason Detail" = "보안 토큰 사용으로 인해 동기화되지 않을 수 있습니다.";
+"Known Unsyncable Domains" = "동기화할 수 없는 것으로 알려진 도메인:";
 "Sync Warning Solution" = "해결책:";
 "Sync Warning Solution Detail" = "수동으로 로그인하거나 동기화를 비활성화하십시오.";
 "Participating Browsers" = "참여 브라우저";

@@ -82,6 +82,15 @@ struct StateSyncTabView: View {
                         
                         Group {
                             Text(String(localized: "Sync Warning Reason Detail", bundle: langBundle.bundle))
+
+                            if !appState.syncDisabledDomains.isEmpty {
+                                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                    Text(String(localized: "Known Unsyncable Domains", bundle: langBundle.bundle))
+                                        .fontWeight(.semibold)
+                                    Text(appState.syncDisabledDomains.sorted().joined(separator: ", "))
+                                        .textSelection(.enabled)
+                                }
+                            }
                         }
                         .font(.subheadline)
                         .foregroundStyle(.secondary)

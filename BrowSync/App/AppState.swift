@@ -26,6 +26,7 @@ final class AppState: ObservableObject {
     @Published var browserInfos: [BrowserInfo] = Browser.allCases.map { .placeholder(for: $0) }
     @Published var isScanning: Bool = false
     @Published var bookmarkFolderManagerOpenRequest: Int = 0
+    @Published private(set) var syncDisabledDomains: [String] = []
 
     // Active domain mock fields
     @Published var activeDomain: String? = "github.com"
@@ -123,6 +124,7 @@ final class AppState: ObservableObject {
             let (data, _) = try await URLSession.shared.data(for: request)
             if let domains = try? JSONDecoder().decode([String].self, from: data), !domains.isEmpty {
                 WebsiteSyncSetting.syncDisabledDomains = domains
+                syncDisabledDomains = domains
                 self.broadcastSettings()
             }
         } catch {
@@ -428,7 +430,7 @@ extension AppState: DaemonServerDelegate {
                 currentSafariBms = safariSvc.readBookmarks()
                 if !currentSafariBms.isEmpty {
                     bookmarksToSend = currentSafariBms.map { b in
-                        Bookmark(id: b.id, title: b.title, url: b.url, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
+                        Bookmark(id: b.id, title: b.title, url: b.url, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
                     }
                 }
 

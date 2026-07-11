@@ -104,7 +104,7 @@ final class SyncService: ObservableObject {
                 return cachedSafari
             }
             return safariBookmarks.readBookmarks().map {
-                Bookmark(id: $0.id, title: $0.title, url: $0.url.flatMap { $0 }, parentId: $0.parentId, isFolder: $0.isFolder, inBookmarksBar: $0.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
+                Bookmark(id: $0.id, title: $0.title, url: $0.url.flatMap { $0 }, parentId: $0.parentId, isFolder: $0.isFolder, sortIndex: $0.sortIndex, inBookmarksBar: $0.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
             }
         }
         return backupService?.getSnapshot(sourceBrowser: browser.rawValue) ?? []
@@ -177,6 +177,7 @@ final class SyncService: ObservableObject {
                 url: $0.url.flatMap { $0 },
                 parentId: $0.parentId,
                 isFolder: $0.isFolder,
+                sortIndex: $0.sortIndex,
                 inBookmarksBar: $0.inBookmarksBar,
                 dateAdded: Date(),
                 sourceBrowser: .safari
@@ -196,6 +197,7 @@ final class SyncService: ObservableObject {
                     url: url,
                     parentId: bookmark.parentId,
                     isFolder: bookmark.isFolder,
+                    sortIndex: bookmark.sortIndex,
                     inBookmarksBar: bookmark.inBookmarksBar ?? false,
                     dateAdded: bookmark.dateAdded
                 )
@@ -548,7 +550,7 @@ final class SyncService: ObservableObject {
                     }
 
                     var bookmarks = safariBms.map { b in
-                        Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
+                        Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
                     }
                     
                     if let adjustedBookmarks = folderAdjustedBookmarksForSource(bookmarks, browser: .safari) {
@@ -1021,6 +1023,7 @@ final class SyncService: ObservableObject {
             let origin = item.origin.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
             let host = URL(string: origin)?.host ?? origin
             let cleanHost = host.starts(with: ".") ? String(host.dropFirst()) : host
+            guard !isSystemSyncDisabled(cleanHost) else { return false }
 
             let siteMatch = settings.websiteSettings.first { site in
                 let listed = site.domain.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1048,6 +1051,7 @@ final class SyncService: ObservableObject {
         cookies.filter { cookie in
             let domain = cookie.domain.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
             let cleanDomain = domain.starts(with: ".") ? String(domain.dropFirst()) : domain
+            guard !isSystemSyncDisabled(cleanDomain) else { return false }
 
             let siteMatch = settings.websiteSettings.first { site in
                 let listed = site.domain.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1069,6 +1073,16 @@ final class SyncService: ObservableObject {
             case .latestWins:
                 return acceptLatestCookie(cookie, clientId: clientId)
             }
+        }
+    }
+
+    /// System security exclusions are never overridden by the user-facing site policy.
+    private func isSystemSyncDisabled(_ host: String) -> Bool {
+        let normalizedHost = host.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        return WebsiteSyncSetting.syncDisabledDomains.contains { domain in
+            let normalizedDomain = domain.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalizedDomain.isEmpty else { return false }
+            return normalizedHost == normalizedDomain || normalizedHost.hasSuffix("." + normalizedDomain)
         }
     }
 
@@ -1381,7 +1395,7 @@ final class SyncService: ObservableObject {
                         
                         if let targetFolder = settings.bookmarkFolder(for: .safari) {
                             let safariTargetBms = safariBookmarks.readBookmarks().map { b in
-                                Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
+                                Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
                             }
                             let mergedBookmarks = strategy == .oneWay
                                 ? BookmarkTreeMerger.replaceExistingFolderContents(sourceTree: bookmarks, targetTree: safariTargetBms, targetFolderPath: targetFolder)
@@ -1395,14 +1409,14 @@ final class SyncService: ObservableObject {
                                 let urlStr: String?
                                 if let urlOpt = b.url { urlStr = urlOpt } else { urlStr = nil }
                                 if !b.isFolder && urlStr == nil { return nil }
-                                return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar ?? false, dateAdded: b.dateAdded)
+                                return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar ?? false, dateAdded: b.dateAdded)
                             }
-                        } else {
-                            finalSyncBookmarks = bookmarks.compactMap { b -> SyncBookmark? in
+                    } else {
+                        finalSyncBookmarks = bookmarks.compactMap { b -> SyncBookmark? in
                                 let urlStr: String?
                                 if let urlOpt = b.url { urlStr = urlOpt } else { urlStr = nil }
                                 if !b.isFolder && urlStr == nil { return nil }
-                                return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar ?? false, dateAdded: b.dateAdded)
+                                return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar ?? false, dateAdded: b.dateAdded)
                             }
                         }
                         
@@ -1414,7 +1428,7 @@ final class SyncService: ObservableObject {
                             let freshSafariBms = safariBookmarks.readBookmarks()
                             if !freshSafariBms.isEmpty {
                                 let snapshotBms = freshSafariBms.map { b in
-                                    Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
+                                    Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
                                 }
                                 backupService?.saveSnapshot(bookmarks: snapshotBms, sourceBrowser: "safari")
                                 log("Updated Safari snapshot after write (\(snapshotBms.count) items)")
@@ -1434,7 +1448,7 @@ final class SyncService: ObservableObject {
                     
                     if let targetFolder = settings.bookmarkFolder(for: .safari) {
                         let safariTargetBms = safariBookmarks.readBookmarks().map { b in
-                            Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
+                            Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
                         }
                         let mergedBookmarks = strategy == .oneWay
                             ? BookmarkTreeMerger.replaceExistingFolderContents(sourceTree: bookmarks, targetTree: safariTargetBms, targetFolderPath: targetFolder)
@@ -1448,14 +1462,14 @@ final class SyncService: ObservableObject {
                             let urlStr: String?
                             if let urlOpt = b.url { urlStr = urlOpt } else { urlStr = nil }
                             if !b.isFolder && urlStr == nil { return nil }
-                            return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar ?? false, dateAdded: b.dateAdded)
+                            return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar ?? false, dateAdded: b.dateAdded)
                         }
                     } else {
                         finalSyncBookmarks = bookmarks.compactMap { b -> SyncBookmark? in
                             let urlStr: String?
                             if let urlOpt = b.url { urlStr = urlOpt } else { urlStr = nil }
                             if !b.isFolder && urlStr == nil { return nil }
-                            return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar ?? false, dateAdded: b.dateAdded)
+                            return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar ?? false, dateAdded: b.dateAdded)
                         }
                     }
                     
@@ -1471,7 +1485,7 @@ final class SyncService: ObservableObject {
                         let freshSafariBms = safariBookmarks.readBookmarks()
                         if !freshSafariBms.isEmpty {
                             let snapshotBms = freshSafariBms.map { b in
-                                Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
+                                Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
                             }
                             backupService?.saveSnapshot(bookmarks: snapshotBms, sourceBrowser: "safari")
                             log("Updated Safari snapshot after write (\(snapshotBms.count) items)")

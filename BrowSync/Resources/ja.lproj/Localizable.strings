@@ -159,6 +159,7 @@
 "Sync Warning Header" = "一部のサイトは同期に失敗する可能性があります";
 "Sync Warning Reason" = "理由:";
 "Sync Warning Reason Detail" = "サイトがセキュリティトークンを使用しているため。";
+"Known Unsyncable Domains" = "既知の同期できないドメイン：";
 "Sync Warning Solution" = "解決策:";
 "Sync Warning Solution Detail" = "手動でログインするか、同期を無効にしてください。";
 "Participating Browsers" = "参加しているブラウザ";

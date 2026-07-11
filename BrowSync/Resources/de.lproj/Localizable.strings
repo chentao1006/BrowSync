@@ -159,6 +159,7 @@
 "Sync Warning Header" = "Einige Seiten können möglicherweise nicht synchronisiert werden";
 "Sync Warning Reason" = "Grund:";
 "Sync Warning Reason Detail" = "Viele Seiten verwenden Sicherheitstoken.";
+"Known Unsyncable Domains" = "Bekannte nicht synchronisierbare Domains:";
 "Sync Warning Solution" = "Lösung:";
 "Sync Warning Solution Detail" = "Melden Sie sich manuell an oder deaktivieren Sie die Synchronisierung.";
 "Participating Browsers" = "Teilnehmende Browser";

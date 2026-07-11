@@ -502,7 +502,7 @@ async function handlePullRequest(category, site) {
       }
 
       function traverse(nodes) {
-        for (const node of nodes) {
+        for (const [sortIndex, node] of nodes.entries()) {
           if (!systemRoots.has(node.id)) { // Skip root and system folders
             let normalizedParentId = node.parentId;
             if (isBackupOnly && backupRootByActualId.has(node.parentId)) normalizedParentId = backupRootByActualId.get(node.parentId).snapshotId;
@@ -520,6 +520,7 @@ async function handlePullRequest(category, site) {
               url: node.url, 
               parentId: mappedParentId,
               isFolder: !node.url, 
+              sortIndex,
               dateAdded: node.dateAdded, 
               sourceBrowser: DETECTED_BROWSER 
             });
@@ -817,8 +818,12 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmark
   }
 
   async function processNodes(nodes, localParentId) {
-    for (let i = 0; i < nodes.length; i++) {
-      const bm = nodes[i];
+    // Keep folders and bookmarks in one user-defined sibling sequence.
+    const orderedNodes = nodes
+      .map((bm, fallbackIndex) => ({ bm, fallbackIndex }))
+      .sort((a, b) => (a.bm.sortIndex ?? a.fallbackIndex) - (b.bm.sortIndex ?? b.fallbackIndex) || a.fallbackIndex - b.fallbackIndex);
+    for (let i = 0; i < orderedNodes.length; i++) {
+      const bm = orderedNodes[i].bm;
       let existingNode = null;
       
       // 1. Try to find by persistent ID mapping first (handles renames/moves perfectly)

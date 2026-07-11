@@ -261,7 +261,7 @@ final class SafariBookmarkService {
                     }
                 }
                 
-                let children = allBookmarks.filter { $0.parentId == bookmark.id }
+                let children = orderedSiblings(allBookmarks.filter { $0.parentId == bookmark.id })
                 var childNodes = children.compactMap { buildNode(from: $0, allBookmarks: allBookmarks) }
                 
                 // Preserve any Safari-only children that were inside this folder but not in Chrome
@@ -303,6 +303,15 @@ final class SafariBookmarkService {
 
         let rootChromeIds = Set(["0", "1", "2", "3"])
 
+        func orderedSiblings(_ nodes: [SyncBookmark]) -> [SyncBookmark] {
+            // Older peers omit sortIndex; keep their payload order as the fallback.
+            nodes.enumerated().sorted { lhs, rhs in
+                let left = lhs.element.sortIndex ?? lhs.offset
+                let right = rhs.element.sortIndex ?? rhs.offset
+                return left == right ? lhs.offset < rhs.offset : left < right
+            }.map(\.element)
+        }
+
         func mergeLevel(chromeNodes: [SyncBookmark], safariNodes: inout [[String: Any]], isRoot: Bool = false, pruneOrphanedManagedFolders: Bool = false) {
             var newSafariNodes = [[String: Any]]()
             var systemNodes = [(Int, [String: Any])]() // index, node
@@ -317,12 +326,12 @@ final class SafariBookmarkService {
                 systemNodes.reverse() // Keep original ascending order
             }
             
-            for bookmark in chromeNodes {
+            for bookmark in orderedSiblings(chromeNodes) {
                 if bookmark.isFolder {
                     if let idx = safariNodes.firstIndex(where: { ($0["WebBookmarkType"] as? String) == "WebBookmarkTypeList" && ($0["Title"] as? String) == bookmark.title }) {
                         var existingFolder = safariNodes.remove(at: idx)
                         var subChildren = existingFolder["Children"] as? [[String: Any]] ?? []
-                        let chromeSub = validBookmarks.filter { $0.parentId == bookmark.id }
+                        let chromeSub = orderedSiblings(validBookmarks.filter { $0.parentId == bookmark.id })
                         mergeLevel(chromeNodes: chromeSub, safariNodes: &subChildren, isRoot: false)
                         existingFolder["Children"] = subChildren
                         newSafariNodes.append(existingFolder)
@@ -380,7 +389,7 @@ final class SafariBookmarkService {
         }
 
         func processRoot(chromeParentId: String, rootMatcher: (([String: Any]) -> Bool)?, children: inout [[String: Any]]) {
-            let topLevelBookmarks = validBookmarks.filter {
+            let topLevelBookmarks = orderedSiblings(validBookmarks.filter {
                 guard !rootChromeIds.contains($0.id) else { return false }
                 let pid = $0.parentId ?? "1"
                 if chromeParentId == "1" {
@@ -388,7 +397,7 @@ final class SafariBookmarkService {
                 } else {
                     return pid == chromeParentId
                 }
-            }
+            })
 
             if let rootMatcher = rootMatcher {
                 guard let idx = children.firstIndex(where: rootMatcher),
@@ -445,7 +454,7 @@ final class SafariBookmarkService {
                 var result: [SyncBookmark] = []
                 
                 func traverse(nodes: [[String: Any]], parentId: String?, rootChromeId: String?) {
-                    for child in nodes {
+                    for (sortIndex, child) in nodes.enumerated() {
                         // Skip any item that was written by BrowSync from Chrome's Mobile Bookmarks root.
                         // These were inserted erroneously in a previous sync and should not be read back.
                         if let sourceRoot = child["BrowSyncSourceRoot"] as? String, sourceRoot == "3" {
@@ -459,7 +468,7 @@ final class SafariBookmarkService {
                         
                         let effectiveParentId = parentId ?? rootChromeId
                         
-                        result.append(SyncBookmark(id: id, title: titleStr, url: urlStr, parentId: effectiveParentId, isFolder: isFolder, inBookmarksBar: effectiveParentId == "1"))
+                        result.append(SyncBookmark(id: id, title: titleStr, url: urlStr, parentId: effectiveParentId, isFolder: isFolder, sortIndex: sortIndex, inBookmarksBar: effectiveParentId == "1"))
                         
                         if isFolder, let subChildren = child["Children"] as? [[String: Any]] {
                             traverse(nodes: subChildren, parentId: id, rootChromeId: rootChromeId)
@@ -692,6 +701,7 @@ struct SyncBookmark {
     let url: String?
     let parentId: String?
     let isFolder: Bool
+    var sortIndex: Int? = nil
     var inBookmarksBar: Bool = false
     var dateAdded: Date? = nil
 }

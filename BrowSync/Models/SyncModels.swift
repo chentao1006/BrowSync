@@ -84,6 +84,8 @@ struct Bookmark: Identifiable, Codable, Equatable {
     var url: String??
     var parentId: String?
     var isFolder: Bool
+    /// Position among all siblings. Folders and bookmarks deliberately share one sequence.
+    var sortIndex: Int? = nil
     var inBookmarksBar: Bool? // True if it belongs to the Favorites/Bookmarks Bar
     var dateAdded: Date?
     var dateModified: Date?
@@ -273,6 +275,7 @@ struct WebsiteSyncSetting: Codable, Identifiable, Equatable {
     var strategy: BrowserDataSyncStrategy? // nil means use default
     var sourceBrowser: Browser? // nil means use default
     
+    /// Populated from disabled-domains.json by AppState at launch.
     static var syncDisabledDomains: [String] = []
 }
 

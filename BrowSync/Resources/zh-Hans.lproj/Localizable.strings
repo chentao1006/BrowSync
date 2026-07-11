@@ -192,6 +192,7 @@
 "Sync Warning Header" = "部分网站可能无法成功同步状态";
 "Sync Warning Reason" = "原因：";
 "Sync Warning Reason Detail" = "许多网站使用浏览器指纹或与设备绑定的安全 Token 进行验证。由于浏览器安全限制，扩展无法提取这些数据，且这些 Token 在不同浏览器环境可能被判定为无效。";
+"Known Unsyncable Domains" = "已知无法同步的域名：";
 "Sync Warning Solution" = "方案：";
 "Sync Warning Solution Detail" = "对于无法通过同步保持登录的网站，建议您在各浏览器中分别手动登录，或将该网站加入下方列表并关闭其状态同步。";
 "Participating Browsers" = "参与同步的浏览器";

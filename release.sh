@@ -29,6 +29,19 @@ update_plist_version() {
     sed -i '' -E "/<key>CFBundleVersion<\/key>/{n;s/<string>.*<\/string>/<string>$NEW_BUILD<\/string>/;}" "$plist_path"
 }
 
+cleanup_old_extension_packages() {
+    local current_chromium="${RESULT_DIR}/ChromiumExtension-v${NEW_VERSION}.zip"
+    local current_firefox="${RESULT_DIR}/FirefoxExtension-v${NEW_VERSION}.zip"
+
+    for package in "${RESULT_DIR}"/ChromiumExtension-v*.zip "${RESULT_DIR}"/FirefoxExtension-v*.zip; do
+        [ -e "$package" ] || continue
+        if [ "$package" != "$current_chromium" ] && [ "$package" != "$current_firefox" ]; then
+            rm -f "$package"
+            echo "🧹 Removed old extension package: $package"
+        fi
+    done
+}
+
 CURRENT_VERSION=$(get_current_version)
 CURRENT_BUILD=$(get_current_build)
 
@@ -156,6 +169,7 @@ if command -v gh >/dev/null 2>&1; then
     
     if [ $? -eq 0 ]; then
         echo "🎉 Release completed successfully!"
+        cleanup_old_extension_packages
         if [ "${SKIP_HOMEBREW_RELEASE:-0}" = "1" ]; then
             echo "⏭️  Skipping Homebrew release because SKIP_HOMEBREW_RELEASE=1."
         else

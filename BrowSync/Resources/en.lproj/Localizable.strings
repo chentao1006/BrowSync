@@ -197,6 +197,7 @@
 "Sync Warning Header" = "Some sites may not sync state successfully";
 "Sync Warning Reason" = "Reason:";
 "Sync Warning Reason Detail" = "Many sites use browser fingerprinting or device-bound security tokens for authentication. Due to browser security restrictions, extensions cannot extract this data, and these tokens may be invalidated in different browser environments.";
+"Known Unsyncable Domains" = "Known unsyncable domains:";
 "Sync Warning Solution" = "Solution:";
 "Sync Warning Solution Detail" = "For sites that cannot maintain login through sync, it is recommended to log in manually in each browser, or add the site to the list below and disable its state sync.";
 "Participating Browsers" = "Participating Browsers";
