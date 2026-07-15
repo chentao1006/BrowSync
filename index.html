@@ -891,6 +891,33 @@
       color: var(--text);
     }
 
+    .featured-badge {
+      display: inline-flex;
+      align-items: center;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .featured-badge:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+    }
+
+    .featured-badge .badge-light {
+      display: none;
+    }
+
+    .featured-badge .badge-dark {
+      display: block;
+    }
+
+    html[data-theme="light"] .featured-badge .badge-light {
+      display: block;
+    }
+
+    html[data-theme="light"] .featured-badge .badge-dark {
+      display: none;
+    }
+
     /* Animations */
     @keyframes fadeUp {
       from {
@@ -1369,6 +1396,10 @@
   <footer>
     <div data-i18n="footer.copy">© 2026 BrowSync. 纯本地浏览器协同工具。</div>
     <div style="display:flex; gap: 24px; flex-wrap: wrap;">
+      <a href="https://hicyou.com" class="featured-badge" target="_blank" rel="ugc">
+        <img class="badge-light" src="https://hicyou.com/badge/featured-light.svg" alt="Featured on HiCyou">
+        <img class="badge-dark" src="https://hicyou.com/badge/featured-dark.svg" alt="Featured on HiCyou">
+      </a>
       <a href="https://github.com/chentao1006/browsync" data-i18n="footer.github">GitHub 源码</a>
       <a id="footer-readme-link" href="README_zh.md" data-i18n="footer.readme">文档说明</a>
       <a href="privacy.html" data-i18n="footer.privacy">隐私政策</a>
