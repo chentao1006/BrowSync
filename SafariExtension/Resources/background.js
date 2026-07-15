@@ -11,9 +11,38 @@ const RECONNECT_ALARM = 'browsync-reconnect';
 const COOKIE_TIMESTAMPS_KEY = 'cookieUpdatedAt';
 
 const applyingCookies = new Set();
+// Batch rapid cookie updates before sending them to the macOS sync service.
+const cookieSyncQueue = new Map();
+let cookieSyncTimer = null;
+const incomingCookieDomains = new Map();
 
 function cookieIdentity(cookie) {
   return `${cookie.domain}::${cookie.path || '/'}::${cookie.name}`;
+}
+
+function isIncomingCookieDomain(cookie) {
+  const domain = (cookie.domain || '').replace(/^\./, '').toLowerCase();
+  const expiresAt = incomingCookieDomains.get(domain) || 0;
+  if (expiresAt <= Date.now()) {
+    incomingCookieDomains.delete(domain);
+    return false;
+  }
+  return true;
+}
+
+async function filterIncomingCookiesBySource(cookies, senderBrowser) {
+  const sender = String(senderBrowser || '').split('-')[0].toLowerCase();
+  const { appSettings = {} } = await chrome.storage.local.get('appSettings').catch(() => ({}));
+  const websiteSettings = appSettings.websiteSettings || [];
+
+  return cookies.filter(cookie => {
+    const domain = (cookie.domain || '').replace(/^\./, '').toLowerCase();
+    const site = websiteSettings.find(setting => syncDomainForHostname(domain) === setting.domain);
+    const source = String(site?.sourceBrowser || '').split('-')[0].toLowerCase();
+    const shouldReject = site?.strategy === 'primary_wins' && source && source !== sender;
+    if (shouldReject) console.log(`[BrowSync] Ignoring ${domain} cookies from ${sender}; ${source} is the primary browser.`);
+    return !shouldReject;
+  });
 }
 
 let cachedCookieTimestamps = null;
@@ -202,6 +231,7 @@ async function handleIncoming(message) {
         chrome.storage.local.get('appSettings').then(({ appSettings }) => {
           let settings = appSettings || {};
           if (raw.routerDefault !== undefined) settings.routerDefault = raw.routerDefault;
+          if (raw.automaticSync !== undefined) settings.automaticSync = raw.automaticSync;
           if (raw.tabSharingEnabled !== undefined) settings.tabSharingEnabled = raw.tabSharingEnabled;
           if (raw.stateParticipatingBrowsers) settings.stateParticipatingBrowsers = raw.stateParticipatingBrowsers;
           if (raw.bookmarkParticipatingBrowsers) settings.bookmarkParticipatingBrowsers = raw.bookmarkParticipatingBrowsers;
@@ -211,7 +241,16 @@ async function handleIncoming(message) {
           if (raw.websiteSettings !== undefined) settings.websiteSettings = raw.websiteSettings;
           if (raw.installedBrowsers !== undefined) settings.installedBrowsers = raw.installedBrowsers;
           if (raw.syncDisabledDomains !== undefined) settings.syncDisabledDomains = raw.syncDisabledDomains;
-          chrome.storage.local.set({ appSettings: settings });
+          chrome.storage.local.set({ appSettings: settings }).then(async () => {
+            // A service worker can receive settings after the first navigation event.
+            // Re-check the active page once the automatic-sync gate is available.
+            if (raw.automaticSync !== undefined || raw.stateParticipatingBrowsers) {
+              const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+              for (const tab of tabs) {
+                if (tab.id && tab.url) void requestCurrentSiteState(tab.id, tab.url);
+              }
+            }
+          });
         });
       }
       break;
@@ -332,7 +371,10 @@ async function applySync(message) {
       break;
     }
     case 'cookies':
-      await applyCookieSync(payload.cookies || []);
+      const acceptedCookies = await filterIncomingCookiesBySource(payload.cookies || [], message.browser);
+      if (acceptedCookies.length === 0) break;
+      await applyCookieSync(acceptedCookies);
+      await reloadPendingSiteAfterCookieSync(acceptedCookies);
       break;
     case 'tabSharing':
       // Store remote tabs in local storage for popup.js to read
@@ -1056,6 +1098,8 @@ if (chrome.cookies) {
 
     const cookieKey = cookieIdentity(cookie);
     if (applyingCookies.has(cookieKey)) return;
+    // Ignore follow-up cookies a site writes immediately after we imported its session.
+    if (isIncomingCookieDomain(cookie)) return;
     const updatedAt = Date.now();
     await setCookieTimestamp(cookie, updatedAt);
 
@@ -1106,6 +1150,8 @@ async function applyCookieSync(cookies) {
   const failures = [];
   if (!chrome.cookies) return;
   for (const cookie of cookies) {
+    const domain = (cookie.domain || '').replace(/^\./, '').toLowerCase();
+    incomingCookieDomains.set(domain, Date.now() + 8000);
     const baseDomain = cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain;
     const urlsToTry = (baseDomain === 'localhost' || baseDomain.startsWith('127.0.0.'))
       ? [`http://${baseDomain}${cookie.path}`, `https://${baseDomain}${cookie.path}`]
@@ -1395,8 +1441,72 @@ async function broadcastToContentScripts(category, items, site) {
 // ─── Tabs ────────────────────────────────────────────────────────────────────
 
 let tabDebounceTimer = null;
+const recentSitePulls = new Map();
+const pendingSiteReloads = new Map();
+const recentSiteReloads = new Map();
+const navigationSyncSites = new Map();
+
+function syncDomainForHostname(hostname) {
+  const parts = hostname.toLowerCase().split('.');
+  if (parts.length <= 2 || /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) return hostname;
+  const secondLevel = parts[parts.length - 2];
+  if (['co', 'com', 'org', 'net', 'edu', 'gov', 'ac', 'ne'].includes(secondLevel)) {
+    return parts.slice(-3).join('.');
+  }
+  return parts.slice(-2).join('.');
+}
+
+function cookieMatchesSite(cookie, site) {
+  const domain = (cookie.domain || '').replace(/^\./, '').toLowerCase();
+  return domain === site || site.endsWith(`.${domain}`);
+}
+
+async function reloadPendingSiteAfterCookieSync(cookies) {
+  const liveCookies = cookies.filter(cookie => cookie.removed !== true);
+  if (liveCookies.length === 0) return;
+
+  for (const [tabId, site] of pendingSiteReloads) {
+    if (!liveCookies.some(cookie => cookieMatchesSite(cookie, site))) continue;
+    pendingSiteReloads.delete(tabId);
+    recentSiteReloads.set(`${tabId}:${site}`, Date.now());
+
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (tab?.url && syncDomainForHostname(safeHostname(tab.url)) === site) {
+      await chrome.tabs.reload(tabId).catch(() => {});
+    }
+  }
+}
+
+async function requestCurrentSiteState(tabId, url) {
+  if (!url.startsWith('http://') && !url.startsWith('https://')) return;
+  const site = syncDomainForHostname(safeHostname(url));
+  if (site === '*') return;
+
+  const now = Date.now();
+  const tabSiteKey = `${tabId}:${site}`;
+  if (now - (recentSitePulls.get(site) || 0) < 5000) return;
+  if (now - (recentSiteReloads.get(`${tabId}:${site}`) || 0) < 30000) return;
+  if (navigationSyncSites.has(tabSiteKey)) return;
+
+  const { appSettings = {} } = await chrome.storage.local.get('appSettings');
+  if (appSettings.automaticSync !== true || appSettings.stateParticipatingBrowsers?.[DETECTED_BROWSER] !== true) return;
+
+  recentSitePulls.set(site, now);
+  navigationSyncSites.set(tabSiteKey, now);
+  pendingSiteReloads.set(tabId, site);
+  send({
+    type: 'pull', browser: CURRENT_BROWSER_ID, category: 'browserData', site,
+    messageId: crypto.randomUUID(), timestamp: now
+  });
+}
+
 if (chrome.tabs) {
   chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'loading' && tab.url) {
+      pendingSiteReloads.delete(tabId);
+      navigationSyncSites.delete(`${tabId}:${syncDomainForHostname(safeHostname(tab.url))}`);
+      void requestCurrentSiteState(tabId, tab.url);
+    }
     if (changeInfo.status !== 'complete' || !tab.url) return;
     
     if (tabDebounceTimer) clearTimeout(tabDebounceTimer);

@@ -646,6 +646,7 @@ extension AppState: DaemonServerDelegate {
         let routerDefault = fallbackBrowserId
         var payload: [String: AnyCodable] = [
             "routerDefault": AnyCodable(routerDefault ?? ""),
+            "automaticSync": AnyCodable(isProUnlocked && settingsService.syncSettings.automaticSync),
             "tabSharingEnabled": AnyCodable(settingsService.syncSettings.tabSharingEnabled)
         ]
         var stateMap: [String: AnyCodable] = [:]

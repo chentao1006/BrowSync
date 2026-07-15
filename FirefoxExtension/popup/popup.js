@@ -317,6 +317,12 @@ if (selectSiteStrategy) {
       if (siteSourceBrowserRow) {
          siteSourceBrowserRow.style.display = (strategy === 'primary_wins') ? 'flex' : 'none';
       }
+      if (strategy === 'primary_wins') {
+        const sourceSelect = document.getElementById('selectSiteSourceBrowser');
+        if (sourceSelect?.value) {
+          chrome.runtime.sendMessage({ type: 'UPDATE_SITE_SOURCE_BROWSER', domain: e.target.dataset.domain, browser: sourceSelect.value });
+        }
+      }
     }
   });
 }

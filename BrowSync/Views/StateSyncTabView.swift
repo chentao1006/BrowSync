@@ -247,8 +247,7 @@ struct StateSyncTabView: View {
                             .onChange(of: $site.strategy.wrappedValue) { newValue in
                                 if newValue == .primaryWins && syncSettings.browserDataSyncStrategy.wrappedValue != .primaryWins {
                                     if $site.sourceBrowser.wrappedValue == nil {
-                                        let firstInstalled = appState.browserInfos.first(where: { $0.isInstalled })?.browser ?? .safari
-                                        $site.sourceBrowser.wrappedValue = firstInstalled
+                                        $site.sourceBrowser.wrappedValue = syncSettings.stateSourceBrowser.wrappedValue
                                     }
                                 }
                             }
