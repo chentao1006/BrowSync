@@ -219,11 +219,11 @@ async function loadSettings() {
       }
       
       if (isSiteEnabled) {
-        if (siteStrategyRow) siteStrategyRow.style.display = 'flex';
+        if (siteStrategyRow) siteStrategyRow.style.display = policy === 'allow_list' ? 'flex' : 'none';
         if (btnSyncSiteNow) btnSyncSiteNow.style.display = 'block';
         if (siteSourceBrowserRow) {
            const strat = siteSetting?.strategy || 'default';
-           siteSourceBrowserRow.style.display = (strat === 'primary_wins') ? 'flex' : 'none';
+           siteSourceBrowserRow.style.display = policy === 'allow_list' && strat === 'primary_wins' ? 'flex' : 'none';
         }
       } else {
         if (siteStrategyRow) siteStrategyRow.style.display = 'none';
@@ -233,7 +233,7 @@ async function loadSettings() {
       
       if (selectSiteStrategy) {
         selectSiteStrategy.value = siteSetting?.strategy || 'default';
-        selectSiteStrategy.disabled = !isSiteEnabled;
+        selectSiteStrategy.disabled = !isSiteEnabled || policy === 'block_list';
         selectSiteStrategy.dataset.domain = activeHostname;
       }
       
@@ -254,7 +254,7 @@ async function loadSettings() {
         }
 
         selectSiteSourceBrowser.value = sourceBrowser;
-        selectSiteSourceBrowser.disabled = !isSiteEnabled;
+        selectSiteSourceBrowser.disabled = !isSiteEnabled || policy === 'block_list';
         selectSiteSourceBrowser.dataset.domain = activeHostname;
       }
       

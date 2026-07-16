@@ -88,5 +88,8 @@
   },
   "openInOtherBrowser": {
     "message": "別のブラウザで開く"
+  },
+  "thisBrowser": {
+    "message": "このブラウザ"
   }
 }

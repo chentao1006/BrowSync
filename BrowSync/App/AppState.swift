@@ -602,7 +602,8 @@ extension AppState: DaemonServerDelegate {
             }
             
             if let siteStrat = raw["updateSiteStrategy"]?.value as? [String: Any],
-               let domain = siteStrat["domain"] as? String {
+               let domain = siteStrat["domain"] as? String,
+               self.settingsService.syncSettings.websiteListPolicy == .allowList {
                 let strategyStr = siteStrat["strategy"] as? String
                 let strat = strategyStr.flatMap { BrowserDataSyncStrategy(rawValue: $0) }
                 if let idx = self.settingsService.syncSettings.websiteSettings.firstIndex(where: { $0.domain == domain }) {
@@ -617,7 +618,8 @@ extension AppState: DaemonServerDelegate {
             }
 
             if let siteBrowser = raw["updateSiteSourceBrowser"]?.value as? [String: Any],
-               let domain = siteBrowser["domain"] as? String {
+               let domain = siteBrowser["domain"] as? String,
+               self.settingsService.syncSettings.websiteListPolicy == .allowList {
                 let browserStr = siteBrowser["browser"] as? String
                 let browser = browserStr.flatMap { Browser(rawValue: $0) }
                 if let idx = self.settingsService.syncSettings.websiteSettings.firstIndex(where: { $0.domain == domain }) {

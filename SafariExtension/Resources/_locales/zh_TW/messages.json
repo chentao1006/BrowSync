@@ -45,7 +45,7 @@
     "message": "更多設定"
   },
   "remoteTabs": {
-    "message": "共享標籤頁"
+    "message": "標籤頁共享"
   },
   "btnRefresh": {
     "message": "重新整理"
@@ -57,7 +57,7 @@
     "message": "立即同步"
   },
   "syncStateForSite": {
-    "message": "同步狀態"
+    "message": "狀態同步"
   },
   "syncStrategy": {
     "message": "策略"
@@ -94,5 +94,8 @@
   },
   "openInOtherBrowser": {
     "message": "用其他瀏覽器打開"
+  },
+  "thisBrowser": {
+    "message": "本瀏覽器"
   }
 }

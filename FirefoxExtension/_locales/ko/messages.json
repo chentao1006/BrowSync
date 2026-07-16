@@ -88,5 +88,8 @@
   },
   "openInOtherBrowser": {
     "message": "다른 브라우저에서 열기"
+  },
+  "thisBrowser": {
+    "message": "이 브라우저"
   }
 }

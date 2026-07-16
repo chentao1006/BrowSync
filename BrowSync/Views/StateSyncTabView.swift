@@ -236,39 +236,41 @@ struct StateSyncTabView: View {
                                     }
                                 }
                             
-                            Picker("", selection: $site.strategy) {
-                                Text(String(localized: "Default Policy", bundle: langBundle.bundle)).tag(BrowserDataSyncStrategy?.none)
-                                ForEach(BrowserDataSyncStrategy.allCases) { s in
-                                    Text(String(localized: String.LocalizationValue(s.displayName), bundle: langBundle.bundle)).tag(BrowserDataSyncStrategy?.some(s))
-                                }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .onChange(of: $site.strategy.wrappedValue) { newValue in
-                                if newValue == .primaryWins && syncSettings.browserDataSyncStrategy.wrappedValue != .primaryWins {
-                                    if $site.sourceBrowser.wrappedValue == nil {
-                                        $site.sourceBrowser.wrappedValue = syncSettings.stateSourceBrowser.wrappedValue
-                                    }
-                                }
-                            }
-                            
-                            if ($site.strategy.wrappedValue ?? syncSettings.browserDataSyncStrategy.wrappedValue) == .primaryWins {
-                                Picker("", selection: $site.sourceBrowser) {
-                                    if syncSettings.browserDataSyncStrategy.wrappedValue == .primaryWins {
-                                        Text(String(localized: "Default Source", bundle: langBundle.bundle)).tag(Browser?.none)
-                                    }
-                                    ForEach(appState.browserInfos.filter { $0.isInstalled }) { info in
-                                        Label {
-                                            Text(info.displayName)
-                                        } icon: {
-                                            AppIconImage(appURL: info.appURL)
-                                        }
-                                        .tag(Browser?.some(info.browser))
+                            if syncSettings.websiteListPolicy.wrappedValue == .allowList {
+                                Picker("", selection: $site.strategy) {
+                                    Text(String(localized: "Default Policy", bundle: langBundle.bundle)).tag(BrowserDataSyncStrategy?.none)
+                                    ForEach(BrowserDataSyncStrategy.allCases) { s in
+                                        Text(String(localized: String.LocalizationValue(s.displayName), bundle: langBundle.bundle)).tag(BrowserDataSyncStrategy?.some(s))
                                     }
                                 }
                                 .labelsHidden()
                                 .pickerStyle(.menu)
-                                .frame(maxWidth: 120)
+                                .onChange(of: $site.strategy.wrappedValue) { newValue in
+                                    if newValue == .primaryWins && syncSettings.browserDataSyncStrategy.wrappedValue != .primaryWins {
+                                        if $site.sourceBrowser.wrappedValue == nil {
+                                            $site.sourceBrowser.wrappedValue = syncSettings.stateSourceBrowser.wrappedValue
+                                        }
+                                    }
+                                }
+
+                                if ($site.strategy.wrappedValue ?? syncSettings.browserDataSyncStrategy.wrappedValue) == .primaryWins {
+                                    Picker("", selection: $site.sourceBrowser) {
+                                        if syncSettings.browserDataSyncStrategy.wrappedValue == .primaryWins {
+                                            Text(String(localized: "Default Source", bundle: langBundle.bundle)).tag(Browser?.none)
+                                        }
+                                        ForEach(appState.browserInfos.filter { $0.isInstalled }) { info in
+                                            Label {
+                                                Text(info.displayName)
+                                            } icon: {
+                                                AppIconImage(appURL: info.appURL)
+                                            }
+                                            .tag(Browser?.some(info.browser))
+                                        }
+                                    }
+                                    .labelsHidden()
+                                    .pickerStyle(.menu)
+                                    .frame(maxWidth: 120)
+                                }
                             }
 
                             Button(role: .destructive) {

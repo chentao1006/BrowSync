@@ -94,5 +94,8 @@
   },
   "openInOtherBrowser": {
     "message": "Abrir en otro navegador"
+  },
+  "thisBrowser": {
+    "message": "Este navegador"
   }
 }
