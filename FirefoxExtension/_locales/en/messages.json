@@ -91,5 +91,8 @@
   },
   "thisBrowser": {
     "message": "This Browser"
-  }
+  },
+  "stateSyncReloadPrompt": { "message": "Your sign-in state was synced. Reload this page to apply it?" },
+  "stateSyncReload": { "message": "Reload" },
+  "stateSyncLater": { "message": "Later" }
 }

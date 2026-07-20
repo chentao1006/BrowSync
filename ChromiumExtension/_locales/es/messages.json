@@ -91,5 +91,8 @@
   },
   "thisBrowser": {
     "message": "Este navegador"
-  }
+  },
+  "stateSyncReloadPrompt": { "message": "Se sincronizó tu estado de inicio de sesión. ¿Recargar esta página para aplicarlo?" },
+  "stateSyncReload": { "message": "Recargar" },
+  "stateSyncLater": { "message": "Más tarde" }
 }

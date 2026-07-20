@@ -37,6 +37,10 @@ async function filterIncomingCookiesBySource(cookies, senderBrowser) {
 
   return cookies.filter(cookie => {
     const domain = (cookie.domain || '').replace(/^\./, '').toLowerCase();
+    if (!isSiteStateSyncEnabled(syncDomainForHostname(domain), appSettings)) {
+      console.log(`[BrowSync] Ignoring ${domain} cookies because this site is excluded from State Sync.`);
+      return false;
+    }
     const site = websiteSettings.find(setting => syncDomainForHostname(domain) === setting.domain);
     const source = String(site?.sourceBrowser || '').split('-')[0].toLowerCase();
     const shouldReject = site?.strategy === 'primary_wins' && source && source !== sender;
@@ -309,6 +313,7 @@ async function applySync(message) {
           return false;
         }
         
+        await handlePullRequest('bookmark_backup');
         isApplyingSync = true;
         try {
           if (await isInsideRemovalTarget(targetId)) {
@@ -368,7 +373,7 @@ async function applySync(message) {
       const acceptedCookies = await filterIncomingCookiesBySource(payload.cookies || [], message.browser);
       if (acceptedCookies.length === 0) break;
       await applyCookieSync(acceptedCookies);
-      await reloadPendingSiteAfterCookieSync(acceptedCookies);
+      await showStateSyncUpdatePrompt(acceptedCookies);
       break;
     case 'tabSharing':
       // Store remote tabs in local storage for popup.js to read
@@ -797,46 +802,9 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmark
     return false;
   }
 
-  // STEP 1: If full mirror, snapshot current Chrome state and send back as backup
-  if (isFullMirror) {
-    const preTree = await chrome.bookmarks.getTree();
-    const snapshot = [];
-    function flatForBackup(nodes) {
-      for (const node of nodes) {
-        if (!systemRoots.has(node.id)) {
-          let pId = node.parentId;
-          if (pId === localBarId) pId = '1';
-          else if (pId === localMenuId) pId = '2';
-          else if (pId === localOtherId) pId = '2';
-          else if (pId === localMobileId) pId = '3';
-          else if (pId === 'unfiled_____') pId = '2';
-          else if (pId === '0' || pId === 'root________') pId = '1';
-
-          snapshot.push({
-            id: node.id,
-            title: node.title || '',
-            url: node.url || null,
-            parentId: pId || null,
-            isFolder: !node.url,
-            inBookmarksBar: pId === '1',
-            dateAdded: (node.dateAdded || Date.now()) / 1000,
-            sourceBrowser: DETECTED_BROWSER
-          });
-        }
-        if (node.children) flatForBackup(node.children);
-      }
-    }
-    flatForBackup(preTree);
-    console.log(`[BrowSync] Sending pre-sync backup: ${snapshot.length} items`);
-    send({
-      type: 'sync',
-      browser: DETECTED_BROWSER,
-      category: 'bookmark_backup',
-      payload: { kind: 'bookmarks', bookmarks: snapshot },
-      messageId: crypto.randomUUID(),
-      timestamp: Date.now()
-    });
-  }
+  // Every incoming write, not only full mirrors, must have a restorable
+  // snapshot of this browser's tree before any create, move, or deletion.
+  await handlePullRequest('bookmark_backup');
 
   // Load persistent map of Safari ID -> Chrome ID to handle renames
   const storageData = await chrome.storage.local.get('syncIdMap');
@@ -1498,7 +1466,6 @@ async function broadcastToContentScripts(category, items, site) {
 let tabDebounceTimer = null;
 const recentSitePulls = new Map();
 const pendingSiteReloads = new Map();
-const recentSiteReloads = new Map();
 const navigationSyncSites = new Map();
 
 function syncDomainForHostname(hostname) {
@@ -1511,23 +1478,33 @@ function syncDomainForHostname(hostname) {
   return parts.slice(-2).join('.');
 }
 
+function isSiteStateSyncEnabled(site, appSettings) {
+  const websiteSettings = appSettings.websiteSettings || [];
+  const isListed = websiteSettings.some(setting =>
+    syncDomainForHostname(String(setting.domain || '').replace(/^\./, '').toLowerCase()) === site
+  );
+  return appSettings.websiteListPolicy === 'block_list' ? !isListed : isListed;
+}
+
 function cookieMatchesSite(cookie, site) {
   const domain = (cookie.domain || '').replace(/^\./, '').toLowerCase();
   return domain === site || site.endsWith(`.${domain}`);
 }
 
-async function reloadPendingSiteAfterCookieSync(cookies) {
+async function showStateSyncUpdatePrompt(cookies) {
   const liveCookies = cookies.filter(cookie => cookie.removed !== true);
   if (liveCookies.length === 0) return;
 
   for (const [tabId, site] of pendingSiteReloads) {
     if (!liveCookies.some(cookie => cookieMatchesSite(cookie, site))) continue;
     pendingSiteReloads.delete(tabId);
-    recentSiteReloads.set(`${tabId}:${site}`, Date.now());
 
     const tab = await chrome.tabs.get(tabId).catch(() => null);
     if (tab?.url && syncDomainForHostname(safeHostname(tab.url)) === site) {
-      await chrome.tabs.reload(tabId).catch(() => {});
+      await chrome.tabs.sendMessage(tabId, {
+        source: 'browsync-background',
+        type: 'state_sync_updated'
+      }).catch(() => {});
     }
   }
 }
@@ -1540,11 +1517,11 @@ async function requestCurrentSiteState(tabId, url) {
   const now = Date.now();
   const tabSiteKey = `${tabId}:${site}`;
   if (now - (recentSitePulls.get(site) || 0) < 5000) return;
-  if (now - (recentSiteReloads.get(`${tabId}:${site}`) || 0) < 30000) return;
   if (navigationSyncSites.has(tabSiteKey)) return;
 
   const { appSettings = {} } = await chrome.storage.local.get('appSettings');
   if (appSettings.automaticSync !== true || appSettings.stateParticipatingBrowsers?.[DETECTED_BROWSER] !== true) return;
+  if (!isSiteStateSyncEnabled(site, appSettings)) return;
 
   recentSitePulls.set(site, now);
   navigationSyncSites.set(tabSiteKey, now);

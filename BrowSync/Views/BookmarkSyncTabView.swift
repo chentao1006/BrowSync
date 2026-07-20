@@ -43,9 +43,11 @@ struct BookmarkSyncTabView: View {
     @State private var showSandboxAlert = false
     @State private var showAutoSyncUpgradeAlert = false
     @State private var showRecentlyDeletedWindow = false
+    @State private var showRecentBackupsWindow = false
     
     @State private var showFolderManager = false
     @State private var handledFolderManagerOpenRequest = 0
+    @State private var handledRecentBackupsOpenRequest = 0
     @State private var hasMissingManagedFolder = false
     
     @StateObject private var sandboxManager = SandboxAccessManager.shared
@@ -117,6 +119,7 @@ struct BookmarkSyncTabView: View {
                 participatingBrowsersSection
                 syncStrategySection
                 safariFullDiskAccessSection
+                recentBackupsSection
                 recentlyDeletedSection
             }
             .formStyle(.grouped)
@@ -136,10 +139,16 @@ struct BookmarkSyncTabView: View {
                     .environmentObject(appState)
                     .environmentObject(backupService)
             }
+            .sheet(isPresented: $showRecentBackupsWindow) {
+                RecentBookmarkBackupsWindow(langBundle: langBundle.bundle)
+                    .environmentObject(appState)
+                    .environmentObject(backupService)
+            }
         }
         .onAppear {
             refreshMissingManagedFolderState()
             handleFolderManagerOpenRequest()
+            handleRecentBackupsOpenRequest()
         }
         .onChange(of: syncSettings.wrappedValue.bookmarkParticipatingBrowsers) { _ in
             refreshMissingManagedFolderState()
@@ -155,6 +164,9 @@ struct BookmarkSyncTabView: View {
         }
         .onChange(of: appState.bookmarkFolderManagerOpenRequest) { _ in
             handleFolderManagerOpenRequest()
+        }
+        .onChange(of: appState.recentBookmarkBackupsOpenRequest) { _ in
+            handleRecentBackupsOpenRequest()
         }
     }
 
@@ -326,6 +338,23 @@ struct BookmarkSyncTabView: View {
         }
     }
 
+    private var recentBackupsSection: some View {
+        Section {
+            HStack {
+                Text(String(localized: "A complete copy of each source folder is saved before it is synchronized. The latest 30 backups are kept.", bundle: langBundle.bundle))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(String(localized: "View", bundle: langBundle.bundle)) {
+                    showRecentBackupsWindow = true
+                }
+                .buttonStyle(.bordered)
+            }
+        } header: {
+            Text(String(localized: "Recent Automatic Backups", bundle: langBundle.bundle))
+        }
+    }
+
     private func participatingBrowserBinding(for browser: Browser) -> Binding<Bool> {
         Binding(
             get: { syncSettings.bookmarkParticipatingBrowsers.wrappedValue.contains(browser) },
@@ -390,6 +419,12 @@ struct BookmarkSyncTabView: View {
         showFolderManager = true
     }
 
+    private func handleRecentBackupsOpenRequest() {
+        guard appState.recentBookmarkBackupsOpenRequest != handledRecentBackupsOpenRequest else { return }
+        handledRecentBackupsOpenRequest = appState.recentBookmarkBackupsOpenRequest
+        showRecentBackupsWindow = true
+    }
+
     private func refreshMissingManagedFolderState() {
         let participants = syncSettings.bookmarkParticipatingBrowsers.wrappedValue
         hasMissingManagedFolder = participants.contains { browser in
@@ -443,6 +478,470 @@ struct BookmarkSyncTabView: View {
     
     
     
+}
+
+private struct BookmarkBackupTreeNode: Identifiable {
+    let bookmark: Bookmark
+    let children: [BookmarkBackupTreeNode]?
+    var id: String { bookmark.id }
+}
+
+private func bookmarkBackupTree(_ bookmarks: [Bookmark]) -> [BookmarkBackupTreeNode] {
+    let ids = Set(bookmarks.map(\.id))
+    let childrenByParent = Dictionary(grouping: bookmarks, by: { $0.parentId ?? "" })
+
+    func ordered(_ siblings: [Bookmark]) -> [Bookmark] {
+        siblings.enumerated().sorted { lhs, rhs in
+            let leftOrder = lhs.element.sortIndex ?? lhs.offset
+            let rightOrder = rhs.element.sortIndex ?? rhs.offset
+            return leftOrder == rightOrder ? lhs.offset < rhs.offset : leftOrder < rightOrder
+        }.map(\.element)
+    }
+
+    func nodes(parentId: String?) -> [BookmarkBackupTreeNode] {
+        ordered(childrenByParent[parentId ?? "", default: []])
+            .map { bookmark in
+                let children = nodes(parentId: bookmark.id)
+                return BookmarkBackupTreeNode(bookmark: bookmark, children: children.isEmpty ? nil : children)
+            }
+    }
+
+    let roots = ordered(bookmarks.filter { $0.parentId == nil || !ids.contains($0.parentId ?? "") })
+    return roots.map { bookmark in
+        let children = nodes(parentId: bookmark.id)
+        return BookmarkBackupTreeNode(bookmark: bookmark, children: children.isEmpty ? nil : children)
+    }
+}
+
+private struct BookmarkBackupTreeView: View {
+    let nodes: [BookmarkBackupTreeNode]
+    @State private var expandedNodeIDs = Set<String>()
+
+    private var allFolderIDs: Set<String> {
+        func collect(from nodes: [BookmarkBackupTreeNode]) -> Set<String> {
+            var ids = Set<String>()
+            for node in nodes {
+                let children = node.children ?? []
+                guard !children.isEmpty else { continue }
+                ids.insert(node.id)
+                ids.formUnion(collect(from: children))
+            }
+            return ids
+        }
+        return collect(from: nodes)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(nodes) { node in
+                BookmarkBackupTreeRow(node: node, depth: 0, expandedNodeIDs: $expandedNodeIDs)
+            }
+        }
+        .onAppear {
+            expandedNodeIDs = allFolderIDs
+        }
+    }
+}
+
+private struct BookmarkBackupTreeRow: View {
+    let node: BookmarkBackupTreeNode
+    let depth: Int
+    @Binding var expandedNodeIDs: Set<String>
+    @State private var isHovering = false
+
+    private var children: [BookmarkBackupTreeNode] { node.children ?? [] }
+    private var isExpanded: Bool { expandedNodeIDs.contains(node.id) }
+
+    var body: some View {
+        if children.isEmpty {
+            rowLabel(chevron: nil)
+        } else {
+            Button {
+                if isExpanded {
+                    expandedNodeIDs.remove(node.id)
+                } else {
+                    expandedNodeIDs.insert(node.id)
+                }
+            } label: {
+                rowLabel(chevron: isExpanded ? "chevron.down" : "chevron.right")
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                ForEach(children) { child in
+                    BookmarkBackupTreeRow(node: child, depth: depth + 1, expandedNodeIDs: $expandedNodeIDs)
+                }
+            }
+        }
+    }
+
+    private func rowLabel(chevron: String?) -> some View {
+        HStack(spacing: 6) {
+            if let chevron {
+                Image(systemName: chevron)
+                    .font(.caption.weight(.semibold))
+                    .frame(width: 12)
+                    .foregroundStyle(.secondary)
+            } else {
+                Color.clear.frame(width: 12, height: 1)
+            }
+            Image(systemName: node.bookmark.isFolder ? "folder.fill" : "bookmark.fill")
+                .foregroundStyle(.secondary)
+            Text(node.bookmark.title)
+                .foregroundStyle(.primary)
+            if !node.bookmark.isFolder, let url = node.bookmark.url ?? nil {
+                Text(url)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, CGFloat(depth) * 18)
+        .padding(.vertical, 2)
+        .padding(.trailing, 4)
+        .contentShape(Rectangle())
+        .background {
+            if isHovering {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.primary.opacity(0.07))
+            }
+        }
+        .onHover { isHovering = $0 }
+    }
+}
+
+struct RecentBookmarkBackupsWindow: View {
+    @EnvironmentObject var appState: AppState
+    @EnvironmentObject var backupService: BackupService
+    @Environment(\.dismiss) private var dismiss
+    let langBundle: Bundle
+
+    @State private var backupToRestore: BookmarkBackup?
+    @State private var restoreWillReplace = false
+    @State private var restoreResult: BookmarkRestoreResult?
+    @State private var backupToDelete: BookmarkBackup?
+    @State private var expandedBackupID: String?
+
+    private struct BackupSyncGroup: Identifiable {
+        let createdAt: Date
+        let backups: [BookmarkBackup]
+        var id: String { backups.first?.id ?? UUID().uuidString }
+    }
+
+    /// A sync updates participating browsers within the same displayed sync
+    /// minute. Historical backups do not carry a transaction ID, so this keeps
+    /// all browser backups from one visible sync event together.
+    private var backupSyncGroups: [BackupSyncGroup] {
+        let calendar = Calendar.current
+        let grouped = Dictionary(grouping: backupService.recentBookmarkBackups) { backup in
+            calendar.date(from: calendar.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute], from: backup.createdAt))!
+        }
+        return grouped.compactMap { minute, backups in
+            let sorted = backups.sorted { $0.createdAt > $1.createdAt }
+            guard !sorted.isEmpty else { return nil }
+            return BackupSyncGroup(createdAt: minute, backups: sorted)
+        }
+        .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(String(localized: "Recent Automatic Backups", bundle: langBundle))
+                    .font(.title3.bold())
+                Spacer()
+            }
+            .padding()
+
+            Divider()
+
+            if backupService.recentBookmarkBackups.isEmpty {
+                Text(String(localized: "No backups", bundle: langBundle))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                        Text(String(localized: "Incremental Restore keeps existing bookmarks and adds missing items. Replace Restore clears the selected folder first.", bundle: langBundle))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.bottom, 12)
+
+                        ForEach(backupSyncGroups) { group in
+                            Text(group.createdAt.formatted(date: .abbreviated, time: .shortened))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 10)
+                                .padding(.bottom, 4)
+
+                            ForEach(group.backups) { backup in
+                                if expandedBackupID == backup.id {
+                                    Section {
+                                        BookmarkBackupTreeView(nodes: bookmarkBackupTree(backup.bookmarks))
+                                            .padding(.leading, 8)
+                                            .padding(.vertical, 8)
+                                        Divider()
+                                    } header: {
+                                        backupRow(backup, expanded: true, showsActions: true)
+                                            .background(.background)
+                                    }
+                                } else {
+                                    backupRow(backup, expanded: false, showsActions: false)
+                                    Divider()
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
+            Divider()
+            HStack {
+                Spacer()
+                Button(String(localized: "Close", bundle: langBundle)) { dismiss() }
+                    .keyboardShortcut(.escape, modifiers: [])
+            }
+            .padding()
+        }
+        .frame(width: 760, height: 560)
+        .alert(restoreWillReplace ? String(localized: "Replace Restore", bundle: langBundle) : String(localized: "Incremental Restore", bundle: langBundle), isPresented: Binding(
+            get: { backupToRestore != nil },
+            set: { if !$0 { backupToRestore = nil } }
+        ), presenting: backupToRestore) { backup in
+            Button(restoreWillReplace ? String(localized: "Replace Restore", bundle: langBundle) : String(localized: "Incremental Restore", bundle: langBundle), role: restoreWillReplace ? .destructive : nil) {
+                restore(backup, replacing: restoreWillReplace)
+                backupToRestore = nil
+            }
+            Button(String(localized: "Cancel", bundle: langBundle), role: .cancel) { backupToRestore = nil }
+        } message: { _ in
+            Text(String(localized: restoreWillReplace ? "Replace the current bookmarks in the selected folder with this backup?" : "Add the missing bookmarks from this backup to the selected folder?", bundle: langBundle))
+        }
+        .alert(String(localized: "Delete", bundle: langBundle), isPresented: Binding(
+            get: { backupToDelete != nil },
+            set: { if !$0 { backupToDelete = nil } }
+        ), presenting: backupToDelete) { backup in
+            Button(String(localized: "Delete", bundle: langBundle), role: .destructive) {
+                backupService.removeRecentBookmarkBackup(id: backup.id)
+                backupToDelete = nil
+            }
+            Button(String(localized: "Cancel", bundle: langBundle), role: .cancel) { backupToDelete = nil }
+        } message: { _ in
+            Text(String(localized: "This backup will be permanently deleted.", bundle: langBundle))
+        }
+        .alert(String(localized: "Restore completed", bundle: langBundle), isPresented: Binding(
+            get: { restoreResult != nil },
+            set: { if !$0 { restoreResult = nil } }
+        )) {
+            Button(String(localized: "OK", bundle: langBundle), role: .cancel) { restoreResult = nil }
+        } message: {
+            if let result = restoreResult {
+                let format = String(localized: "Restore completed. This backup contains %d bookmarks and %d folders, including subfolders. The restored tree was sent to participating browsers.", bundle: langBundle)
+                Text(String(format: format, result.bookmarkCount, result.folderCount))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func backupRow(_ backup: BookmarkBackup, expanded: Bool, showsActions: Bool) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                expandedBackupID = expanded ? nil : backup.id
+            } label: {
+                let source = backupSourcePresentation(for: backup)
+                let itemCounts = backupItemCounts(backup.bookmarks)
+                HStack(spacing: 8) {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .frame(width: 12)
+                        .foregroundStyle(.secondary)
+                    if let appURL = source.appURL {
+                        Image(nsImage: NSWorkspace.shared.icon(forFile: appURL.path))
+                            .resizable()
+                            .frame(width: 20, height: 20)
+                    } else {
+                        Image(systemName: source.fallbackSymbol)
+                            .frame(width: 20, height: 20)
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("\(source.displayName) / \(backupFolderDisplayName(backup))")
+                            .font(.headline)
+                        Text(String(format: String(localized: "Backup Contents Summary", bundle: langBundle), itemCounts.bookmarkCount, itemCounts.folderCount))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if showsActions {
+                Button(String(localized: "Incremental Restore", bundle: langBundle)) {
+                    requestRestore(backup, replacing: false)
+                }
+                .buttonStyle(.borderedProminent)
+                Button(String(localized: "Replace Restore", bundle: langBundle)) {
+                    requestRestore(backup, replacing: true)
+                }
+                .buttonStyle(.bordered)
+                Button(role: .destructive) {
+                    backupToDelete = backup
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, showsActions ? 0 : 2)
+        .contentShape(Rectangle())
+    }
+
+    private struct BackupSourcePresentation {
+        let displayName: String
+        let appURL: URL?
+        let fallbackSymbol: String
+    }
+
+    private struct BookmarkRestoreResult {
+        let bookmarkCount: Int
+        let folderCount: Int
+    }
+
+    private func requestRestore(_ backup: BookmarkBackup, replacing: Bool) {
+        restoreWillReplace = replacing
+        backupToRestore = backup
+    }
+
+    private func backupItemCounts(_ bookmarks: [Bookmark]) -> (bookmarkCount: Int, folderCount: Int) {
+        var seenIDs = Set<String>()
+        var bookmarkCount = 0
+        var folderCount = 0
+
+        func count(_ nodes: [Bookmark]) {
+            for node in nodes where seenIDs.insert(node.id).inserted {
+                if node.isFolder {
+                    folderCount += 1
+                } else {
+                    bookmarkCount += 1
+                }
+                if let children = node.children {
+                    count(children)
+                }
+            }
+        }
+
+        count(bookmarks)
+        return (bookmarkCount, folderCount)
+    }
+
+    private func backupSourcePresentation(for backup: BookmarkBackup) -> BackupSourcePresentation {
+        let rawSource = backup.sourceBrowser
+        let sourceIdentifier = rawSource.hasSuffix("-main")
+            ? String(rawSource.dropLast("-main".count))
+            : rawSource
+
+        if let browser = Browser(rawValue: sourceIdentifier.components(separatedBy: "-").first ?? sourceIdentifier) {
+            let appURL = appState.browserInfos.first(where: { $0.browser == browser })?.appURL ?? browser.appURL
+            return BackupSourcePresentation(
+                displayName: appDisplayName(at: appURL) ?? browser.displayName,
+                appURL: appURL,
+                fallbackSymbol: browser.sfSymbol
+            )
+        }
+
+        if sourceIdentifier.contains(".") {
+            let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: sourceIdentifier)
+            if let displayName = appDisplayName(at: appURL) {
+                return BackupSourcePresentation(displayName: displayName, appURL: appURL, fallbackSymbol: "globe")
+            }
+        }
+
+        return BackupSourcePresentation(displayName: rawSource, appURL: nil, fallbackSymbol: "globe")
+    }
+
+    private func appDisplayName(at appURL: URL?) -> String? {
+        guard let appURL, let bundle = Bundle(url: appURL) else { return nil }
+        return (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+            ?? (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String)
+    }
+
+    private func backupFolderDisplayName(_ backup: BookmarkBackup) -> String {
+        BookmarkFolderPath.displayPath(backup.folderPath, bundle: langBundle)
+            ?? String(localized: "Root Directory (All Bookmarks)", bundle: langBundle)
+    }
+
+    private func restore(_ backup: BookmarkBackup, replacing: Bool) {
+        let safariService = SafariBookmarkService()
+        let safariTree = safariService.readBookmarks().map {
+            Bookmark(id: $0.id, title: $0.title, url: $0.url, parentId: $0.parentId, isFolder: $0.isFolder, sortIndex: $0.sortIndex, inBookmarksBar: $0.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
+        }
+        let targetFolder = appState.settingsService.syncSettings.bookmarkFolder(for: .safari)
+        // Archive trees retain browser-owned roots so they can be inspected.
+        // Never replay those roots: restoring an Edge archive must not create
+        // folders named “Bookmarks Bar” inside Chrome or Safari.
+        let archivedSelection = BookmarkTreeMerger.extractExistingSubtreeAsRoot(
+            sourceTree: backup.bookmarks,
+            folderPath: backup.folderPath
+        ) ?? backup.bookmarks
+        let restoreSource = portableRestoreTree(archivedSelection)
+        let safariPayload: [Bookmark]
+        if replacing {
+            safariPayload = BookmarkTreeMerger.replaceExistingFolderContents(sourceTree: restoreSource, targetTree: safariTree, targetFolderPath: targetFolder) ?? restoreSource
+        } else {
+            safariPayload = BookmarkTreeMerger.mergeIntoExistingFolder(sourceTree: restoreSource, targetTree: safariTree, targetFolderPath: targetFolder) ?? restoreSource
+        }
+
+        let syncBookmarks = safariPayload.compactMap { bookmark -> SyncBookmark? in
+            let url = bookmark.url.flatMap { $0 }
+            guard bookmark.isFolder || url != nil else { return nil }
+            return SyncBookmark(id: bookmark.id, title: bookmark.title, url: url, parentId: bookmark.parentId, isFolder: bookmark.isFolder, sortIndex: bookmark.sortIndex, inBookmarksBar: bookmark.inBookmarksBar ?? false, dateAdded: bookmark.dateAdded)
+        }
+        appState.syncService.recordInternalWrite()
+        _ = safariService.applyBookmarks(syncBookmarks, from: "Backup Restore", isFullMirror: replacing)
+
+        var message = WSMessage(type: .sync, site: "*", category: "bookmarks", payload: .bookmarks(restoreSource), messageId: UUID().uuidString, timestamp: Date().timeIntervalSince1970)
+        message.isFullMirror = replacing
+        appState.daemon.broadcast(message, participatingBrowsers: appState.settingsService.syncSettings.bookmarkParticipatingBrowsers)
+        let itemCounts = backupItemCounts(backup.bookmarks)
+        restoreResult = BookmarkRestoreResult(bookmarkCount: itemCounts.bookmarkCount, folderCount: itemCounts.folderCount)
+    }
+
+    /// Converts the archival representation back to the portable bookmark
+    /// payload used by normal sync. Browser root folders are metadata, not
+    /// user folders; only their children are restored to canonical roots.
+    private func portableRestoreTree(_ bookmarks: [Bookmark]) -> [Bookmark] {
+        func canonicalRootID(for bookmark: Bookmark) -> String? {
+            let id = bookmark.id.lowercased()
+            if id == "0" { return "0" }
+            if id == "1" || id.contains("root-bar") || id.contains("root-favorites") || id.contains("toolbar-root") { return "1" }
+            if id == "2" || id.contains("root-menu") || id.contains("root-other") { return "2" }
+            if id == "3" || id.contains("root-mobile") { return "3" }
+            return nil
+        }
+
+        let rootMappings = Dictionary(
+            uniqueKeysWithValues: bookmarks.compactMap { bookmark in
+                canonicalRootID(for: bookmark).map { (bookmark.id, $0) }
+            }
+        )
+
+        return bookmarks.compactMap { bookmark in
+            if rootMappings[bookmark.id] != nil { return nil }
+            var portable = bookmark
+            if let parentID = bookmark.parentId, let canonicalParentID = rootMappings[parentID] {
+                portable.parentId = canonicalParentID
+                portable.inBookmarksBar = canonicalParentID == "1"
+            }
+            return portable
+        }
+    }
 }
 
 struct RecentlyDeletedBookmarksWindow: View {

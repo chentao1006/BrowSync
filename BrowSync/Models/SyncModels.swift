@@ -92,6 +92,70 @@ struct Bookmark: Identifiable, Codable, Equatable {
     var sourceBrowser: Browser
 
     var children: [Bookmark]? // only populated for folders when serializing
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, url, parentId, isFolder, sortIndex, index, inBookmarksBar
+        case dateAdded, dateModified, sourceBrowser, children
+    }
+
+    init(
+        id: String,
+        title: String,
+        url: String??,
+        parentId: String?,
+        isFolder: Bool,
+        sortIndex: Int? = nil,
+        inBookmarksBar: Bool? = nil,
+        dateAdded: Date?,
+        dateModified: Date? = nil,
+        sourceBrowser: Browser,
+        children: [Bookmark]? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.url = url
+        self.parentId = parentId
+        self.isFolder = isFolder
+        self.sortIndex = sortIndex
+        self.inBookmarksBar = inBookmarksBar
+        self.dateAdded = dateAdded
+        self.dateModified = dateModified
+        self.sourceBrowser = sourceBrowser
+        self.children = children
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+        url = try container.decodeIfPresent(String?.self, forKey: .url)
+        parentId = try container.decodeIfPresent(String.self, forKey: .parentId)
+        isFolder = try container.decodeIfPresent(Bool.self, forKey: .isFolder) ?? (url == nil)
+        // Older Chromium-family extensions used the WebExtensions field name
+        // `index`; accept it so archived sibling order is not lost.
+        sortIndex = try container.decodeIfPresent(Int.self, forKey: .sortIndex)
+            ?? (try container.decodeIfPresent(Int.self, forKey: .index))
+        inBookmarksBar = try container.decodeIfPresent(Bool.self, forKey: .inBookmarksBar)
+        dateAdded = try container.decodeIfPresent(Date.self, forKey: .dateAdded)
+        dateModified = try container.decodeIfPresent(Date.self, forKey: .dateModified)
+        sourceBrowser = try container.decodeIfPresent(Browser.self, forKey: .sourceBrowser) ?? .chrome
+        children = try container.decodeIfPresent([Bookmark].self, forKey: .children)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encode(url, forKey: .url)
+        try container.encodeIfPresent(parentId, forKey: .parentId)
+        try container.encode(isFolder, forKey: .isFolder)
+        try container.encodeIfPresent(sortIndex, forKey: .sortIndex)
+        try container.encodeIfPresent(inBookmarksBar, forKey: .inBookmarksBar)
+        try container.encodeIfPresent(dateAdded, forKey: .dateAdded)
+        try container.encodeIfPresent(dateModified, forKey: .dateModified)
+        try container.encode(sourceBrowser, forKey: .sourceBrowser)
+        try container.encodeIfPresent(children, forKey: .children)
+    }
 }
 
 // MARK: - Browser Tab
@@ -480,6 +544,19 @@ struct BookmarkTreeMerger {
             descendants[index].parentId = "1"
         }
         return descendants
+    }
+
+    /// Extracts a selected folder together with its descendants for archival.
+    /// Unlike `extractExistingSubtreeAsRoot`, this keeps the folder node and its
+    /// native parent relationship so browser-provided roots such as Chrome's
+    /// Bookmarks Bar remain visible and recoverable in backups.
+    static func extractExistingSubtreeIncludingRoot(sourceTree: [Bookmark], folderPath: String?) -> [Bookmark]? {
+        guard let folderPath, !folderPath.isEmpty else { return sourceTree }
+        let components = folderPath.components(separatedBy: "/").filter { !$0.isEmpty }
+        guard let folderId = findFolderId(pathComponents: components, in: sourceTree) else { return nil }
+        var includedIds = Set([folderId])
+        includedIds.formUnion(extractDescendants(of: folderId, in: sourceTree).map(\.id))
+        return sourceTree.filter { includedIds.contains($0.id) }
     }
 
     static func replaceExistingFolderContents(sourceTree: [Bookmark], targetTree: [Bookmark], targetFolderPath: String?) -> [Bookmark]? {

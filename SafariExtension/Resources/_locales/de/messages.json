@@ -97,5 +97,8 @@
   },
   "thisBrowser": {
     "message": "Dieser Browser"
-  }
+  },
+  "stateSyncReloadPrompt": { "message": "Dein Anmeldestatus wurde synchronisiert. Diese Seite neu laden, um ihn anzuwenden?" },
+  "stateSyncReload": { "message": "Neu laden" },
+  "stateSyncLater": { "message": "Später" }
 }

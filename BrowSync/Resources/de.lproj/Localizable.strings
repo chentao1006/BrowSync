@@ -64,6 +64,24 @@
 "Off by default" = "Standardmäßig deaktiviert";
 
 "Bookmarks" = "Lesezeichen";
+"Recent Automatic Backups" = "Letzte automatische Sicherungen";
+"Replace" = "Ersetzen";
+"Incremental Restore" = "Fehlende Einträge wiederherstellen";
+"Replace Restore" = "Ersetzen und wiederherstellen";
+"Incremental Restore keeps existing bookmarks and adds missing items. Replace Restore clears the selected folder first." = "Fehlende Einträge wiederherstellen behält vorhandene Lesezeichen und ergänzt nur fehlende Einträge aus dieser Sicherung. Beim Ersetzen wird der ausgewählte Ordner zuerst geleert.";
+"Add the missing bookmarks from this backup to the selected folder?" = "Fehlende Lesezeichen aus dieser Sicherung zum ausgewählten Ordner hinzufügen?";
+"Restore completed" = "Wiederherstellung abgeschlossen";
+"Backup Contents Summary" = "%d Lesezeichen · %d Ordner";
+"Restore completed. This backup contains %d bookmarks and %d folders, including subfolders. The restored tree was sent to participating browsers." = "Wiederherstellung abgeschlossen. Diese Sicherung enthält %d Lesezeichen und %d Ordner, einschließlich Unterordnern. Der wiederhergestellte Baum wurde an teilnehmende Browser gesendet.";
+"Replace Restore completed. %d backup items were applied to Safari and sent to participating browsers." = "Wiederherstellung mit Ersetzen abgeschlossen. %d Sicherungseinträge wurden auf Safari angewendet und an teilnehmende Browser gesendet.";
+"Incremental Restore completed. %d backup items were applied to Safari and sent to participating browsers." = "Inkrementelle Wiederherstellung abgeschlossen. %d Sicherungseinträge wurden auf Safari angewendet und an teilnehmende Browser gesendet.";
+"A complete copy of each source folder is saved before it is synchronized. The latest 30 backups are kept." = "Vor der Synchronisierung wird eine vollständige Kopie jedes Quellordners gespeichert. Die letzten 30 Sicherungen bleiben erhalten.";
+"Replace the current bookmarks in the selected folder with this backup?" = "Die aktuellen Lesezeichen im ausgewählten Ordner durch diese Sicherung ersetzen?";
+"This backup will be permanently deleted." = "Diese Sicherung wird dauerhaft gelöscht.";
+"Force Sync" = "Synchronisierung erzwingen";
+"Open Recent Automatic Backups" = "Letzte automatische Sicherungen öffnen";
+"Bookmark Sync Blocked" = "Lesezeichensynchronisierung blockiert";
+"%@ returned an empty bookmark snapshot, but the previous snapshot contained %d items. Nothing was changed." = "%@ hat einen leeren Lesezeichen-Schnappschuss zurückgegeben, der vorherige enthielt jedoch %d Einträge. Es wurde nichts geändert.";
 "Browser State" = "Browser-Status";
 "Browser Data" = "Browser-Daten";
 "History" = "Verlauf";
@@ -332,6 +350,13 @@
 
 "Bookmark Sync Complete" = "Lesezeichen-Synchronisierung abgeschlossen";
 "Successfully synced %d bookmarks." = "Erfolgreich %d Lesezeichen synchronisiert.";
+"Bookmark Count Summary" = "%d Lesezeichen · %d Ordner";
+"Added %d bookmarks" = "%d Lesezeichen hinzugefuegt";
+"Added %d folders" = "%d Ordner hinzugefuegt";
+"Deleted %d bookmarks" = "%d Lesezeichen geloescht";
+"Deleted %d folders" = "%d Ordner geloescht";
+"Modified %d bookmarks" = "%d Lesezeichen geaendert";
+"Modified %d folders" = "%d Ordner geaendert";
 "State Sync Complete" = "Status-Synchronisierung abgeschlossen";
 "Successfully synced %d cookies and %d storage items." = "Erfolgreich %d Cookies und %d Speicherobjekte synchronisiert.";
 "BrowSync Complete" = "BrowSync abgeschlossen";
@@ -341,6 +366,7 @@
 "%d storage items" = "%d Speicherobjekte";
 "Successfully synced %@." = "%@ erfolgreich synchronisiert.";
 "Synced %@." = "%@ synchronisiert.";
+"Synced Websites: %@" = "Websites: %@";
 
 "iCloud Sync" = "iCloud-Synchronisierung";
 "Synchronize all settings, rules, and open tabs across your Mac devices using iCloud." = "Synchronisieren Sie alle Einstellungen, Regeln und geöffneten Tabs auf Ihren Mac-Geräten mit iCloud.";

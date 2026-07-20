@@ -69,6 +69,10 @@
 
   api.runtime.onMessage.addListener((message) => {
     if (message.source !== 'browsync-background') return;
+    if (message.type === 'state_sync_updated') {
+      showStateSyncUpdateBanner();
+      return;
+    }
     if (message.type !== 'apply_storage') return;
 
     const storage = message.storageType === 'sessionStorage' ? sessionStorage : localStorage;
@@ -76,6 +80,33 @@
 
     applyStorageItems(storage, items);
   });
+
+  function showStateSyncUpdateBanner() {
+    if (document.getElementById('browsync-state-sync-banner')) return;
+
+    const banner = document.createElement('div');
+    banner.id = 'browsync-state-sync-banner';
+    banner.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:12px;max-width:calc(100vw - 24px);padding:10px 12px 10px 16px;border-radius:10px;background:#1f2937;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.24);font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;';
+
+    const localized = (key, fallback) => api.i18n?.getMessage(key) || fallback;
+    const text = document.createElement('span');
+    text.textContent = localized('stateSyncReloadPrompt', 'Your sign-in state was synced. Reload this page to apply it?');
+    banner.appendChild(text);
+
+    const reload = document.createElement('button');
+    reload.textContent = localized('stateSyncReload', 'Reload');
+    reload.style.cssText = 'border:0;border-radius:7px;padding:6px 10px;background:#fff;color:#111827;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap;';
+    reload.addEventListener('click', () => location.reload());
+    banner.appendChild(reload);
+
+    const dismiss = document.createElement('button');
+    dismiss.textContent = localized('stateSyncLater', 'Later');
+    dismiss.style.cssText = 'border:0;background:transparent;color:#d1d5db;font:inherit;cursor:pointer;white-space:nowrap;';
+    dismiss.addEventListener('click', () => banner.remove());
+    banner.appendChild(dismiss);
+
+    (document.body || document.documentElement).appendChild(banner);
+  }
 
   function applyStorageItems(storage, items) {
     try {

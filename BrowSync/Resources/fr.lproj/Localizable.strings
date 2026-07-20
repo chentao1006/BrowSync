@@ -64,6 +64,24 @@
 "Off by default" = "Désactivé par défaut";
 
 "Bookmarks" = "Favoris";
+"Recent Automatic Backups" = "Sauvegardes automatiques récentes";
+"Replace" = "Remplacer";
+"Incremental Restore" = "Restaurer les éléments manquants";
+"Replace Restore" = "Remplacer et restaurer";
+"Incremental Restore keeps existing bookmarks and adds missing items. Replace Restore clears the selected folder first." = "Restaurer les éléments manquants conserve les favoris existants et rétablit seulement les éléments absents de cette sauvegarde. Remplacer et restaurer vide d'abord le dossier sélectionné.";
+"Add the missing bookmarks from this backup to the selected folder?" = "Ajouter au dossier sélectionné les favoris manquants de cette sauvegarde ?";
+"Restore completed" = "Restauration terminée";
+"Backup Contents Summary" = "%d favoris · %d dossiers";
+"Restore completed. This backup contains %d bookmarks and %d folders, including subfolders. The restored tree was sent to participating browsers." = "Restauration terminée. Cette sauvegarde contient %d favoris et %d dossiers, y compris les sous-dossiers. L'arborescence restaurée a été envoyée aux navigateurs participants.";
+"Replace Restore completed. %d backup items were applied to Safari and sent to participating browsers." = "La restauration avec remplacement est terminée. %d éléments de sauvegarde ont été appliqués à Safari et envoyés aux navigateurs participants.";
+"Incremental Restore completed. %d backup items were applied to Safari and sent to participating browsers." = "La restauration incrémentielle est terminée. %d éléments de sauvegarde ont été appliqués à Safari et envoyés aux navigateurs participants.";
+"A complete copy of each source folder is saved before it is synchronized. The latest 30 backups are kept." = "Une copie complète de chaque dossier source est enregistrée avant la synchronisation. Les 30 dernières sauvegardes sont conservées.";
+"Replace the current bookmarks in the selected folder with this backup?" = "Remplacer les favoris actuels du dossier sélectionné par cette sauvegarde ?";
+"This backup will be permanently deleted." = "Cette sauvegarde sera définitivement supprimée.";
+"Force Sync" = "Forcer la synchronisation";
+"Open Recent Automatic Backups" = "Ouvrir les sauvegardes automatiques récentes";
+"Bookmark Sync Blocked" = "Synchronisation des favoris bloquée";
+"%@ returned an empty bookmark snapshot, but the previous snapshot contained %d items. Nothing was changed." = "%@ a renvoyé un instantané de favoris vide, alors que le précédent contenait %d éléments. Aucune modification n'a été effectuée.";
 "Browser State" = "État du navigateur";
 "Browser Data" = "Données du navigateur";
 "History" = "Historique";
@@ -333,6 +351,13 @@
 
 "Bookmark Sync Complete" = "Synchronisation des favoris terminée";
 "Successfully synced %d bookmarks." = "%d favoris synchronisés avec succès.";
+"Bookmark Count Summary" = "%d favoris · %d dossiers";
+"Added %d bookmarks" = "%d favoris ajoutes";
+"Added %d folders" = "%d dossiers ajoutes";
+"Deleted %d bookmarks" = "%d favoris supprimes";
+"Deleted %d folders" = "%d dossiers supprimes";
+"Modified %d bookmarks" = "%d favoris modifies";
+"Modified %d folders" = "%d dossiers modifies";
 "State Sync Complete" = "Synchronisation de l'état terminée";
 "Successfully synced %d cookies and %d storage items." = "%d cookies et %d éléments de stockage synchronisés avec succès.";
 "BrowSync Complete" = "BrowSync terminé";
@@ -342,6 +367,7 @@
 "%d storage items" = "%d éléments de stockage";
 "Successfully synced %@." = "%@ synchronisés avec succès.";
 "Synced %@." = "%@ synchronisés.";
+"Synced Websites: %@" = "Sites web : %@";
 
 "iCloud Sync" = "Synchronisation iCloud";
 "Synchronize all settings, rules, and open tabs across your Mac devices using iCloud." = "Synchronisez tous les paramètres, règles et onglets ouverts sur vos appareils Mac à l’aide d’iCloud.";

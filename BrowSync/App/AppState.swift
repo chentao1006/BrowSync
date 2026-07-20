@@ -8,6 +8,7 @@ import Combine
 @MainActor
 final class AppState: ObservableObject {
     static let shared = AppState()
+    private static let disabledDomainsCacheKey = "syncDisabledDomainsCache"
     // Services
     let daemon = DaemonServer()
     let scanner = BrowserScanner()
@@ -26,6 +27,7 @@ final class AppState: ObservableObject {
     @Published var browserInfos: [BrowserInfo] = Browser.allCases.map { .placeholder(for: $0) }
     @Published var isScanning: Bool = false
     @Published var bookmarkFolderManagerOpenRequest: Int = 0
+    @Published var recentBookmarkBackupsOpenRequest: Int = 0
     @Published private(set) var syncDisabledDomains: [String] = []
 
     // Active domain mock fields
@@ -86,6 +88,10 @@ final class AppState: ObservableObject {
             
         iCloudSyncManager.setup(settingsService: settingsService)
         purchaseService.start()
+        loadCachedDisabledDomains()
+        if syncDisabledDomains.isEmpty {
+            loadBundledDisabledDomains()
+        }
         
         checkFullDiskAccess()
     }
@@ -102,6 +108,11 @@ final class AppState: ObservableObject {
     // MARK: - Startup
 
     func onAppear() async {
+        // Browser scanning must not delay the policy that extensions receive at launch.
+        Task {
+            await fetchDisabledDomains()
+        }
+
         // Start daemon
         daemon.start()
 
@@ -111,22 +122,46 @@ final class AppState: ObservableObject {
         // Check default browser status
         checkDefaultBrowser()
         
-        // Fetch remote disabled domains
-        Task {
-            await fetchDisabledDomains()
-        }
     }
     
+    private func loadCachedDisabledDomains() {
+        guard let domains = UserDefaults.standard.stringArray(forKey: Self.disabledDomainsCacheKey), !domains.isEmpty else {
+            return
+        }
+        applyDisabledDomains(domains)
+    }
+
+    private func loadBundledDisabledDomains() {
+        guard let url = Bundle.main.url(forResource: "disabled-domains", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let domains = try? JSONDecoder().decode([String].self, from: data),
+              !domains.isEmpty else {
+            return
+        }
+        applyDisabledDomains(domains)
+    }
+
+    private func applyDisabledDomains(_ domains: [String]) {
+        let normalized = Array(Set(domains.map { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })).sorted()
+        guard !normalized.isEmpty else { return }
+        WebsiteSyncSetting.syncDisabledDomains = normalized
+        syncDisabledDomains = normalized
+        UserDefaults.standard.set(normalized, forKey: Self.disabledDomainsCacheKey)
+    }
+
     private func fetchDisabledDomains() async {
         guard let url = URL(string: "https://browsync.ct106.com/disabled-domains.json") else { return }
         do {
             let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10.0)
-            let (data, _) = try await URLSession.shared.data(for: request)
-            if let domains = try? JSONDecoder().decode([String].self, from: data), !domains.isEmpty {
-                WebsiteSyncSetting.syncDisabledDomains = domains
-                syncDisabledDomains = domains
-                self.broadcastSettings()
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let response = response as? HTTPURLResponse, 200..<300 ~= response.statusCode else {
+                print("Failed to fetch disabled domains: unexpected HTTP response")
+                return
             }
+            let domains = try JSONDecoder().decode([String].self, from: data)
+            guard !domains.isEmpty else { return }
+            applyDisabledDomains(domains)
+            broadcastSettings()
         } catch {
             print("Failed to fetch disabled domains: \(error)")
         }
@@ -222,6 +257,11 @@ final class AppState: ObservableObject {
     func requestOpenBookmarkFolderManager() {
         openWindowAction?("SettingsWindow")
         bookmarkFolderManagerOpenRequest += 1
+    }
+
+    func requestOpenRecentBookmarkBackups() {
+        openWindowAction?("SettingsWindow")
+        recentBookmarkBackupsOpenRequest += 1
     }
 
     private func appURL(forBrowserId browserId: String) -> URL? {

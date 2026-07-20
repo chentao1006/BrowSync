@@ -97,5 +97,8 @@
   },
   "thisBrowser": {
     "message": "このブラウザ"
-  }
+  },
+  "stateSyncReloadPrompt": { "message": "ログイン状態が同期されました。このページを再読み込みしますか？" },
+  "stateSyncReload": { "message": "再読み込み" },
+  "stateSyncLater": { "message": "後で" }
 }

@@ -74,6 +74,24 @@
 
 /* Sync categories */
 "Bookmarks" = "Bookmarks";
+"Recent Automatic Backups" = "Recent Automatic Backups";
+"Replace" = "Replace";
+"Incremental Restore" = "Restore Missing Items";
+"Replace Restore" = "Replace Restore";
+"Incremental Restore keeps existing bookmarks and adds missing items. Replace Restore clears the selected folder first." = "Restore Missing Items keeps your existing bookmarks and restores only items missing from this backup. Replace Restore clears the selected folder first.";
+"Add the missing bookmarks from this backup to the selected folder?" = "Add the missing bookmarks from this backup to the selected folder?";
+"Restore completed" = "Restore completed";
+"Backup Contents Summary" = "%d bookmarks · %d folders";
+"Restore completed. This backup contains %d bookmarks and %d folders, including subfolders. The restored tree was sent to participating browsers." = "Restore completed. This backup contains %d bookmarks and %d folders, including subfolders. The restored tree was sent to participating browsers.";
+"Replace Restore completed. %d backup items were applied to Safari and sent to participating browsers." = "Replace Restore completed. %d backup items were applied to Safari and sent to participating browsers.";
+"Incremental Restore completed. %d backup items were applied to Safari and sent to participating browsers." = "Incremental Restore completed. %d backup items were applied to Safari and sent to participating browsers.";
+"A complete copy of each source folder is saved before it is synchronized. The latest 30 backups are kept." = "A complete copy of each source folder is saved before it is synchronized. The latest 30 backups are kept.";
+"Replace the current bookmarks in the selected folder with this backup?" = "Replace the current bookmarks in the selected folder with this backup?";
+"This backup will be permanently deleted." = "This backup will be permanently deleted.";
+"Force Sync" = "Force Sync";
+"Open Recent Automatic Backups" = "Open Recent Automatic Backups";
+"Bookmark Sync Blocked" = "Bookmark Sync Blocked";
+"%@ returned an empty bookmark snapshot, but the previous snapshot contained %d items. Nothing was changed." = "%@ returned an empty bookmark snapshot, but the previous snapshot contained %d items. Nothing was changed.";
 "Browser State" = "Browser State";
 "Browser Data" = "Browser Data";
 "History" = "History";
@@ -358,6 +376,13 @@
 
 "Bookmark Sync Complete" = "Bookmark Sync Complete";
 "Successfully synced %d bookmarks." = "Successfully synced %d bookmarks.";
+"Bookmark Count Summary" = "%d bookmarks · %d folders";
+"Added %d bookmarks" = "Added %d bookmarks";
+"Added %d folders" = "Added %d folders";
+"Deleted %d bookmarks" = "Deleted %d bookmarks";
+"Deleted %d folders" = "Deleted %d folders";
+"Modified %d bookmarks" = "Modified %d bookmarks";
+"Modified %d folders" = "Modified %d folders";
 "State Sync Complete" = "State Sync Complete";
 "Successfully synced %d cookies and %d storage items." = "Successfully synced %d cookies and %d storage items.";
 "BrowSync Complete" = "BrowSync Complete";
@@ -381,6 +406,7 @@
 "%d storage items" = "%d storage items";
 "Successfully synced %@." = "Successfully synced %@.";
 "Synced %@." = "Synced %@.";
+"Synced Websites: %@" = "Websites: %@";
 "Restore All" = "Restore All";
 "Confirm Restore All" = "Confirm Restore All";
 "Are you sure you want to restore all bookmarks from the trash bin?" = "Are you sure you want to restore all bookmarks from the trash bin?";

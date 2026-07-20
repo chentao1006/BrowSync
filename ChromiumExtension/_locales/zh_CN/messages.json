@@ -91,5 +91,8 @@
   },
   "thisBrowser": {
     "message": "本浏览器"
-  }
+  },
+  "stateSyncReloadPrompt": { "message": "登录状态已同步，是否重新载入此页面？" },
+  "stateSyncReload": { "message": "重新载入" },
+  "stateSyncLater": { "message": "稍后" }
 }

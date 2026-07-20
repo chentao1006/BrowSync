@@ -10,6 +10,8 @@
 		091C23D15A0618E4C9D93470 /* content.js in Resources */ = {isa = PBXBuildFile; fileRef = C92E6B86E06DBA3FAF458AA8 /* content.js */; };
 		09C7E842D5114B27B18A86DB /* RouterTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10F52E8BB62D4BA5E32CD492 /* RouterTabView.swift */; };
 		0A63D7EDCF55B55E811CB8EE /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 2F278BFDA3B2DF653CD4E4A2 /* Localizable.strings */; };
+		D0A7B0010000000000000001 /* disabled-domains.json in Resources */ = {isa = PBXBuildFile; fileRef = D0A7B0030000000000000001 /* disabled-domains.json */; };
+		D0A7B0020000000000000001 /* disabled-domains.json in Resources */ = {isa = PBXBuildFile; fileRef = D0A7B0030000000000000001 /* disabled-domains.json */; };
 		0CB37CF6BCB9021523F734DF /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4BE22F2B94BE5B640CCDB1E /* SafariWebExtensionHandler.swift */; };
 		0F5CB5937AE876460E91A93C /* RuleEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B56E2AFB07CC6CA3A5582028 /* RuleEditorView.swift */; };
 		10E9805314E7BF727FB2C9C4 /* download-on-app-store-en.svg in Resources */ = {isa = PBXBuildFile; fileRef = C1AF1FEF2387E709571DAA19 /* download-on-app-store-en.svg */; };
@@ -193,6 +195,7 @@
 		C4B27D5A9D28D813C2D50EC6 /* BrowSync-Promo-1280x800.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "BrowSync-Promo-1280x800.png"; sourceTree = "<group>"; };
 		C6BFEB07402A67F5BB319D14 /* BrowSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowSyncApp.swift; sourceTree = "<group>"; };
 		C92E6B86E06DBA3FAF458AA8 /* content.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = content.js; sourceTree = "<group>"; };
+		D0A7B0030000000000000001 /* disabled-domains.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "disabled-domains.json"; path = "disabled-domains.json"; sourceTree = SOURCE_ROOT; };
 		E2B2655588572D19F7C9C320 /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/Localizable.strings; sourceTree = "<group>"; };
 		E315605267BB5B97A246FF33 /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = manifest.json; sourceTree = "<group>"; };
 		EBE3A33AF5716E66F9B37B38 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -267,6 +270,7 @@
 		69692C5A894ED52E721AAC13 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				D0A7B0030000000000000001 /* disabled-domains.json */,
 				5800150E203500FC40165A3D /* Assets.xcassets */,
 				5385B997A76CEA70148BB576 /* InfoPlist.strings */,
 				2F278BFDA3B2DF653CD4E4A2 /* Localizable.strings */,
@@ -528,6 +532,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D0A7B0010000000000000001 /* disabled-domains.json in Resources */,
 				4AEFF7C4E3DA888A630853AA /* Assets.xcassets in Resources */,
 				388A049850B7932FC450C04D /* BrowSync-Promo-1280x800.png in Resources */,
 				1E4AB9EFC1355B9B65F0D1C3 /* InfoPlist.strings in Resources */,
@@ -570,6 +575,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D0A7B0020000000000000001 /* disabled-domains.json in Resources */,
 				B3CA3D25584BA151347395DA /* Assets.xcassets in Resources */,
 				BFE57D536478C567B7922537 /* BrowSync-Promo-1280x800.png in Resources */,
 				7DE05CB0C0717AE68DF19152 /* InfoPlist.strings in Resources */,

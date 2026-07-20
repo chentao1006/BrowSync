@@ -91,5 +91,8 @@
   },
   "thisBrowser": {
     "message": "Ce navigateur"
-  }
+  },
+  "stateSyncReloadPrompt": { "message": "Votre etat de connexion a ete synchronise. Recharger cette page pour l'appliquer ?" },
+  "stateSyncReload": { "message": "Recharger" },
+  "stateSyncLater": { "message": "Plus tard" }
 }

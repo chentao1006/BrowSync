@@ -91,5 +91,8 @@
   },
   "thisBrowser": {
     "message": "本瀏覽器"
-  }
+  },
+  "stateSyncReloadPrompt": { "message": "登入狀態已同步，是否重新載入此頁面？" },
+  "stateSyncReload": { "message": "重新載入" },
+  "stateSyncLater": { "message": "稍後" }
 }

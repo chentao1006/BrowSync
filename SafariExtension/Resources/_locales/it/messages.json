@@ -97,5 +97,8 @@
   },
   "thisBrowser": {
     "message": "Questo browser"
-  }
+  },
+  "stateSyncReloadPrompt": { "message": "Il tuo stato di accesso e stato sincronizzato. Ricaricare questa pagina per applicarlo?" },
+  "stateSyncReload": { "message": "Ricarica" },
+  "stateSyncLater": { "message": "Piu tardi" }
 }

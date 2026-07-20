@@ -8,6 +8,7 @@ struct ContentView: View {
     @EnvironmentObject var langBundle: LanguageBundle
     @State private var selectedTab: AppTab? = .browsers
     @State private var handledBookmarkFolderManagerOpenRequest = 0
+    @State private var handledRecentBookmarkBackupsOpenRequest = 0
 
     var body: some View {
         NavigationSplitView {
@@ -77,11 +78,20 @@ struct ContentView: View {
         .onChange(of: appState.bookmarkFolderManagerOpenRequest) { _ in
             handleBookmarkFolderManagerOpenRequest()
         }
+        .onChange(of: appState.recentBookmarkBackupsOpenRequest) { _ in
+            handleRecentBookmarkBackupsOpenRequest()
+        }
     }
 
     private func handleBookmarkFolderManagerOpenRequest() {
         guard appState.bookmarkFolderManagerOpenRequest != handledBookmarkFolderManagerOpenRequest else { return }
         handledBookmarkFolderManagerOpenRequest = appState.bookmarkFolderManagerOpenRequest
+        selectedTab = .bookmarkSync
+    }
+
+    private func handleRecentBookmarkBackupsOpenRequest() {
+        guard appState.recentBookmarkBackupsOpenRequest != handledRecentBookmarkBackupsOpenRequest else { return }
+        handledRecentBookmarkBackupsOpenRequest = appState.recentBookmarkBackupsOpenRequest
         selectedTab = .bookmarkSync
     }
 }

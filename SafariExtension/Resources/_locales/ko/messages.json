@@ -97,5 +97,8 @@
   },
   "thisBrowser": {
     "message": "이 브라우저"
-  }
+  },
+  "stateSyncReloadPrompt": { "message": "로그인 상태가 동기화되었습니다. 적용하려면 이 페이지를 새로고침할까요?" },
+  "stateSyncReload": { "message": "새로고침" },
+  "stateSyncLater": { "message": "나중에" }
 }

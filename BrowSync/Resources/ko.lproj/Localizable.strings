@@ -64,6 +64,24 @@
 "Off by default" = "기본적으로 꺼짐";
 
 "Bookmarks" = "북마크";
+"Recent Automatic Backups" = "최근 자동 백업";
+"Replace" = "교체";
+"Incremental Restore" = "누락 항목 복원";
+"Replace Restore" = "교체 후 복원";
+"Incremental Restore keeps existing bookmarks and adds missing items. Replace Restore clears the selected folder first." = "누락 항목 복원은 기존 북마크를 유지하고 이 백업에 없는 항목만 복원합니다. 교체 후 복원은 먼저 선택한 폴더를 비웁니다.";
+"Add the missing bookmarks from this backup to the selected folder?" = "이 백업에서 누락된 북마크를 선택한 폴더에 추가할까요?";
+"Restore completed" = "복원이 완료되었습니다";
+"Backup Contents Summary" = "북마크 %d개 · 폴더 %d개";
+"Restore completed. This backup contains %d bookmarks and %d folders, including subfolders. The restored tree was sent to participating browsers." = "복원이 완료되었습니다. 이 백업에는 하위 폴더를 포함하여 북마크 %d개와 폴더 %d개가 있습니다. 복원된 트리가 참여 중인 브라우저로 전송되었습니다.";
+"Replace Restore completed. %d backup items were applied to Safari and sent to participating browsers." = "교체 후 복원이 완료되었습니다. 백업 항목 %d개를 Safari에 적용하고 참여 중인 브라우저로 보냈습니다.";
+"Incremental Restore completed. %d backup items were applied to Safari and sent to participating browsers." = "증분 복원이 완료되었습니다. 백업 항목 %d개를 Safari에 적용하고 참여 중인 브라우저로 보냈습니다.";
+"A complete copy of each source folder is saved before it is synchronized. The latest 30 backups are kept." = "동기화 전에 각 원본 폴더의 전체 복사본을 저장합니다. 최근 30개의 백업을 유지합니다.";
+"Replace the current bookmarks in the selected folder with this backup?" = "선택한 폴더의 현재 북마크를 이 백업으로 교체할까요?";
+"This backup will be permanently deleted." = "이 백업은 영구적으로 삭제됩니다.";
+"Force Sync" = "강제 동기화";
+"Open Recent Automatic Backups" = "최근 자동 백업 열기";
+"Bookmark Sync Blocked" = "북마크 동기화 차단됨";
+"%@ returned an empty bookmark snapshot, but the previous snapshot contained %d items. Nothing was changed." = "%@에서 빈 북마크 스냅샷을 반환했지만 이전 스냅샷에는 %d개 항목이 있었습니다. 변경된 내용은 없습니다.";
 "Browser State" = "브라우저 상태";
 "Browser Data" = "브라우저 데이터";
 "History" = "방문 기록";
@@ -334,6 +352,13 @@
 
 "Bookmark Sync Complete" = "북마크 동기화 완료";
 "Successfully synced %d bookmarks." = "성공적으로 %d개의 북마크를 동기화했습니다.";
+"Bookmark Count Summary" = "%d개의 북마크 · %d개의 폴더";
+"Added %d bookmarks" = "%d개의 북마크 추가됨";
+"Added %d folders" = "%d개의 폴더 추가됨";
+"Deleted %d bookmarks" = "%d개의 북마크 삭제됨";
+"Deleted %d folders" = "%d개의 폴더 삭제됨";
+"Modified %d bookmarks" = "%d개의 북마크 수정됨";
+"Modified %d folders" = "%d개의 폴더 수정됨";
 "State Sync Complete" = "상태 동기화 완료";
 "Successfully synced %d cookies and %d storage items." = "성공적으로 %d개의 쿠키와 %d개의 저장소 항목을 동기화했습니다.";
 "BrowSync Complete" = "BrowSync 완료";
@@ -343,6 +368,7 @@
 "%d storage items" = "%d개의 저장소 항목";
 "Successfully synced %@." = "성공적으로 %@를 동기화했습니다.";
 "Synced %@." = "%@를 동기화했습니다.";
+"Synced Websites: %@" = "관련 웹사이트: %@";
 
 "iCloud Sync" = "iCloud 동기화";
 "Synchronize all settings, rules, and open tabs across your Mac devices using iCloud." = "iCloud를 사용하여 모든 Mac 기기 간에 설정, 규칙 및 열려 있는 탭을 동기화합니다.";

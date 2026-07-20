@@ -72,6 +72,24 @@
 
 /* Sync categories */
 "Bookmarks" = "书签";
+"Recent Automatic Backups" = "最近自动备份";
+"Replace" = "替换恢复";
+"Incremental Restore" = "补回缺失项";
+"Replace Restore" = "替换恢复";
+"Incremental Restore keeps existing bookmarks and adds missing items. Replace Restore clears the selected folder first." = "补回缺失项会保留现有书签，只补回此备份中缺少的项目；替换恢复会先清空所选文件夹，再恢复此备份。";
+"Add the missing bookmarks from this backup to the selected folder?" = "要将此备份中缺少的书签补充到所选文件夹吗？";
+"Restore completed" = "恢复完成";
+"Backup Contents Summary" = "%d 个书签 · %d 个文件夹";
+"Restore completed. This backup contains %d bookmarks and %d folders, including subfolders. The restored tree was sent to participating browsers." = "恢复完成：此备份包含 %d 个书签和 %d 个文件夹（含所有子文件夹），已同步发送至参与的浏览器。";
+"Replace Restore completed. %d backup items were applied to Safari and sent to participating browsers." = "替换恢复完成：已将 %d 个备份项目写入 Safari，并同步发送至参与的浏览器。";
+"Incremental Restore completed. %d backup items were applied to Safari and sent to participating browsers." = "增量恢复完成：已将 %d 个备份项目写入 Safari，并同步发送至参与的浏览器。";
+"A complete copy of each source folder is saved before it is synchronized. The latest 30 backups are kept." = "每次同步前都会保存源文件夹的完整数据结构，最多保留最近 30 次备份。";
+"Replace the current bookmarks in the selected folder with this backup?" = "要用此备份替换当前所选文件夹内的书签吗？";
+"This backup will be permanently deleted." = "此备份将被永久删除。";
+"Force Sync" = "强制同步";
+"Open Recent Automatic Backups" = "打开最近自动备份";
+"Bookmark Sync Blocked" = "书签同步已阻止";
+"%@ returned an empty bookmark snapshot, but the previous snapshot contained %d items. Nothing was changed." = "%@ 返回了空书签快照，但上一次快照包含 %d 项。为保护数据，未做任何更改。";
 "Browser State" = "浏览器状态";
 "Browser Data" = "浏览器数据";
 "History" = "历史记录";
@@ -385,6 +403,13 @@
 
 "Bookmark Sync Complete" = "书签同步完成";
 "Successfully synced %d bookmarks." = "已成功同步 %d 条书签。";
+"Bookmark Count Summary" = "%d 个书签 · %d 个文件夹";
+"Added %d bookmarks" = "新增 %d 个书签";
+"Added %d folders" = "新增 %d 个文件夹";
+"Deleted %d bookmarks" = "删除 %d 个书签";
+"Deleted %d folders" = "删除 %d 个文件夹";
+"Modified %d bookmarks" = "修改 %d 个书签";
+"Modified %d folders" = "修改 %d 个文件夹";
 "State Sync Complete" = "状态同步完成";
 "Successfully synced %d cookies and %d storage items." = "已成功同步 %d 个 Cookie 和 %d 项存储数据。";
 "BrowSync Complete" = "BrowSync 同步完成";
@@ -408,6 +433,7 @@
 "%d storage items" = "%d 项存储数据";
 "Successfully synced %@." = "已成功同步 %@。";
 "Synced %@." = "已同步 %@。";
+"Synced Websites: %@" = "涉及网站：%@";
 "Restore All" = "全部恢复";
 "Confirm Restore All" = "确认全部恢复";
 "Are you sure you want to restore all bookmarks from the trash bin?" = "确定要从回收站恢复所有书签吗？";

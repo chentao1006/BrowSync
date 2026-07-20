@@ -64,6 +64,24 @@
 "Off by default" = "デフォルトでオフ";
 
 "Bookmarks" = "ブックマーク";
+"Recent Automatic Backups" = "最近の自動バックアップ";
+"Replace" = "置き換える";
+"Incremental Restore" = "不足分を復元";
+"Replace Restore" = "置き換えて復元";
+"Incremental Restore keeps existing bookmarks and adds missing items. Replace Restore clears the selected folder first." = "不足分を復元では既存のブックマークを保持し、このバックアップにない項目だけを復元します。置き換えて復元では、最初に選択したフォルダを空にします。";
+"Add the missing bookmarks from this backup to the selected folder?" = "このバックアップの不足しているブックマークを選択したフォルダに追加しますか？";
+"Restore completed" = "復元が完了しました";
+"Backup Contents Summary" = "%d 件のブックマーク · %d 個のフォルダ";
+"Restore completed. This backup contains %d bookmarks and %d folders, including subfolders. The restored tree was sent to participating browsers." = "復元が完了しました。このバックアップには、サブフォルダを含む %d 件のブックマークと %d 個のフォルダが含まれています。復元したツリーは参加中のブラウザに送信されました。";
+"Replace Restore completed. %d backup items were applied to Safari and sent to participating browsers." = "置き換えて復元が完了しました。%d 件のバックアップ項目をSafariに適用し、参加中のブラウザに送信しました。";
+"Incremental Restore completed. %d backup items were applied to Safari and sent to participating browsers." = "追加復元が完了しました。%d 件のバックアップ項目をSafariに適用し、参加中のブラウザに送信しました。";
+"A complete copy of each source folder is saved before it is synchronized. The latest 30 backups are kept." = "同期前に各ソースフォルダの完全なコピーを保存します。最新の30件のバックアップを保持します。";
+"Replace the current bookmarks in the selected folder with this backup?" = "選択したフォルダ内の現在のブックマークを、このバックアップで置き換えますか？";
+"This backup will be permanently deleted." = "このバックアップは完全に削除されます。";
+"Force Sync" = "強制同期";
+"Open Recent Automatic Backups" = "最近の自動バックアップを開く";
+"Bookmark Sync Blocked" = "ブックマーク同期をブロックしました";
+"%@ returned an empty bookmark snapshot, but the previous snapshot contained %d items. Nothing was changed." = "%@ から空のブックマークスナップショットが返されましたが、前回は %d 件ありました。変更は行われていません。";
 "Browser State" = "ブラウザの状態";
 "Browser Data" = "ブラウザのデータ";
 "History" = "履歴";
@@ -334,6 +352,13 @@
 
 "Bookmark Sync Complete" = "ブックマークの同期が完了しました";
 "Successfully synced %d bookmarks." = "%d 件のブックマークを正常に同期しました。";
+"Bookmark Count Summary" = "%d 件のブックマーク · %d 個のフォルダ";
+"Added %d bookmarks" = "%d 件のブックマークを追加";
+"Added %d folders" = "%d 個のフォルダを追加";
+"Deleted %d bookmarks" = "%d 件のブックマークを削除";
+"Deleted %d folders" = "%d 個のフォルダを削除";
+"Modified %d bookmarks" = "%d 件のブックマークを変更";
+"Modified %d folders" = "%d 個のフォルダを変更";
 "State Sync Complete" = "状態の同期が完了しました";
 "Successfully synced %d cookies and %d storage items." = "%d 件の Cookie と %d 件のストレージ項目を正常に同期しました。";
 "BrowSync Complete" = "BrowSync 同期完了";
@@ -343,6 +368,7 @@
 "%d storage items" = "%d 件のストレージ項目";
 "Successfully synced %@." = "%@を正常に同期しました。";
 "Synced %@." = "%@を同期しました。";
+"Synced Websites: %@" = "対象サイト：%@";
 
 "iCloud Sync" = "iCloud 同期";
 "Synchronize all settings, rules, and open tabs across your Mac devices using iCloud." = "iCloud を使用して、Mac デバイス間ですべての設定、ルール、および開いているタブを同期します。";

@@ -141,6 +141,9 @@ final class SafariBookmarkService {
 
         let systemRootIds = Set(["0", "1", "2", "3"])
         let syncableRootIds = Set(["1", "2"])
+        // “Restore Missing Items” must be additive. Never let its merge path
+        // prune folders merely because they are absent from a backup.
+        let pruneOrphanedManagedFolders = sourceBrowser != "Backup Restore"
         let shouldFilterBrowserSystemRoots = !sourceBrowser.localizedCaseInsensitiveContains("safari") && sourceBrowser != "Local UI"
         var byId: [String: SyncBookmark] = [:]
         for bookmark in bookmarks {
@@ -407,7 +410,7 @@ final class SafariBookmarkService {
                     nodeChildren = topLevelBookmarks.compactMap { buildNode(from: $0, allBookmarks: validBookmarks) }
                     addedCount += topLevelBookmarks.count
                 } else {
-                    mergeLevel(chromeNodes: topLevelBookmarks, safariNodes: &nodeChildren, isRoot: false, pruneOrphanedManagedFolders: true)
+                    mergeLevel(chromeNodes: topLevelBookmarks, safariNodes: &nodeChildren, isRoot: false, pruneOrphanedManagedFolders: pruneOrphanedManagedFolders)
                 }
                 children[idx]["Children"] = nodeChildren
             } else {
@@ -419,7 +422,7 @@ final class SafariBookmarkService {
                     children.append(contentsOf: newNodes)
                     addedCount += newNodes.count
                 } else {
-                    mergeLevel(chromeNodes: topLevelBookmarks, safariNodes: &children, isRoot: true, pruneOrphanedManagedFolders: true)
+                    mergeLevel(chromeNodes: topLevelBookmarks, safariNodes: &children, isRoot: true, pruneOrphanedManagedFolders: pruneOrphanedManagedFolders)
                 }
             }
         }
