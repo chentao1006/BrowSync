@@ -1481,6 +1481,12 @@ function syncDomainForHostname(hostname) {
 }
 
 function isSiteStateSyncEnabled(site, appSettings) {
+  const syncDisabledDomains = appSettings.syncDisabledDomains || [];
+  const isSystemDisabled = syncDisabledDomains.some(domain =>
+    syncDomainForHostname(String(domain || '').replace(/^\./, '').toLowerCase()) === site
+  );
+  if (isSystemDisabled) return false;
+
   const websiteSettings = appSettings.websiteSettings || [];
   const isListed = websiteSettings.some(setting =>
     syncDomainForHostname(String(setting.domain || '').replace(/^\./, '').toLowerCase()) === site
