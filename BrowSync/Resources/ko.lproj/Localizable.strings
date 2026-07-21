@@ -186,6 +186,8 @@
 "Data Source Browser" = "데이터 소스 브라우저";
 "Real-time Auto Sync" = "실시간 자동 동기화";
 "Website List" = "웹사이트 목록";
+"Sync Website List" = "동기화할 웹사이트";
+"Excluded Website List" = "제외할 웹사이트";
 "Domain (e.g. example.com)" = "도메인 (예: example.com)";
 "Default Policy" = "기본 정책";
 "Default Source" = "기본 소스";
@@ -377,7 +379,8 @@
 "Select Protocol" = "프로토콜 선택";
 
 "Merge Warning Note" = "북마크 차이가 클 경우 예측할 수 없는 결과가 발생할 수 있습니다";
-"Currently Open Tab Count" = "현재 열려 있는 탭 수";
+"Currently Open Tabs" = "현재 열려 있는 탭";
+"Untitled Tab" = "제목 없는 탭";
 "Edit Rule Header" = "규칙 편집";
 "New Rule Header" = "새 규칙";
 "Rule Name Placeholder" = "예: 업무 문서";

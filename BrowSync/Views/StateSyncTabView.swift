@@ -194,7 +194,7 @@ struct StateSyncTabView: View {
                         .padding(.vertical, 4)
                     
                     HStack {
-                        Text(String(localized: "Website List", bundle: langBundle.bundle))
+                        Text(String(localized: syncSettings.websiteListPolicy.wrappedValue == .allowList ? "Sync Website List" : "Excluded Website List", bundle: langBundle.bundle))
                             .font(.headline)
                         Spacer()
                         Button {

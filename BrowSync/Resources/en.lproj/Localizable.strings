@@ -224,6 +224,8 @@
 "Data Source Browser" = "Data Source Browser";
 "Real-time Auto Sync" = "Real-time Auto Sync";
 "Website List" = "Website List";
+"Sync Website List" = "Websites to Sync";
+"Excluded Website List" = "Excluded Websites";
 "Domain (e.g. example.com)" = "Domain (e.g. example.com)";
 "Default Policy" = "Default Policy";
 "Default Source" = "Default Source";
@@ -416,7 +418,8 @@
 
 "Protocol" = "Protocol";
 "Select Protocol" = "Select Protocol";
-"Currently Open Tab Count" = "Currently Open Tab Count";
+"Currently Open Tabs" = "Currently Open Tabs";
+"Untitled Tab" = "Untitled Tab";
 
 /* Pro */
 "BrowSync Pro" = "BrowSync Pro";

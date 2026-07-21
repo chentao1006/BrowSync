@@ -186,6 +186,8 @@
 "Data Source Browser" = "Datenquellen-Browser";
 "Real-time Auto Sync" = "Echtzeit-Auto-Sync";
 "Website List" = "Website-Liste";
+"Sync Website List" = "Zu synchronisierende Websites";
+"Excluded Website List" = "Ausgeschlossene Websites";
 "Domain (e.g. example.com)" = "Domain (z.B. example.com)";
 "Default Policy" = "Standardrichtlinie";
 "Default Source" = "Standardquelle";
@@ -375,7 +377,8 @@
 "Select Protocol" = "Protokoll auswählen";
 
 "Merge Warning Note" = "Kann zu unvorhersehbaren Ergebnissen führen, wenn die Lesezeichen-Unterschiede erheblich sind";
-"Currently Open Tab Count" = "Anzahl der aktuell geoeffneten Tabs";
+"Currently Open Tabs" = "Aktuell geöffnete Tabs";
+"Untitled Tab" = "Unbenannter Tab";
 "Edit Rule Header" = "Regel bearbeiten";
 "New Rule Header" = "Neue Regel";
 "Rule Name Placeholder" = "z. B. Arbeitsdokumente";

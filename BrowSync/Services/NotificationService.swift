@@ -12,9 +12,15 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     private static let forceEmptyBookmarkSnapshotAction = "browsync.force-empty-bookmark-snapshot"
     private static let openRecentBackupsAction = "browsync.open-recent-bookmark-backups"
     private let logger = Logger(subsystem: "com.ct106.browsync", category: "NotificationService")
+    /// Some sites continuously rewrite storage for analytics, sessions, or
+    /// heartbeats. Showing a completion banner for every one of those writes
+    /// makes automatic sync unusable, so report each site's background activity
+    /// at most once per cooldown window.
+    private static let autoStateSyncNotificationCooldown: TimeInterval = 5 * 60
     private var pendingAutoSyncStats = SyncStats()
     private var pendingAutoSyncCategories = Set<SyncCategory>()
     private var autoSyncNotificationTask: Task<Void, Never>?
+    private var lastAutoStateSyncNotificationBySite: [String: Date] = [:]
 
     override init() {
         super.init()
@@ -68,8 +74,36 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
             self.pendingAutoSyncStats = SyncStats()
             self.pendingAutoSyncCategories = []
             self.autoSyncNotificationTask = nil
+
+            guard self.shouldNotifyAutoSync(stats: combinedStats, categories: combinedCategories) else {
+                return
+            }
             self.notifySyncComplete(stats: combinedStats, categories: combinedCategories)
         }
+    }
+
+    private func shouldNotifyAutoSync(stats: SyncStats, categories: [SyncCategory]) -> Bool {
+        let includesState = categories.contains { $0.rawValue != "bookmarks" }
+        guard includesState, !stats.syncedSites.isEmpty else { return true }
+
+        let now = Date()
+        lastAutoStateSyncNotificationBySite = lastAutoStateSyncNotificationBySite.filter {
+            now.timeIntervalSince($0.value) < Self.autoStateSyncNotificationCooldown
+        }
+        let sitesToNotify = stats.syncedSites.filter { site in
+            guard let lastNotification = lastAutoStateSyncNotificationBySite[site] else { return true }
+            return now.timeIntervalSince(lastNotification) >= Self.autoStateSyncNotificationCooldown
+        }
+
+        guard !sitesToNotify.isEmpty else {
+            logger.debug("Suppressed repeated automatic state-sync notification for: \(stats.syncedSites.sorted().joined(separator: ", "))")
+            return false
+        }
+
+        for site in stats.syncedSites {
+            lastAutoStateSyncNotificationBySite[site] = now
+        }
+        return true
     }
 
     func notifySyncComplete(stats: SyncStats, categories: [SyncCategory]) {

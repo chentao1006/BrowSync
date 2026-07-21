@@ -220,6 +220,8 @@
 "List Policy" = "列表模式";
 "Real-time Auto Sync" = "实时自动同步";
 "Website List" = "网站列表";
+"Sync Website List" = "同步网站列表";
+"Excluded Website List" = "排除网站列表";
 "Domain (e.g. example.com)" = "域名 (如: example.com)";
 "Default Policy" = "默认策略";
 "Default Source" = "默认源";
@@ -445,7 +447,8 @@
 
 "Unknown Device" = "未知设备";
 
-"Currently Open Tab Count" = "当前打开的标签页数量";
+"Currently Open Tabs" = "当前打开的标签页";
+"Untitled Tab" = "未命名标签页";
 
 /* Pro */
 "Pro" = "Pro";

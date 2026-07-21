@@ -92,43 +92,36 @@ struct TabSharingTabView: View {
                     }
                 }
                 
-                Section(String(localized: "Currently Open Tab Count", bundle: langBundle.bundle)) {
+                Section(String(localized: "Currently Open Tabs", bundle: langBundle.bundle)) {
                     let groupedTabs = groupTabsByDeviceAndBrowser()
                     if groupedTabs.isEmpty {
                         Text(String(localized: "No active tabs found.", bundle: langBundle.bundle))
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(groupedTabs.keys.sorted(), id: \.self) { device in
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 12) {
                                 HStack {
                                     Image(systemName: "desktopcomputer")
                                         .foregroundStyle(.blue)
                                     Text(device).font(.headline)
                                 }
-                                ForEach(groupedTabs[device]?.keys.sorted() ?? [], id: \.self) { browserId in
-                                    HStack {
-                                        let b = Browser(rawValue: browserId)
-                                        if let info = appState.browserInfos.first(where: { $0.browser == b }) {
-                                            if let url = info.appURL {
-                                                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
-                                                    .resizable()
-                                                    .frame(width: 16, height: 16)
-                                            } else {
-                                                Image(systemName: info.id.sfSymbol)
-                                                    .frame(width: 16, height: 16)
+                                ForEach(groupedTabs[device]?.keys.sorted(by: { $0.rawValue < $1.rawValue }) ?? [], id: \.self) { browser in
+                                    let tabs = groupedTabs[device]?[browser] ?? []
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        browserHeader(browser, tabCount: tabs.count)
+                                        LazyVGrid(
+                                            columns: [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 6)],
+                                            alignment: .leading,
+                                            spacing: 6
+                                        ) {
+                                            ForEach(tabs.sorted(by: tabSortOrder)) { tab in
+                                                tabCard(tab)
                                             }
-                                            Text(info.displayName)
-                                        } else {
-                                            Text(browserId.capitalized)
                                         }
-                                        Spacer()
-                                        Text("\(groupedTabs[device]?[browserId] ?? 0)")
-                                            .foregroundStyle(.secondary)
                                     }
-                                    .padding(.leading, 8)
                                 }
                             }
-                            .padding(.vertical, 4)
+                            .padding(.vertical, 6)
                         }
                     }
                 }
@@ -150,17 +143,64 @@ struct TabSharingTabView: View {
         }
     }
 
-    private func groupTabsByDeviceAndBrowser() -> [String: [String: Int]] {
-        var result: [String: [String: Int]] = [:]
+    private func groupTabsByDeviceAndBrowser() -> [String: [Browser: [BrowserTab]]] {
+        var result: [String: [Browser: [BrowserTab]]] = [:]
         for (browser, tabs) in appState.remoteTabsCache {
             for tab in tabs {
                 let deviceName = tab.deviceName ?? "Unknown Device"
-                if result[deviceName] == nil {
-                    result[deviceName] = [:]
-                }
-                result[deviceName]![browser.rawValue, default: 0] += 1
+                result[deviceName, default: [:]][browser, default: []].append(tab)
             }
         }
         return result
+    }
+
+    @ViewBuilder
+    private func browserHeader(_ browser: Browser, tabCount: Int) -> some View {
+        HStack(spacing: 6) {
+            if let info = appState.browserInfos.first(where: { $0.browser == browser }), let url = info.appURL {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                    .resizable()
+                    .frame(width: 16, height: 16)
+                Text(info.displayName)
+            } else {
+                Image(systemName: browser.sfSymbol)
+                    .frame(width: 16, height: 16)
+                Text(browser.displayName)
+            }
+            Text("\(tabCount)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.leading, 8)
+    }
+
+    @ViewBuilder
+    private func tabCard(_ tab: BrowserTab) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: tab.isActive ? "circle.fill" : "globe")
+                .font(.caption)
+                .foregroundStyle(tab.isActive ? .blue : .secondary)
+                .frame(width: 12, height: 12)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tab.title.isEmpty ? String(localized: "Untitled Tab", bundle: langBundle.bundle) : tab.title)
+                    .font(.caption)
+                    .lineLimit(1)
+                if let url = tab.url, !url.isEmpty {
+                    Text(URL(string: url)?.host ?? url)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func tabSortOrder(_ lhs: BrowserTab, _ rhs: BrowserTab) -> Bool {
+        if lhs.isActive != rhs.isActive { return lhs.isActive }
+        if lhs.windowId != rhs.windowId { return (lhs.windowId ?? "") < (rhs.windowId ?? "") }
+        return lhs.index < rhs.index
     }
 }

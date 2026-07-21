@@ -186,6 +186,8 @@
 "Data Source Browser" = "データソース";
 "Real-time Auto Sync" = "リアルタイム自動同期";
 "Website List" = "ウェブサイトリスト";
+"Sync Website List" = "同期するWebサイト";
+"Excluded Website List" = "除外するWebサイト";
 "Domain (e.g. example.com)" = "ドメイン (例: example.com)";
 "Default Policy" = "デフォルトポリシー";
 "Default Source" = "デフォルトソース";
@@ -377,7 +379,8 @@
 "Select Protocol" = "プロトコルを選択";
 
 "Merge Warning Note" = "ブックマークの差分が大きい場合、予期しない結果が生じる可能性があります";
-"Currently Open Tab Count" = "現在開いているタブ数";
+"Currently Open Tabs" = "現在開いているタブ";
+"Untitled Tab" = "無題のタブ";
 "Edit Rule Header" = "ルールを編集";
 "New Rule Header" = "新しいルール";
 "Rule Name Placeholder" = "例: 仕事用ドキュメント";
