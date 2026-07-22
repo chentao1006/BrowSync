@@ -76,6 +76,24 @@ enum PurchaseChannel {
     case direct
 }
 
+enum ProEntitlementKind: Equatable {
+    case none
+    case lifetime
+    case monthlySubscription
+    case yearlySubscription
+    case subscription
+
+    var title: String.LocalizationValue {
+        switch self {
+        case .none: return "Free"
+        case .lifetime: return "One-time purchase"
+        case .monthlySubscription: return "Monthly subscription"
+        case .yearlySubscription: return "Yearly subscription"
+        case .subscription: return "Active subscription"
+        }
+    }
+}
+
 @MainActor
 final class PurchaseService: ObservableObject {
 #if APP_STORE
@@ -88,10 +106,14 @@ final class PurchaseService: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var isPurchasing = false
     @Published private(set) var statusMessage: String.LocalizationValue?
+    @Published private(set) var proEntitlementKind: ProEntitlementKind = .none
+    @Published private(set) var activeProProductID: String?
 
 #if APP_STORE
     @Published private(set) var product: Product?
+    @Published private(set) var subscriptionProducts: [Product] = []
     private var transactionUpdatesTask: Task<Void, Never>?
+    private var entitlementExpiryRefreshTask: Task<Void, Never>?
 #endif
 
     private var hasStarted = false
@@ -142,10 +164,13 @@ final class PurchaseService: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let products = try await Product.products(for: [AppConfig.proProductID])
-            product = products.first
+            let products = try await Product.products(for: AppConfig.proProductIDs)
+            product = products.first(where: { $0.id == AppConfig.proProductID })
+            subscriptionProducts = AppConfig.proSubscriptionProductIDs.compactMap { productID in
+                products.first(where: { $0.id == productID })
+            }
             await refreshEntitlements()
-            if product == nil {
+            if product == nil && subscriptionProducts.isEmpty {
                 statusMessage = "Professional purchase is not configured yet."
             }
         } catch {
@@ -172,6 +197,14 @@ final class PurchaseService: ObservableObject {
             return
         }
 
+        await purchase(product)
+#else
+        openStoreVersion()
+#endif
+    }
+
+#if APP_STORE
+    func purchase(_ product: Product) async {
         isPurchasing = true
         defer { isPurchasing = false }
 
@@ -193,10 +226,8 @@ final class PurchaseService: ObservableObject {
         } catch {
             statusMessage = "Purchase could not be completed."
         }
-#else
-        openStoreVersion()
-#endif
     }
+#endif
 
     func restorePurchases() async {
 #if APP_STORE
@@ -220,6 +251,11 @@ final class PurchaseService: ObservableObject {
         NSWorkspace.shared.open(url)
     }
 
+    func openManageSubscriptions() {
+        guard let url = URL(string: "https://apps.apple.com/account/subscriptions") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     private func setStatus(_ message: String.LocalizationValue) {
         statusMessage = message
     }
@@ -227,16 +263,65 @@ final class PurchaseService: ObservableObject {
 #if APP_STORE
     private func refreshEntitlements() async {
         var hasPro = false
+        var hasLifetimePro = false
+        var latestSubscriptionExpiry: Date?
+        var latestSubscriptionProductID: String?
+
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? Self.verified(result),
-                  transaction.productID == AppConfig.proProductID,
+                  AppConfig.proProductIDs.contains(transaction.productID),
                   transaction.revocationDate == nil else {
                 continue
             }
             hasPro = true
-            break
+            if transaction.productID == AppConfig.proProductID {
+                hasLifetimePro = true
+            } else if let expirationDate = transaction.expirationDate,
+                      latestSubscriptionExpiry == nil || expirationDate > latestSubscriptionExpiry! {
+                latestSubscriptionExpiry = expirationDate
+                latestSubscriptionProductID = transaction.productID
+            } else if latestSubscriptionProductID == nil {
+                latestSubscriptionProductID = transaction.productID
+            }
         }
         isProUnlocked = hasPro
+        if hasLifetimePro {
+            activeProProductID = AppConfig.proProductID
+            proEntitlementKind = .lifetime
+        } else if let latestSubscriptionProductID {
+            activeProProductID = latestSubscriptionProductID
+            proEntitlementKind = Self.entitlementKind(for: latestSubscriptionProductID)
+        } else {
+            activeProProductID = nil
+            proEntitlementKind = .none
+        }
+        scheduleEntitlementExpiryRefresh(
+            at: hasLifetimePro ? nil : latestSubscriptionExpiry
+        )
+    }
+
+    private static func entitlementKind(for productID: String) -> ProEntitlementKind {
+        switch productID {
+        case AppConfig.proMonthlySubscriptionProductID:
+            return .monthlySubscription
+        case AppConfig.proYearlySubscriptionProductID:
+            return .yearlySubscription
+        default:
+            return .subscription
+        }
+    }
+
+    private func scheduleEntitlementExpiryRefresh(at expirationDate: Date?) {
+        entitlementExpiryRefreshTask?.cancel()
+        guard let expirationDate else { return }
+
+        let interval = max(0, expirationDate.timeIntervalSinceNow + 1)
+        let nanoseconds = UInt64(interval * 1_000_000_000)
+        entitlementExpiryRefreshTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard !Task.isCancelled else { return }
+            await self?.refresh()
+        }
     }
 
     nonisolated private static func verified<T>(_ result: VerificationResult<T>) throws -> T {

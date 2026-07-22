@@ -7,8 +7,21 @@ struct AppConfig {
     /// Mac App Store URL for the Store-distributed build.
     static let macAppStoreURL = "https://apps.apple.com/cn/app/id6784604835?mt=12"
 
-    /// Placeholder StoreKit product ID for the one-time Pro unlock.
+    /// StoreKit product ID for the one-time Professional unlock.
     static let proProductID = "com.ct106.browsync.pro"
+
+    /// StoreKit product IDs for auto-renewable Professional subscriptions.
+    /// Create both products in the same subscription group in App Store Connect.
+    static let proMonthlySubscriptionProductID = "com.ct106.browsync.pro.monthly"
+    static let proYearlySubscriptionProductID = "com.ct106.browsync.pro.yearly"
+
+    static let proSubscriptionProductIDs: Set<String> = [
+        proMonthlySubscriptionProductID,
+        proYearlySubscriptionProductID
+    ]
+
+    static let proProductIDs: Set<String> = Set([proProductID])
+        .union(proSubscriptionProductIDs)
 
     /// Chrome extension Web Store URL.
     static let chromiumExtensionWebStoreURL = "https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh"

@@ -508,3 +508,17 @@
 "Please open this browser and ensure the BrowSync extension is active." = "Bitte öffnen Sie diesen Browser und stellen Sie sicher, dass die BrowSync-Erweiterung aktiv ist.";
 "Extension Offline" = "Erweiterung offline";
 "The BrowSync extension in %@ appears offline. Open %@ now?" = "Die BrowSync-Erweiterung in %@ scheint offline zu sein. %@ jetzt öffnen?";
+
+/* Professional subscriptions */
+"Subscription" = "Abonnement";
+"Choose monthly or yearly access to BrowSync Professional. Subscriptions renew automatically and can be cancelled anytime in your App Store account settings." = "Wählen Sie monatlichen oder jährlichen Zugang zu BrowSync Professional. Abonnements verlängern sich automatisch und können jederzeit in Ihren App-Store-Kontoeinstellungen gekündigt werden.";
+"Professional subscription is not configured yet." = "Das Professional-Abonnement ist noch nicht konfiguriert.";
+"Subscriptions are available in the App Store version." = "Abonnements sind in der App-Store-Version verfügbar.";
+"Manage Subscriptions" = "Abonnements verwalten";
+"Subscribe - %@" = "Abonnieren - %@";
+"Monthly subscription" = "Monatliches Abonnement";
+"Yearly subscription" = "Jaehrliches Abonnement";
+"Active subscription" = "Aktives Abonnement";
+"Current purchase: %@" = "Aktueller Kauf: %@";
+"Current Purchase" = "Aktueller Kauf";
+"Current Plan" = "Aktueller Tarif";

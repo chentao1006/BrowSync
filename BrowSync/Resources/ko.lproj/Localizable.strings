@@ -510,3 +510,17 @@
 "Please open this browser and ensure the BrowSync extension is active." = "이 브라우저를 열고 BrowSync 확장 프로그램이 활성화되어 있는지 확인하세요.";
 "Extension Offline" = "확장 프로그램 오프라인";
 "The BrowSync extension in %@ appears offline. Open %@ now?" = "%@의 BrowSync 확장 프로그램이 오프라인 상태로 보입니다. 지금 %@을(를) 열까요?";
+
+/* Professional subscriptions */
+"Subscription" = "구독";
+"Choose monthly or yearly access to BrowSync Professional. Subscriptions renew automatically and can be cancelled anytime in your App Store account settings." = "BrowSync Professional을 월간 또는 연간으로 구독하세요. 구독은 자동으로 갱신되며 App Store 계정 설정에서 언제든지 취소할 수 있습니다.";
+"Professional subscription is not configured yet." = "Professional 구독이 아직 설정되지 않았습니다.";
+"Subscriptions are available in the App Store version." = "구독은 App Store 버전에서 이용할 수 있습니다.";
+"Manage Subscriptions" = "구독 관리";
+"Subscribe - %@" = "구독 - %@";
+"Monthly subscription" = "월간 구독";
+"Yearly subscription" = "연간 구독";
+"Active subscription" = "활성 구독";
+"Current purchase: %@" = "현재 구매: %@";
+"Current Purchase" = "현재 구매";
+"Current Plan" = "현재 요금제";

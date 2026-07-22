@@ -578,3 +578,17 @@
 "Bookmark Sync Failed" = "书签同步失败";
 "The selected folder for %@ no longer exists: %@" = "%@ 所选文件夹已不存在：%@";
 "Selected folder not found: %@" = "所选文件夹不存在：%@";
+
+/* 专业版订阅 */
+"Subscription" = "订阅";
+"Choose monthly or yearly access to BrowSync Professional. Subscriptions renew automatically and can be cancelled anytime in your App Store account settings." = "可按月或按年订阅 BrowSync 专业版。订阅会自动续费，你可以随时在 App Store 账户设置中取消。";
+"Professional subscription is not configured yet." = "专业版订阅项目尚未配置。";
+"Subscriptions are available in the App Store version." = "订阅仅在 App Store 版本中提供。";
+"Manage Subscriptions" = "管理订阅";
+"Subscribe - %@" = "订阅 - %@";
+"Monthly subscription" = "月度订阅";
+"Yearly subscription" = "年度订阅";
+"Active subscription" = "有效订阅";
+"Current purchase: %@" = "当前购买：%@";
+"Current Purchase" = "当前购买";
+"Current Plan" = "当前方案";

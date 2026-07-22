@@ -550,3 +550,17 @@
 "Bookmark Sync Failed" = "Bookmark Sync Failed";
 "The selected folder for %@ no longer exists: %@" = "The selected folder for %@ no longer exists: %@";
 "Selected folder not found: %@" = "Selected folder not found: %@";
+
+/* Professional subscriptions */
+"Subscription" = "Subscription";
+"Choose monthly or yearly access to BrowSync Professional. Subscriptions renew automatically and can be cancelled anytime in your App Store account settings." = "Choose monthly or yearly access to BrowSync Professional. Subscriptions renew automatically and can be cancelled anytime in your App Store account settings.";
+"Professional subscription is not configured yet." = "Professional subscription is not configured yet.";
+"Subscriptions are available in the App Store version." = "Subscriptions are available in the App Store version.";
+"Manage Subscriptions" = "Manage Subscriptions";
+"Subscribe - %@" = "Subscribe - %@";
+"Monthly subscription" = "Monthly subscription";
+"Yearly subscription" = "Yearly subscription";
+"Active subscription" = "Active subscription";
+"Current purchase: %@" = "Current purchase: %@";
+"Current Purchase" = "Current Purchase";
+"Current Plan" = "Current Plan";

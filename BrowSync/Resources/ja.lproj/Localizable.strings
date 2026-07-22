@@ -510,3 +510,17 @@
 "Please open this browser and ensure the BrowSync extension is active." = "このブラウザを開き、BrowSync 拡張機能が有効になっていることを確認してください。";
 "Extension Offline" = "拡張機能がオフライン";
 "The BrowSync extension in %@ appears offline. Open %@ now?" = "%@ の BrowSync 拡張機能はオフラインのようです。今すぐ %@ を開きますか？";
+
+/* Professional subscriptions */
+"Subscription" = "サブスクリプション";
+"Choose monthly or yearly access to BrowSync Professional. Subscriptions renew automatically and can be cancelled anytime in your App Store account settings." = "BrowSync Professional の月額または年額プランを選択できます。サブスクリプションは自動更新され、App Store アカウント設定でいつでも解約できます。";
+"Professional subscription is not configured yet." = "Professional のサブスクリプションはまだ設定されていません。";
+"Subscriptions are available in the App Store version." = "サブスクリプションは App Store 版で利用できます。";
+"Manage Subscriptions" = "サブスクリプションを管理";
+"Subscribe - %@" = "登録 - %@";
+"Monthly subscription" = "月額サブスクリプション";
+"Yearly subscription" = "年額サブスクリプション";
+"Active subscription" = "有効なサブスクリプション";
+"Current purchase: %@" = "現在の購入: %@";
+"Current Purchase" = "現在の購入";
+"Current Plan" = "現在のプラン";
