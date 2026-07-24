@@ -238,6 +238,7 @@ async function handleIncoming(message) {
           if (raw.websiteListPolicy !== undefined) settings.websiteListPolicy = raw.websiteListPolicy;
           if (raw.websiteSettings !== undefined) settings.websiteSettings = raw.websiteSettings;
           if (raw.installedBrowsers !== undefined) settings.installedBrowsers = raw.installedBrowsers;
+          if (raw.installedBrowserDetails !== undefined) settings.installedBrowserDetails = raw.installedBrowserDetails;
           if (raw.syncDisabledDomains !== undefined) settings.syncDisabledDomains = raw.syncDisabledDomains;
           chrome.storage.local.set({ appSettings: settings }).then(async () => {
             // A service worker can receive settings after the first navigation event.

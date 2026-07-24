@@ -37,44 +37,6 @@ const toggleTabSharing = document.getElementById('toggleTabSharing');
 const btnSetRouterDefault = document.getElementById('btnSetRouterDefault');
 const textIsRouterDefault = document.getElementById('textIsRouterDefault');
 const btnMoreSettings = document.getElementById('btnMoreSettings');
-const browserNames = {
-  safari: 'Safari',
-  chrome: 'Chrome',
-  edge: 'Edge',
-  brave: 'Brave',
-  firefox: 'Firefox',
-  vivaldi: 'Vivaldi',
-  opera: 'Opera',
-  yandex: 'Yandex',
-  arc: 'Arc',
-  orion: 'Orion',
-  helium: 'Helium',
-  browseros: 'BrowserOS'
-};
-
-const iconUrls = {
-  safari: 'https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/safari/safari_128x128.png',
-  chrome: 'https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/chrome/chrome_128x128.png',
-  edge: 'https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/edge/edge_128x128.png',
-  brave: 'https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/brave/brave_128x128.png',
-  firefox: 'https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/firefox/firefox_128x128.png',
-  vivaldi: 'https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/vivaldi/vivaldi_128x128.png',
-  opera: 'https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/opera/opera_128x128.png',
-  yandex: 'https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/yandex/yandex_128x128.png',
-  arc: 'https://www.google.com/s2/favicons?domain=arc.net&sz=64',
-  orion: 'https://www.google.com/s2/favicons?domain=browser.kagi.com&sz=64',
-  helium: 'https://www.google.com/s2/favicons?domain=helium.computer&sz=64',
-  browseros: 'https://www.google.com/s2/favicons?domain=browseros.app&sz=64'
-};
-
-function getRemoteIconUrl(browserId) {
-  const b = browserId.toLowerCase();
-  if (iconUrls[b]) return iconUrls[b];
-  return `https://www.google.com/s2/favicons?domain=${b}.com&sz=64`;
-}
-
-const localIcons = ['chrome', 'edge', 'firefox', 'safari'];
-
 function detectCurrentBrowserId() {
   const ua = navigator.userAgent.toLowerCase();
   if (ua.includes('firefox/')) return 'firefox';
@@ -90,28 +52,52 @@ function detectCurrentBrowserId() {
   return 'chrome';
 }
 
-function renderOpenInBrowsers(installedBrowsers, currentBrowserId, currentUrl) {
+function displayBrowserName(browserId, detail) {
+  if (detail?.displayName?.trim()) return detail.displayName.trim();
+  return String(browserId).replace(/[-_]+/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function renderOpenInBrowsers(installedBrowsers, currentBrowserId, currentUrl, installedBrowserDetails = []) {
   const section = document.getElementById('openInBrowserSection');
   const list = document.getElementById('openInBrowserList');
   if (!section || !list) return;
 
-  list.innerHTML = '';
   if (!currentUrl || !/^https?:\/\//i.test(currentUrl)) {
+    list.innerHTML = '';
+    delete list.dataset.renderKey;
     section.style.display = 'none';
     return;
   }
 
   const targets = (installedBrowsers || []).filter(browser => browser !== currentBrowserId);
   if (targets.length === 0) {
+    list.innerHTML = '';
+    delete list.dataset.renderKey;
     section.style.display = 'none';
     return;
   }
 
+  const detailsById = new Map(installedBrowserDetails.map(detail => [detail.id, detail]));
+  const renderKey = JSON.stringify({
+    currentUrl,
+    targets: targets.map(browser => {
+      const detail = detailsById.get(browser) || {};
+      return [browser, detail.displayName || '', detail.iconDataURL || ''];
+    })
+  });
+  if (list.dataset.renderKey === renderKey) {
+    section.style.display = 'block';
+    return;
+  }
+
+  list.innerHTML = '';
+  list.dataset.renderKey = renderKey;
   for (const browser of targets) {
+    const detail = detailsById.get(browser) || {};
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'browser-open-btn';
-    button.title = browserNames[browser] || browser;
+    button.title = displayBrowserName(browser, detail);
     button.setAttribute('aria-label', button.title);
     button.addEventListener('click', () => {
       chrome.runtime.sendMessage({
@@ -122,14 +108,7 @@ function renderOpenInBrowsers(installedBrowsers, currentBrowserId, currentUrl) {
     });
 
     const icon = document.createElement('img');
-    const lowerBrowser = browser.toLowerCase();
-    
-    if (localIcons.includes(lowerBrowser)) {
-      icon.src = `../icons/${lowerBrowser}.png`;
-    } else {
-      icon.src = getRemoteIconUrl(browser);
-    }
-    
+    icon.src = detail.iconDataURL || '../icons/icon16.png';
     icon.alt = '';
     icon.onerror = () => { 
       icon.onerror = null;
@@ -199,7 +178,7 @@ async function loadSettings() {
       siteSyncSection.style.display = 'block'; // ALWAYS SHOW
       const url = tabs.length > 0 ? tabs[0].url : null;
       let activeHostname = null;
-      renderOpenInBrowsers(appSettings.installedBrowsers || ['safari', 'chrome'], browserId, url);
+      renderOpenInBrowsers(appSettings.installedBrowsers || ['safari', 'chrome'], browserId, url, appSettings.installedBrowserDetails);
 
       if (url && /^https?:/i.test(url)) {
         try {
@@ -284,12 +263,13 @@ async function loadSettings() {
       
       if (selectSiteSourceBrowser) {
         const installedBrowsers = appSettings.installedBrowsers || ['safari', 'chrome'];
+        const detailsById = new Map((appSettings.installedBrowserDetails || []).map(detail => [detail.id, detail]));
         selectSiteSourceBrowser.innerHTML = '';
 
         installedBrowsers.forEach(b => {
           const opt = document.createElement('option');
           opt.value = b;
-          opt.textContent = browserNames[b] || b;
+          opt.textContent = displayBrowserName(b, detailsById.get(b));
           selectSiteSourceBrowser.appendChild(opt);
         });
         
@@ -408,7 +388,8 @@ const remoteTabsList = document.getElementById('remoteTabsList');
 
 async function renderRemoteTabs() {
   const tabSharingSection = document.getElementById('tabSharingSection');
-  const { remoteTabs } = await chrome.storage.local.get('remoteTabs');
+  const { remoteTabs, appSettings } = await chrome.storage.local.get(['remoteTabs', 'appSettings']);
+  const detailsById = new Map((appSettings?.installedBrowserDetails || []).map(detail => [detail.id, detail]));
   if (!remoteTabsList) return;
 
   remoteTabsList.innerHTML = '';
@@ -444,14 +425,7 @@ async function renderRemoteTabs() {
 
       const icon = document.createElement('img');
       icon.className = 'remote-tab-icon';
-      const lowerBrowser = browser.toLowerCase();
-      
-      if (localIcons.includes(lowerBrowser)) {
-        icon.src = `../icons/${lowerBrowser}.png`;
-      } else {
-        icon.src = getRemoteIconUrl(browser);
-      }
-      
+      icon.src = detailsById.get(browser)?.iconDataURL || '../icons/icon16.png';
       icon.onerror = () => { 
         icon.onerror = null;
         icon.src = '../icons/icon16.png'; 

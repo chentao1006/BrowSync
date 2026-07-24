@@ -4,6 +4,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import AppKit
 
 @MainActor
 final class AppState: ObservableObject {
@@ -321,6 +322,10 @@ final class AppState: ObservableObject {
             return updated
         }
         isScanning = false
+        // Extension clients may connect before the initial scan completes.
+        // Re-send settings so their browser icon metadata reflects the actual
+        // installed applications rather than an empty startup snapshot.
+        broadcastSettings()
     }
 
     func updateConnectionStatus(for browser: Browser, connected: Bool) {
@@ -698,6 +703,15 @@ extension AppState: DaemonServerDelegate {
         
         let installedBrowsers = browserInfos.filter { $0.isInstalled }.map { $0.browser.rawValue }
         payload["installedBrowsers"] = AnyCodable(installedBrowsers)
+        let installedBrowserDetails: [[String: AnyCodable]] = browserInfos.compactMap { info in
+            guard info.isInstalled, let appURL = info.appURL else { return nil }
+            return [
+                "id": AnyCodable(info.browser.rawValue),
+                "displayName": AnyCodable(browserDisplayName(for: appURL)),
+                "iconDataURL": AnyCodable(browserIconDataURL(for: appURL) ?? "")
+            ]
+        }
+        payload["installedBrowserDetails"] = AnyCodable(installedBrowserDetails)
         var bookmarkMap: [String: AnyCodable] = [:]
         for b in Browser.allCases {
             bookmarkMap[b.rawValue] = AnyCodable(isBookmarkSync.contains(b))
@@ -731,6 +745,35 @@ extension AppState: DaemonServerDelegate {
         } else {
             daemon.broadcast(msg)
         }
+    }
+
+    private func browserIconDataURL(for appURL: URL) -> String? {
+        let side = CGFloat(64)
+        let icon = NSWorkspace.shared.icon(forFile: appURL.path)
+        let image = NSImage(size: NSSize(width: side, height: side))
+        image.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        icon.draw(in: NSRect(x: 0, y: 0, width: side, height: side))
+        image.unlockFocus()
+
+        guard let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let png = bitmap.representation(using: .png, properties: [:]) else {
+            return nil
+        }
+        return "data:image/png;base64,\(png.base64EncodedString())"
+    }
+
+    private func browserDisplayName(for appURL: URL) -> String {
+        if let bundle = Bundle(url: appURL) {
+            if let name = bundle.localizedInfoDictionary?["CFBundleDisplayName"] as? String, !name.isEmpty {
+                return name
+            }
+            if let name = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String, !name.isEmpty {
+                return name
+            }
+        }
+        return appURL.deletingPathExtension().lastPathComponent
     }
 
     private func effectiveSyncBrowsers(_ browsers: Set<Browser>, isProUnlocked: Bool) -> Set<Browser> {
