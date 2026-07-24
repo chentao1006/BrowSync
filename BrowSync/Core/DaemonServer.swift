@@ -407,28 +407,26 @@ final class DaemonServer: ObservableObject {
         var realBrowserId = browserRaw
         let allBrowsers = Browser.standardBrowsers + AppState.shared.settingsService.general.customBrowsers
         
-        // Disambiguate "chrome" fallback (used by Arc and other unknown Chromium browsers)
+        // Chromium-derived browsers may expose an indistinguishable Chrome UA
+        // to an extension service worker. Resolve that fallback against the
+        // complete browser registry, not a hand-picked subset of browsers.
         if realBrowserId == "chrome" {
             let runningChromiumBrowsers = allBrowsers.filter { browser in
-                // Only consider browsers that use Chromium extensions (i.e. not Safari/Firefox)
-                // and where the extension sends "chrome" (Edge, Brave, etc. send their own IDs, but we can just check all running just in case)
-                browser.extensionBasePath != nil &&
+                // Safari and Firefox have their own extension transports. Every
+                // other registered browser (including custom ones) is eligible
+                // for the shared Chromium extension transport.
                 browser != .firefox && browser != .safari &&
                 !NSWorkspace.shared.runningApplications.filter({ $0.bundleIdentifier == browser.bundleIdentifier || $0.bundleIdentifier?.hasPrefix(browser.bundleIdentifier + ".") == true }).isEmpty
             }
+
+            let unconnectedCandidates = runningChromiumBrowsers.filter { !self.connectedBrowsers.contains($0) }
             
-            // Exclude browsers that we know detect themselves accurately in service-worker.js
-            let ambiguousRunning = runningChromiumBrowsers.filter { $0 == .chrome || $0 == .arc || AppState.shared.settingsService.general.customBrowsers.contains($0) }
-            
-            if ambiguousRunning.count == 1 {
-                realBrowserId = ambiguousRunning[0].id
+            if runningChromiumBrowsers.count == 1 {
+                realBrowserId = runningChromiumBrowsers[0].id
                 logger.info("Daemon: Inferred real browser ID from single running app: \(realBrowserId)")
-            } else if ambiguousRunning.count > 1 {
-                let unconnected = ambiguousRunning.filter { !self.connectedBrowsers.contains($0) }
-                if unconnected.count == 1 {
-                    realBrowserId = unconnected[0].id
-                    logger.info("Daemon: Inferred real browser ID from single unconnected running app: \(realBrowserId)")
-                }
+            } else if unconnectedCandidates.count == 1 {
+                realBrowserId = unconnectedCandidates[0].id
+                logger.info("Daemon: Inferred real browser ID from single unconnected running app: \(realBrowserId)")
             }
         }
         guard let browser = allBrowsers.first(where: { $0.id == realBrowserId }) else {
