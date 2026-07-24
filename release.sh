@@ -114,6 +114,11 @@ else
     zip -r "../${RESULT_DIR}/FirefoxExtension-v${NEW_VERSION}.zip" * -x "*.DS_Store" -x "*.git*" > /dev/null
     cd ..
 
+    downloads_dir="${HOME}/Downloads"
+    cp -f "${RESULT_DIR}/ChromiumExtension-v${NEW_VERSION}.zip" "$downloads_dir/"
+    cp -f "${RESULT_DIR}/FirefoxExtension-v${NEW_VERSION}.zip" "$downloads_dir/"
+    echo "✅ Extension packages copied to $downloads_dir"
+
     # 3. Run Local Build
     chmod +x package.sh
     ./package.sh "$NEW_VERSION"
