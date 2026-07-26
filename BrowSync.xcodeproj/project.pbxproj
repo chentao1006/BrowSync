@@ -30,6 +30,7 @@
 		471BC3FCB2289A3EF8965C4A /* BackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F4144B8AE085C797A52208 /* BackupService.swift */; };
 		486B470B7CD01D600B46673E /* background.js in Resources */ = {isa = PBXBuildFile; fileRef = 9F1C6061070A3577FA35F5EF /* background.js */; };
 		4AEFF7C4E3DA888A630853AA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5800150E203500FC40165A3D /* Assets.xcassets */; };
+		F1A1C0A00000000000000001 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = F1A1C0A00000000000000003 /* AppIcon.icon */; };
 		4C77B47951FD2837B0AC9C8A /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4BE22F2B94BE5B640CCDB1E /* SafariWebExtensionHandler.swift */; };
 		4D7F6E147E32081A73EC6A13 /* AnalyticsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877F489CC3C5152086D3B088 /* AnalyticsManager.swift */; };
 		50B07349BAD8F3A740432E15 /* StateSyncTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A871D9385C69C6022679A1A6 /* StateSyncTabView.swift */; };
@@ -71,6 +72,7 @@
 		A8040021DF83B35FF824C029 /* SyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A471324A48AEDB45FF4BA73 /* SyncModels.swift */; };
 		B2F785D247654F6B9656917F /* SyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82D553C4CA2861D50758366B /* SyncView.swift */; };
 		B3CA3D25584BA151347395DA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5800150E203500FC40165A3D /* Assets.xcassets */; };
+		F1A1C0A00000000000000002 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = F1A1C0A00000000000000003 /* AppIcon.icon */; };
 		B5CDD815091ED6E0DF1AC7AF /* icons in Resources */ = {isa = PBXBuildFile; fileRef = 5DE281CEF76E46A6A199A351 /* icons */; };
 		B68238D5A7DD94E2C751A4EE /* content.js in Resources */ = {isa = PBXBuildFile; fileRef = C92E6B86E06DBA3FAF458AA8 /* content.js */; };
 		B73BEA26F240001A92A704D8 /* SettingsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93D2A20D8B97836960D5A19A /* SettingsService.swift */; };
@@ -165,6 +167,7 @@
 		4A471324A48AEDB45FF4BA73 /* SyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncModels.swift; sourceTree = "<group>"; };
 		500DD7EB4DC5567A03D6014D /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		5800150E203500FC40165A3D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F1A1C0A00000000000000003 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		5DE281CEF76E46A6A199A351 /* icons */ = {isa = PBXFileReference; lastKnownFileType = folder; name = icons; path = SafariExtension/Resources/icons; sourceTree = SOURCE_ROOT; };
 		5E94CB565A48E6F14B1C0821 /* SyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncService.swift; sourceTree = "<group>"; };
 		705139BD1CAEFD064FC5E472 /* BrowSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BrowSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -268,6 +271,7 @@
 			children = (
 				D0A7B0030000000000000001 /* disabled-domains.json */,
 				5800150E203500FC40165A3D /* Assets.xcassets */,
+				F1A1C0A00000000000000003 /* AppIcon.icon */,
 				5385B997A76CEA70148BB576 /* InfoPlist.strings */,
 				2F278BFDA3B2DF653CD4E4A2 /* Localizable.strings */,
 				2D7420E5C590710BF437D49C /* Marketing */,
@@ -530,6 +534,7 @@
 			files = (
 				D0A7B0010000000000000001 /* disabled-domains.json in Resources */,
 				4AEFF7C4E3DA888A630853AA /* Assets.xcassets in Resources */,
+				F1A1C0A00000000000000001 /* AppIcon.icon in Resources */,
 				1E4AB9EFC1355B9B65F0D1C3 /* InfoPlist.strings in Resources */,
 				CBCEAC4D22958D09E0E94828 /* Localizable.strings in Resources */,
 				89232C9DCCB327E8228DAE9A /* chrome-web-store-badge.png in Resources */,
@@ -572,6 +577,7 @@
 			files = (
 				D0A7B0020000000000000001 /* disabled-domains.json in Resources */,
 				B3CA3D25584BA151347395DA /* Assets.xcassets in Resources */,
+				F1A1C0A00000000000000002 /* AppIcon.icon in Resources */,
 				7DE05CB0C0717AE68DF19152 /* InfoPlist.strings in Resources */,
 				0A63D7EDCF55B55E811CB8EE /* Localizable.strings in Resources */,
 				6275CEA83CD26B823FFA51D9 /* chrome-web-store-badge.png in Resources */,
@@ -737,6 +743,7 @@
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = BrowSync.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -859,6 +866,7 @@
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = BrowSyncAppStore.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -884,6 +892,7 @@
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = BrowSync.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -993,6 +1002,7 @@
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = BrowSyncAppStore.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;

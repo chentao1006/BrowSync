@@ -431,6 +431,7 @@ struct MenuBarLabelView: View {
 
     var body: some View {
         Image("MenuBarIcon")
+            .renderingMode(.template)
             .onAppear {
                 appState.openWindowAction = { id in
                     openWindow(id: id)
