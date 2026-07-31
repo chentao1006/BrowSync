@@ -82,11 +82,16 @@
   });
 
   function showStateSyncUpdateBanner() {
-    if (document.getElementById('browsync-state-sync-banner')) return;
+    const existingBanner = document.getElementById('browsync-state-sync-banner');
+    if (existingBanner) {
+      clearTimeout(existingBanner.browsyncDismissTimer);
+      restartStateSyncBannerTimer(existingBanner);
+      return;
+    }
 
     const banner = document.createElement('div');
     banner.id = 'browsync-state-sync-banner';
-    banner.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:12px;max-width:calc(100vw - 24px);padding:10px 12px 10px 16px;border-radius:10px;background:#1f2937;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.24);font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;';
+    banner.style.cssText = 'position:fixed;top:12px;right:12px;z-index:2147483647;display:flex;align-items:center;gap:8px;max-width:min(360px,calc(100vw - 24px));padding:8px 10px;border-radius:8px;background:rgba(31,41,55,.78);color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.16);font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;';
 
     const localized = (key, fallback) => api.i18n?.getMessage(key) || fallback;
     const text = document.createElement('span');
@@ -94,18 +99,73 @@
     banner.appendChild(text);
 
     const reload = document.createElement('button');
-    reload.textContent = localized('stateSyncReload', 'Reload');
-    reload.style.cssText = 'border:0;border-radius:7px;padding:6px 10px;background:#fff;color:#111827;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap;';
+    reload.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M17.65 6.35A7.96 7.96 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8S7.58 20 12 20c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35Z"/></svg>';
+    reload.title = localized('stateSyncReload', 'Reload');
+    reload.setAttribute('aria-label', reload.title);
+    reload.style.cssText = 'border:0;border-radius:6px;width:26px;height:26px;padding:0;display:grid;place-items:center;flex:none;background:transparent;color:#f3f4f6;cursor:pointer!important;';
     reload.addEventListener('click', () => location.reload());
     banner.appendChild(reload);
 
     const dismiss = document.createElement('button');
-    dismiss.textContent = localized('stateSyncLater', 'Later');
-    dismiss.style.cssText = 'border:0;background:transparent;color:#d1d5db;font:inherit;cursor:pointer;white-space:nowrap;';
+    dismiss.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>';
+    dismiss.title = localized('stateSyncLater', 'Later');
+    dismiss.setAttribute('aria-label', dismiss.title);
+    dismiss.style.cssText = 'border:0;width:26px;height:26px;padding:0;display:grid;place-items:center;flex:none;background:transparent;color:#e5e7eb;cursor:pointer!important;';
     dismiss.addEventListener('click', () => banner.remove());
     banner.appendChild(dismiss);
 
+    const progress = document.createElement('div');
+    progress.style.cssText = 'position:absolute;right:0;bottom:0;left:0;height:2px;overflow:hidden;border-radius:0 0 8px 8px;background:rgba(255,255,255,.16);';
+    const progressBar = document.createElement('div');
+    progressBar.className = 'browsync-state-sync-progress';
+    progressBar.style.cssText = 'width:100%;height:100%;background:rgba(255,255,255,.7);';
+    progress.appendChild(progressBar);
+    banner.appendChild(progress);
+
     (document.body || document.documentElement).appendChild(banner);
+    restartStateSyncBannerTimer(banner);
+    banner.addEventListener('mouseenter', () => pauseStateSyncBannerTimer(banner));
+    banner.addEventListener('mouseleave', () => resumeStateSyncBannerTimer(banner));
+  }
+
+  function restartStateSyncBannerTimer(banner) {
+    clearTimeout(banner.browsyncDismissTimer);
+    banner.browsyncRemainingMs = 10000;
+    const progressBar = banner.querySelector('.browsync-state-sync-progress');
+    if (progressBar) {
+      progressBar.style.transition = 'none';
+      progressBar.style.width = '100%';
+    }
+    resumeStateSyncBannerTimer(banner);
+  }
+
+  function pauseStateSyncBannerTimer(banner) {
+    if (!banner.browsyncDismissTimer) return;
+    clearTimeout(banner.browsyncDismissTimer);
+    banner.browsyncDismissTimer = null;
+    banner.browsyncRemainingMs = Math.max(0, banner.browsyncRemainingMs - (Date.now() - banner.browsyncTimerStartedAt));
+    const progressBar = banner.querySelector('.browsync-state-sync-progress');
+    if (progressBar) {
+      progressBar.style.width = getComputedStyle(progressBar).width;
+      progressBar.style.transition = 'none';
+    }
+  }
+
+  function resumeStateSyncBannerTimer(banner) {
+    const remaining = banner.browsyncRemainingMs;
+    if (!remaining) {
+      banner.remove();
+      return;
+    }
+    banner.browsyncTimerStartedAt = Date.now();
+    banner.browsyncDismissTimer = setTimeout(() => banner.remove(), remaining);
+    const progressBar = banner.querySelector('.browsync-state-sync-progress');
+    if (progressBar) {
+      requestAnimationFrame(() => {
+        progressBar.style.transition = `width ${remaining}ms linear`;
+        progressBar.style.width = '0';
+      });
+    }
   }
 
   function applyStorageItems(storage, items) {
