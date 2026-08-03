@@ -4,7 +4,9 @@ import Aptabase
 @MainActor
 final class AnalyticsManager {
     static let shared = AnalyticsManager()
+    private static let lastDailyHeartbeatDateKey = "lastDailyHeartbeatDate"
     private var isInitialized = false
+    private var dailyHeartbeatTimer: Timer?
     
     private init() {}
     
@@ -19,6 +21,8 @@ final class AnalyticsManager {
         if settings.analyticsEnabled {
             trackEvent("App Started")
         }
+
+        scheduleDailyHeartbeat()
     }
     
     func trackEvent(_ eventName: String, props: [String: Any]? = nil) {
@@ -42,5 +46,39 @@ final class AnalyticsManager {
         // The SDK normally flushes on its active-state timer, but menu-bar apps
         // can initialize after that notification has already fired.
         Aptabase.shared.flush()
+    }
+
+    /// Sends a lightweight daily liveness event independently from optional usage analytics.
+    private func scheduleDailyHeartbeat() {
+        dailyHeartbeatTimer?.invalidate()
+
+        let calendar = Calendar.autoupdatingCurrent
+        let now = Date()
+        guard let nextMidnight = calendar.nextDate(
+            after: now,
+            matching: DateComponents(hour: 0, minute: 0, second: 0),
+            matchingPolicy: .nextTime
+        ) else {
+            return
+        }
+
+        dailyHeartbeatTimer = Timer(fire: nextMidnight, interval: 0, repeats: false) { [weak self] _ in
+            self?.sendDailyHeartbeat()
+        }
+        RunLoop.main.add(dailyHeartbeatTimer!, forMode: .common)
+    }
+
+    private func sendDailyHeartbeat() {
+        let calendar = Calendar.autoupdatingCurrent
+        let today = calendar.startOfDay(for: Date())
+        let lastHeartbeat = UserDefaults.standard.object(forKey: Self.lastDailyHeartbeatDateKey) as? Date
+
+        if lastHeartbeat.map({ calendar.isDate($0, inSameDayAs: today) }) != true {
+            Aptabase.shared.trackEvent("Daily Heartbeat")
+            Aptabase.shared.flush()
+            UserDefaults.standard.set(today, forKey: Self.lastDailyHeartbeatDateKey)
+        }
+
+        scheduleDailyHeartbeat()
     }
 }
