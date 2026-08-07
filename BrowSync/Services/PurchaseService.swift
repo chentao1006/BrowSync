@@ -105,6 +105,7 @@ final class PurchaseService: ObservableObject {
 #endif
     @Published private(set) var isLoading = false
     @Published private(set) var isPurchasing = false
+    @Published private(set) var purchasingProductID: String?
     @Published private(set) var statusMessage: String.LocalizationValue?
     @Published private(set) var proEntitlementKind: ProEntitlementKind = .none
     @Published private(set) var activeProProductID: String?
@@ -206,7 +207,11 @@ final class PurchaseService: ObservableObject {
 #if APP_STORE
     func purchase(_ product: Product) async {
         isPurchasing = true
-        defer { isPurchasing = false }
+        purchasingProductID = product.id
+        defer {
+            isPurchasing = false
+            purchasingProductID = nil
+        }
 
         do {
             let result = try await product.purchase()

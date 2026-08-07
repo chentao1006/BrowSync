@@ -524,3 +524,10 @@
 "Current purchase: %@" = "現在の購入: %@";
 "Current Purchase" = "現在の購入";
 "Current Plan" = "現在のプラン";
+"Subscription Terms" = "サブスクリプション利用規約";
+"Purchase Options" = "購入オプション";
+"Payment will be charged to your App Store account. Subscriptions renew automatically unless cancelled at least 24 hours before the end of the current period. You can manage or cancel subscriptions in your App Store account settings." = "支払いは App Store アカウントに請求されます。現在の期間が終了する少なくとも 24 時間前までに解約しない限り、サブスクリプションは自動更新されます。App Store アカウント設定で管理または解約できます。";
+"Terms of Use (EULA)" = "利用規約（EULA）";
+"Length: %@" = "期間：%@";
+"See App Store" = "App Store で見る";
+"day" = "日"; "days" = "日"; "week" = "週間"; "weeks" = "週間"; "month" = "か月"; "months" = "か月"; "year" = "年"; "years" = "年"; "period" = "期間";

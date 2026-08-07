@@ -524,3 +524,10 @@
 "Current purchase: %@" = "현재 구매: %@";
 "Current Purchase" = "현재 구매";
 "Current Plan" = "현재 요금제";
+"Subscription Terms" = "구독 약관";
+"Purchase Options" = "구매 옵션";
+"Payment will be charged to your App Store account. Subscriptions renew automatically unless cancelled at least 24 hours before the end of the current period. You can manage or cancel subscriptions in your App Store account settings." = "결제 금액은 App Store 계정으로 청구됩니다. 현재 기간 종료 최소 24시간 전까지 취소하지 않으면 구독은 자동으로 갱신됩니다. App Store 계정 설정에서 구독을 관리하거나 취소할 수 있습니다.";
+"Terms of Use (EULA)" = "이용 약관(EULA)";
+"Length: %@" = "기간: %@";
+"See App Store" = "App Store에서 보기";
+"day" = "일"; "days" = "일"; "week" = "주"; "weeks" = "주"; "month" = "개월"; "months" = "개월"; "year" = "년"; "years" = "년"; "period" = "기간";

@@ -7,6 +7,10 @@ struct AppConfig {
     /// Mac App Store URL for the Store-distributed build.
     static let macAppStoreURL = "https://apps.apple.com/cn/app/id6784604835?mt=12"
 
+    /// Legal links displayed alongside App Store subscription offers.
+    static let privacyPolicyURL = URL(string: "https://browsync.ct106.com/privacy.html")!
+    static let termsOfUseURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
+
     /// StoreKit product ID for the one-time Professional unlock.
     static let proProductID = "com.ct106.browsync.pro"
 

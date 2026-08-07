@@ -46,61 +46,6 @@ struct ProTabView: View {
             .padding(.vertical, 16)
 
             Form {
-                Section {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label {
-                            Text(String(localized: "One-time purchase", bundle: langBundle.bundle))
-                                .font(.headline)
-                        } icon: {
-                            Image(systemName: "sparkles")
-                        }
-
-                        Text(String(localized: "Unlock BrowSync Professional once and keep the professional features available on your Mac.", bundle: langBundle.bundle))
-                            .foregroundStyle(.secondary)
-
-                        purchaseActions
-
-#if APP_STORE
-                        if purchaseService.activeProProductID == AppConfig.proProductID {
-                            Text(String(format: String(localized: "Current purchase: %@", bundle: langBundle.bundle), String(localized: purchaseService.proEntitlementKind.title, bundle: langBundle.bundle)))
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.green)
-                        }
-#endif
-                    }
-                    .padding(.vertical, 4)
-                }
-
-                Section(String(localized: "Subscription", bundle: langBundle.bundle)) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(String(localized: "Choose monthly or yearly access to BrowSync Professional. Subscriptions renew automatically and can be cancelled anytime in your App Store account settings.", bundle: langBundle.bundle))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-#if APP_STORE
-                        if purchaseService.subscriptionProducts.isEmpty {
-                            Text(String(localized: "Professional subscription is not configured yet.", bundle: langBundle.bundle))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            ForEach(purchaseService.subscriptionProducts, id: \.id) { product in
-                                subscriptionRow(product)
-                            }
-
-                            Button(String(localized: "Manage Subscriptions", bundle: langBundle.bundle)) {
-                                purchaseService.openManageSubscriptions()
-                            }
-                            .font(.caption)
-                        }
-#else
-                        Text(String(localized: "Subscriptions are available in the App Store version.", bundle: langBundle.bundle))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-#endif
-                    }
-                    .padding(.vertical, 4)
-                }
-
                 Section(String(localized: "Feature Comparison", bundle: langBundle.bundle)) {
                     HStack {
                         Text(String(localized: "Feature", bundle: langBundle.bundle))
@@ -130,23 +75,74 @@ struct ProTabView: View {
                     }
                 }
 
-                Section(String(localized: "Included in Professional", bundle: langBundle.bundle)) {
-                    ForEach(ProFeature.allCases) { feature in
-                        HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: feature.systemImage)
-                                .frame(width: 22)
-                                .foregroundStyle(.blue)
-
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(String(localized: feature.title, bundle: langBundle.bundle))
-                                    .font(.headline)
-                                Text(String(localized: feature.description, bundle: langBundle.bundle))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+                Section(String(localized: "Purchase Options", bundle: langBundle.bundle)) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label {
+                            Text(String(localized: "One-time purchase", bundle: langBundle.bundle))
+                                .font(.headline)
+                        } icon: {
+                            Image(systemName: "sparkles")
                         }
-                        .padding(.vertical, 3)
+
+                        Text(String(localized: "Unlock BrowSync Professional once and keep the professional features available on your Mac.", bundle: langBundle.bundle))
+                            .foregroundStyle(.secondary)
+
+                        purchaseActions
+
+#if APP_STORE
+                        if purchaseService.activeProProductID == AppConfig.proProductID {
+                            Text(String(format: String(localized: "Current purchase: %@", bundle: langBundle.bundle), String(localized: purchaseService.proEntitlementKind.title, bundle: langBundle.bundle)))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.green)
+                        }
+#endif
+
+                        Divider()
+
+                        Text(String(localized: "Subscription", bundle: langBundle.bundle))
+                            .font(.headline)
+
+                        Text(String(localized: "Choose monthly or yearly access to BrowSync Professional. Subscriptions renew automatically and can be cancelled anytime in your App Store account settings.", bundle: langBundle.bundle))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+#if APP_STORE
+                        if purchaseService.subscriptionProducts.isEmpty {
+                            Text(String(localized: "Professional subscription is not configured yet.", bundle: langBundle.bundle))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(purchaseService.subscriptionProducts, id: \.id) { product in
+                                subscriptionRow(product)
+                            }
+
+                            Button(String(localized: "Manage Subscriptions", bundle: langBundle.bundle)) {
+                                purchaseService.openManageSubscriptions()
+                            }
+                            .font(.caption)
+                        }
+#else
+                        Text(String(localized: "Subscriptions are available in the App Store version.", bundle: langBundle.bundle))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+#endif
                     }
+                    .padding(.vertical, 4)
+                }
+
+                Section(String(localized: "Subscription Terms", bundle: langBundle.bundle)) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(String(localized: "Payment will be charged to your App Store account. Subscriptions renew automatically unless cancelled at least 24 hours before the end of the current period. You can manage or cancel subscriptions in your App Store account settings.", bundle: langBundle.bundle))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        HStack(spacing: 16) {
+                            Link(String(localized: "Privacy Policy", bundle: langBundle.bundle), destination: AppConfig.privacyPolicyURL)
+                            Link(String(localized: "Terms of Use (EULA)", bundle: langBundle.bundle), destination: AppConfig.termsOfUseURL)
+                        }
+                        .font(.caption)
+                    }
+                    .padding(.vertical, 4)
                 }
 
                 if let statusMessage = purchaseService.statusMessage {
@@ -209,7 +205,7 @@ struct ProTabView: View {
         if purchaseService.activeProProductID == AppConfig.proProductID {
             return String(localized: "Current Purchase", bundle: langBundle.bundle)
         }
-        if purchaseService.isPurchasing {
+        if purchaseService.purchasingProductID == AppConfig.proProductID {
             return String(localized: "Purchasing...", bundle: langBundle.bundle)
         }
         if let product = purchaseService.product {
@@ -224,6 +220,12 @@ struct ProTabView: View {
 #if APP_STORE
     private func subscriptionRow(_ product: Product) -> some View {
         let isCurrentPlan = purchaseService.activeProProductID == product.id
+        let isPurchasingThisProduct = purchaseService.purchasingProductID == product.id
+        let buttonTitle = isCurrentPlan
+            ? String(localized: "Current Plan", bundle: langBundle.bundle)
+            : isPurchasingThisProduct
+                ? String(localized: "Purchasing...", bundle: langBundle.bundle)
+                : String(format: String(localized: "Subscribe - %@", bundle: langBundle.bundle), product.displayPrice)
 
         return HStack {
             VStack(alignment: .leading, spacing: 2) {
@@ -244,17 +246,36 @@ struct ProTabView: View {
                 Text(product.description)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Text(String(format: String(localized: "Length: %@", bundle: langBundle.bundle), subscriptionDuration(product)))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Spacer()
 
-            Button(isCurrentPlan ? String(localized: "Current Plan", bundle: langBundle.bundle) : String(format: String(localized: "Subscribe - %@", bundle: langBundle.bundle), product.displayPrice)) {
+            Button(buttonTitle) {
                 Task {
                     await purchaseService.purchase(product)
                 }
             }
             .disabled(purchaseService.isProUnlocked || purchaseService.isPurchasing || purchaseService.isLoading)
         }
+    }
+
+    private func subscriptionDuration(_ product: Product) -> String {
+        guard let period = product.subscription?.subscriptionPeriod else {
+            return String(localized: "See App Store", bundle: langBundle.bundle)
+        }
+
+        let unit: String.LocalizationValue
+        switch period.unit {
+        case .day: unit = period.value == 1 ? "day" : "days"
+        case .week: unit = period.value == 1 ? "week" : "weeks"
+        case .month: unit = period.value == 1 ? "month" : "months"
+        case .year: unit = period.value == 1 ? "year" : "years"
+        @unknown default: unit = "period"
+        }
+        return String(format: "%d %@", period.value, String(localized: unit, bundle: langBundle.bundle))
     }
 #endif
 

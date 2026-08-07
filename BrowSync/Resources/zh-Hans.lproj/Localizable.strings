@@ -592,3 +592,10 @@
 "Current purchase: %@" = "当前购买：%@";
 "Current Purchase" = "当前购买";
 "Current Plan" = "当前方案";
+"Subscription Terms" = "订阅条款";
+"Purchase Options" = "购买选项";
+"Payment will be charged to your App Store account. Subscriptions renew automatically unless cancelled at least 24 hours before the end of the current period. You can manage or cancel subscriptions in your App Store account settings." = "付款将从你的 App Store 账户扣除。除非在当前订阅期结束前至少 24 小时取消，否则订阅会自动续费。你可以在 App Store 账户设置中管理或取消订阅。";
+"Terms of Use (EULA)" = "使用条款（EULA）";
+"Length: %@" = "订阅时长：%@";
+"See App Store" = "查看 App Store";
+"day" = "天"; "days" = "天"; "week" = "周"; "weeks" = "周"; "month" = "个月"; "months" = "个月"; "year" = "年"; "years" = "年"; "period" = "订阅期";

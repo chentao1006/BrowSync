@@ -522,3 +522,10 @@
 "Current purchase: %@" = "Achat actuel : %@";
 "Current Purchase" = "Achat actuel";
 "Current Plan" = "Forfait actuel";
+"Subscription Terms" = "Conditions d’abonnement";
+"Purchase Options" = "Options d’achat";
+"Payment will be charged to your App Store account. Subscriptions renew automatically unless cancelled at least 24 hours before the end of the current period. You can manage or cancel subscriptions in your App Store account settings." = "Le paiement sera facturé à votre compte App Store. Les abonnements se renouvellent automatiquement sauf s’ils sont annulés au moins 24 heures avant la fin de la période en cours. Vous pouvez gérer ou annuler vos abonnements dans les réglages de votre compte App Store.";
+"Terms of Use (EULA)" = "Conditions d’utilisation (EULA)";
+"Length: %@" = "Durée : %@";
+"See App Store" = "Voir dans l’App Store";
+"day" = "jour"; "days" = "jours"; "week" = "semaine"; "weeks" = "semaines"; "month" = "mois"; "months" = "mois"; "year" = "an"; "years" = "ans"; "period" = "période";

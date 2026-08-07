@@ -564,3 +564,10 @@
 "Current purchase: %@" = "Current purchase: %@";
 "Current Purchase" = "Current Purchase";
 "Current Plan" = "Current Plan";
+"Subscription Terms" = "Subscription Terms";
+"Purchase Options" = "Purchase Options";
+"Payment will be charged to your App Store account. Subscriptions renew automatically unless cancelled at least 24 hours before the end of the current period. You can manage or cancel subscriptions in your App Store account settings." = "Payment will be charged to your App Store account. Subscriptions renew automatically unless cancelled at least 24 hours before the end of the current period. You can manage or cancel subscriptions in your App Store account settings.";
+"Terms of Use (EULA)" = "Terms of Use (EULA)";
+"Length: %@" = "Length: %@";
+"See App Store" = "See App Store";
+"day" = "day"; "days" = "days"; "week" = "week"; "weeks" = "weeks"; "month" = "month"; "months" = "months"; "year" = "year"; "years" = "years"; "period" = "period";
