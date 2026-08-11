@@ -41,7 +41,13 @@ struct StateSyncTabView: View {
                             syncSettings.wrappedValue.enabledCategories.insert(.browserData)
                         } else {
                             syncSettings.wrappedValue.enabledCategories.remove(.browserData)
+                            appState.notificationService.cancelPendingAutoSyncNotification()
                         }
+                        // Persisting the master switch is not enough: connected
+                        // extension workers must receive the new automatic-sync
+                        // gate immediately, before their next navigation/cookie
+                        // event can start another state pull.
+                        appState.broadcastSettings()
                     }
                 ))
                 .toggleStyle(.switch)

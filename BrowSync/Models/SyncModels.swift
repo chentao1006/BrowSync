@@ -396,7 +396,15 @@ struct SyncSettings: Codable, Equatable {
         websiteSettings = try container.decodeIfPresent([WebsiteSyncSetting].self, forKey: .websiteSettings) ?? []
         tabSharingParticipatingBrowsers = try container.decodeIfPresent(Set<Browser>.self, forKey: .tabSharingParticipatingBrowsers) ?? []
         tabSharingEnabled = try container.decodeIfPresent(Bool.self, forKey: .tabSharingEnabled) ?? false
-        enabledCategories = try container.decodeIfPresent(Set<SyncCategory>.self, forKey: .enabledCategories) ?? []
+        // `enabledCategories` was introduced after the original settings file
+        // format.  Give genuinely old files their historic defaults, but keep an
+        // explicitly saved empty set empty: it means the user turned the feature
+        // off and must never be treated as a missing value on the next launch.
+        if container.contains(.enabledCategories) {
+            enabledCategories = try container.decodeIfPresent(Set<SyncCategory>.self, forKey: .enabledCategories) ?? []
+        } else {
+            enabledCategories = Set(SyncCategory.allCases.filter(\.defaultEnabled))
+        }
         automaticSync = try container.decodeIfPresent(Bool.self, forKey: .automaticSync) ?? false
         iCloudSync = try container.decodeIfPresent(Bool.self, forKey: .iCloudSync) ?? false
     }

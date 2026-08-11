@@ -21,6 +21,7 @@ final class AppState: ObservableObject {
     let purchaseService = PurchaseService()
 
     private var cancellables = Set<AnyCancellable>()
+    private var hasFinishedInitialSetup = false
     
     var openWindowAction: ((String) -> Void)?
 
@@ -45,10 +46,16 @@ final class AppState: ObservableObject {
 
 
     // Router state
-    @Published var isRouterEnabled: Bool = true {
+    @Published var isRouterEnabled: Bool = false {
         didSet {
             settingsService.routerSettings.isEnabled = isRouterEnabled
             settingsService.save()
+            guard hasFinishedInitialSetup else { return }
+            if oldValue && !isRouterEnabled {
+                requestSystemDefaultBrowserReplacementIfNeeded()
+            } else if !oldValue && isRouterEnabled {
+                requestBrowSyncAsDefaultBrowserIfNeeded()
+            }
         }
     }
     @Published var routerRules: [RouterRule] = [] {
@@ -95,6 +102,7 @@ final class AppState: ObservableObject {
         }
         
         checkFullDiskAccess()
+        hasFinishedInitialSetup = true
     }
     
     func checkFullDiskAccess() {
@@ -122,6 +130,7 @@ final class AppState: ObservableObject {
         
         // Check default browser status
         checkDefaultBrowser()
+        requestSystemDefaultBrowserReplacementIfNeeded()
         
     }
     
@@ -171,8 +180,58 @@ final class AppState: ObservableObject {
     // MARK: - Router & URL Handling
     
     func checkDefaultBrowser() {
-        if let defaultURL = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "http://apple.com")!) {
-            isDefaultBrowser = defaultURL.lastPathComponent == "BrowSync.app" || defaultURL.absoluteString.contains("BrowSync")
+        guard let probeURL = URL(string: "http://apple.com"),
+              let defaultURL = NSWorkspace.shared.urlForApplication(toOpen: probeURL) else {
+            isDefaultBrowser = false
+            return
+        }
+        let resolvedDefaultURL = defaultURL.resolvingSymlinksInPath().standardizedFileURL
+        let resolvedAppURL = Bundle.main.bundleURL.resolvingSymlinksInPath().standardizedFileURL
+        let isThisBundle = Bundle(url: defaultURL)?.bundleIdentifier == Bundle.main.bundleIdentifier
+        isDefaultBrowser = isThisBundle || resolvedDefaultURL == resolvedAppURL
+    }
+
+    /// Default-handler changes are committed asynchronously after the system
+    /// consent sheet closes. Refresh a few times so the router warning updates
+    /// without requiring the user to reopen this screen.
+    private func refreshDefaultBrowserStatusAfterSystemChange() {
+        Task { @MainActor [weak self] in
+            for delay in [0, 250_000_000, 1_000_000_000, 2_000_000_000, 4_000_000_000, 8_000_000_000] {
+                if delay > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(delay))
+                }
+                self?.checkDefaultBrowser()
+            }
+        }
+    }
+
+    /// A disabled router cannot safely remain the system default handler: URLs
+    /// would keep opening BrowSync only to be forwarded elsewhere. Request the
+    /// same system consent dialog used when BrowSync becomes the default, but
+    /// point it at the selected fallback browser instead.
+    func requestSystemDefaultBrowserReplacementIfNeeded() {
+        guard !isRouterEnabled else { return }
+        checkDefaultBrowser()
+        guard isDefaultBrowser else { return }
+
+        let replacementURL = fallbackBrowserId
+            .flatMap { appURL(forBrowserId: $0) }
+            ?? browserInfos.first(where: { $0.browser == .safari && $0.isInstalled })?.appURL
+            ?? Browser.safari.appURL
+        guard let replacementURL else { return }
+
+        if #available(macOS 12.0, *) {
+            NSWorkspace.shared.setDefaultApplication(at: replacementURL, toOpenURLsWithScheme: "http") { error in
+                if let error {
+                    print("Failed to request the default browser replacement for http: \(error)")
+                }
+            }
+            NSWorkspace.shared.setDefaultApplication(at: replacementURL, toOpenURLsWithScheme: "https") { [weak self] error in
+                if let error {
+                    print("Failed to request the default browser replacement for https: \(error)")
+                }
+                Task { @MainActor in self?.refreshDefaultBrowserStatusAfterSystemChange() }
+            }
         }
     }
     
@@ -189,13 +248,19 @@ final class AppState: ObservableObject {
                 if let error = error {
                     print("Failed to set default for https: \(error)")
                 }
-                Task { @MainActor in self.checkDefaultBrowser() }
+                Task { @MainActor in self.refreshDefaultBrowserStatusAfterSystemChange() }
             }
         } else {
             if let prefURL = URL(string: "x-apple.systempreferences:com.apple.Desktop-Settings") {
                 NSWorkspace.shared.open(prefURL)
             }
         }
+    }
+
+    func requestBrowSyncAsDefaultBrowserIfNeeded() {
+        checkDefaultBrowser()
+        guard !isDefaultBrowser else { return }
+        promptSetDefaultBrowser()
     }
     
     func handleIncomingURL(_ url: URL, sourceAppBundleId: String?) {
@@ -693,7 +758,11 @@ extension AppState: DaemonServerDelegate {
         let routerDefault = fallbackBrowserId
         var payload: [String: AnyCodable] = [
             "routerDefault": AnyCodable(routerDefault ?? ""),
-            "automaticSync": AnyCodable(isProUnlocked && settingsService.syncSettings.automaticSync),
+            // Extensions use this value to decide whether navigation and cookie
+            // changes may start an automatic state pull.  Keep it aligned with
+            // the master State Sync switch, not only the secondary real-time
+            // setting.
+            "automaticSync": AnyCodable(isProUnlocked && settingsService.syncSettings.automaticSync && settingsService.syncSettings.enabledCategories.contains(.browserData)),
             "tabSharingEnabled": AnyCodable(settingsService.syncSettings.tabSharingEnabled)
         ]
         var stateMap: [String: AnyCodable] = [:]

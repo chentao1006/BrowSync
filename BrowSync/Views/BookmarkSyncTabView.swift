@@ -83,6 +83,7 @@ struct BookmarkSyncTabView: View {
                         } else {
                             syncSettings.wrappedValue.enabledCategories.remove(.bookmarks)
                         }
+                        appState.broadcastSettings()
                     }
                 ))
                 .toggleStyle(.switch)

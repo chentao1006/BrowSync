@@ -477,7 +477,7 @@ final class SyncService: ObservableObject {
                     if Task.isCancelled { return }
                     
                     let isPro = AppState.shared.purchaseService.isProUnlocked
-                    let isAutoSyncEnabled = isPro && self.settings.bookmarkAutoSync
+                    let isAutoSyncEnabled = isPro && self.settings.bookmarkAutoSync && self.settings.enabledCategories.contains(.bookmarks)
                     if isAutoSyncEnabled {
                         self.log("Safari Bookmarks.plist changed! Triggering auto-sync...")
                         await self.syncCategory(.bookmarks)
@@ -832,6 +832,16 @@ final class SyncService: ObservableObject {
         var filteredMessage = message
         logSyncPayload(message, direction: "incoming", clientId: clientId, note: "raw-received")
 
+        // This is the hard master gate for all state payloads.  It must run
+        // before filtering, persistence, statistics, or notifications: an
+        // extension worker can still emit an already-queued cookie event after
+        // the app has broadcast that State Sync was turned off.
+        let isStatePayload = category == "browserData" || category == "cookies" || category == "localStorage" || category == "sessionStorage"
+        guard !isStatePayload || settings.enabledCategories.contains(.browserData) else {
+            log("Ignored \(category) data from [\(clientId)] because State Sync is disabled.")
+            return
+        }
+
         if category == "bookmark_folder_missing" {
             let browserId = clientId.components(separatedBy: "-").first ?? clientId
             if let browser = Browser(rawValue: browserId),
@@ -995,7 +1005,7 @@ final class SyncService: ObservableObject {
                 }
                 
                 let isPro = AppState.shared.purchaseService.isProUnlocked
-                let shouldSync = (isPro && settings.bookmarkAutoSync) || isSyncing
+                let shouldSync = (isPro && settings.bookmarkAutoSync && settings.enabledCategories.contains(.bookmarks)) || isSyncing
                 if shouldSync {
                     logSyncPayload(filteredMessage, direction: "outgoing", clientId: clientId, note: "rebroadcast-bookmark-removal")
                     broadcastBookmarkMessage(filteredMessage, excluding: nil)
@@ -1152,8 +1162,12 @@ final class SyncService: ObservableObject {
             
             let isBookmarkCategory = (category == "bookmarks" || category == "bookmarks_removed" || category == "bookmark_backup")
             let isPro = AppState.shared.purchaseService.isProUnlocked
-            let effectiveBookmarkAutoSync = isPro && settings.bookmarkAutoSync
-            let effectiveAutomaticSync = isPro && settings.automaticSync
+            let effectiveBookmarkAutoSync = isPro && settings.bookmarkAutoSync && settings.enabledCategories.contains(.bookmarks)
+            // The State Sync master switch is authoritative for both manual and
+            // automatic traffic.  Previously it only disabled the SwiftUI form;
+            // cookie/storage events could still be received and broadcast while
+            // real-time auto sync remained enabled.
+            let effectiveAutomaticSync = isPro && settings.automaticSync && settings.enabledCategories.contains(.browserData)
             let shouldSync = isBookmarkCategory ? (effectiveBookmarkAutoSync || isSyncing) : (effectiveAutomaticSync || isSyncing)
             
             if shouldSync {
@@ -1742,7 +1756,7 @@ final class SyncService: ObservableObject {
                 bookmarkCounts[browserId] = bookmarks.count
             }
             let isPro = AppState.shared.purchaseService.isProUnlocked
-            let shouldSyncToSafari = ((isPro && settings.bookmarkAutoSync) || isSyncing)
+            let shouldSyncToSafari = ((isPro && settings.bookmarkAutoSync && settings.enabledCategories.contains(.bookmarks)) || isSyncing)
             
             // Also write natively into Safari if the source is a Chromium browser, AND the category is an actual sync (not a backup)
             if shouldSyncToSafari && category != "bookmark_backup" && !clientId.lowercased().contains("safari") && settings.bookmarkParticipatingBrowsers.contains(.safari) {

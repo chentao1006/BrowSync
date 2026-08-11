@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct RouterTabView: View {
     @EnvironmentObject var appState: AppState
@@ -26,7 +27,7 @@ struct RouterTabView: View {
             .padding()
             
             // Default Browser Banner
-            if !appState.isDefaultBrowser {
+            if appState.isRouterEnabled && !appState.isDefaultBrowser {
                 HStack {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(.yellow)
@@ -177,7 +178,11 @@ struct RouterTabView: View {
         }
         .onAppear {
             appState.checkDefaultBrowser()
+            appState.requestSystemDefaultBrowserReplacementIfNeeded()
             loadInstalledApps()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            appState.checkDefaultBrowser()
         }
     }
 

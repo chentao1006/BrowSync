@@ -251,6 +251,15 @@ final class DaemonServer: ObservableObject {
                 ObjectIdentifier($0.connection) == connKey
             }) else { return }
             client.lastSeen = Date()
+
+            // Reject delayed extension navigation pulls while State Sync is
+            // off. Otherwise an old worker can repopulate a tab from cached
+            // cookies even after the app-side master switch was disabled.
+            if message.category == "browserData",
+               !AppState.shared.settingsService.syncSettings.enabledCategories.contains(.browserData) {
+                logger.debug("Ignored browser-data pull from \(client.id) because State Sync is disabled")
+                return
+            }
             
             // For bookmarks, always serve fresh state (not stale cache)
             if message.category == nil || message.category == "bookmarks" {

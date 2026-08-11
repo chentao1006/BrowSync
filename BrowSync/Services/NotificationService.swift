@@ -82,6 +82,15 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// Prevent an already-debounced state notification from appearing just
+    /// after the user turns the State Sync master switch off.
+    func cancelPendingAutoSyncNotification() {
+        autoSyncNotificationTask?.cancel()
+        autoSyncNotificationTask = nil
+        pendingAutoSyncStats = SyncStats()
+        pendingAutoSyncCategories = []
+    }
+
     private func shouldNotifyAutoSync(stats: SyncStats, categories: [SyncCategory]) -> Bool {
         let includesState = categories.contains { $0.rawValue != "bookmarks" }
         guard includesState, !stats.syncedSites.isEmpty else { return true }

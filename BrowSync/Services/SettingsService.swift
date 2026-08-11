@@ -154,14 +154,6 @@ final class SettingsService: ObservableObject {
             general = saved.general
             syncSettings = saved.sync
             routerSettings = saved.router ?? RouterSettings()
-            // Migration: add any new defaultEnabled categories not in saved settings
-            let allDefault = Set(SyncCategory.allCases.filter { $0.defaultEnabled })
-            let missing = allDefault.subtracting(syncSettings.enabledCategories)
-            if !missing.isEmpty {
-                syncSettings.enabledCategories.formUnion(missing)
-                logger.info("Migrated new sync categories: \(missing.map(\.rawValue).joined(separator: ", "))")
-                save()
-            }
         } catch {
             logger.error("Failed to load settings: \(error)")
         }
