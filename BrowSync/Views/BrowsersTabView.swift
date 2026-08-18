@@ -211,7 +211,10 @@ struct BrowserRow: View {
                             .padding(.leading, 8)
                         } else {
                             Button(String(localized: "Install Extension", bundle: langBundle.bundle)) {
-                                if let url = URL(string: AppConfig.chromiumExtensionWebStoreURL) {
+                                let storeURLString = info.browser == .firefox
+                                    ? AppConfig.firefoxExtensionAMOURL
+                                    : AppConfig.chromiumExtensionWebStoreURL
+                                if let url = URL(string: storeURLString) {
                                     if let appURL = info.appURL {
                                         let config = NSWorkspace.OpenConfiguration()
                                         NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: config)

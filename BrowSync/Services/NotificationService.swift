@@ -162,8 +162,6 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
                 content.body += "\n" + String(format: String(localized: "Synced Websites: %@", bundle: langBundle), sites)
             }
 
-            content.sound = .default
-
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
             do {
                 try await UNUserNotificationCenter.current().add(request)
@@ -179,7 +177,6 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
             let content = UNMutableNotificationContent()
             content.title = String(localized: "Browser Connected", bundle: langBundle)
             content.body = String(format: String(localized: "%@ is now connected and ready to sync.", bundle: langBundle), browser.displayName)
-            content.sound = .default
 
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
             do {
@@ -200,7 +197,6 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
                 "browsyncAction": "openBookmarkFolderManager",
                 "browser": browser.rawValue
             ]
-            content.sound = .default
 
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
             do {
@@ -241,7 +237,6 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
             )
             content.categoryIdentifier = Self.emptyBookmarkSnapshotCategory
             content.userInfo = ["clientId": source]
-            content.sound = .default
 
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
             do {
@@ -253,7 +248,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     }
     
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        return [.banner, .sound]
+        return [.banner]
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
