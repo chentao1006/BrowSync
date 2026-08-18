@@ -22,6 +22,11 @@ final class AppState: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
     private var hasFinishedInitialSetup = false
+    private struct PendingMassBookmarkDeletion {
+        let clientId: String
+        let items: [Bookmark]
+    }
+    private var pendingMassBookmarkDeletions: [String: PendingMassBookmarkDeletion] = [:]
     
     var openWindowAction: ((String) -> Void)?
 
@@ -554,8 +559,10 @@ extension AppState: DaemonServerDelegate {
             
             // ── Offline Deletion Sync ────────────────────────────────────────────
             // Compare Safari's current state to this client's last known snapshot.
+            // One-way only: two-way merge already detects real Safari deletions
+            // elsewhere (SyncService.syncCategory), with UUID-drift-safe fallbacks.
                 let clientBrowserRawId = clientId.components(separatedBy: "-").first ?? clientId
-                if sourceBrowser == .safari && !currentSafariBms.isEmpty,
+                if strategy == .oneWay, sourceBrowser == .safari && !currentSafariBms.isEmpty,
                     let clientSnapshot = self.backupService.getSnapshot(sourceBrowser: clientId)
                     ?? self.backupService.getSnapshot(sourceBrowser: clientBrowserRawId) {
                 
@@ -591,7 +598,16 @@ extension AppState: DaemonServerDelegate {
                     return true
                 }
                 
-                if !offlineDeleted.isEmpty {
+                // A single unretried plist read can come back thin but non-empty (sandbox
+                // access race, mid-write, etc.), slipping past the empty-snapshot guard above.
+                // Refuse to mass-delete off the back of one such read.
+                let looksLikeMassDeletion = !snapshotToCheck.isEmpty
+                    && offlineDeleted.count > max(3, snapshotToCheck.count / 2)
+                if looksLikeMassDeletion {
+                    self.syncService.log("Suspicious offline-deletion diff for [\(clientId)]: \(offlineDeleted.count) of \(snapshotToCheck.count) items would be deleted based on a single Safari read. Asking user to confirm before applying.")
+                    self.pendingMassBookmarkDeletions[clientId] = PendingMassBookmarkDeletion(clientId: clientId, items: offlineDeleted)
+                    self.notificationService.notifyMassBookmarkDeletionSuspected(source: clientId, deletedCount: offlineDeleted.count, totalCount: snapshotToCheck.count)
+                } else if !offlineDeleted.isEmpty {
                     self.syncService.log("Sending \(offlineDeleted.count) offline deletions to [\(clientId)]")
                     for deletedBm in offlineDeleted {
                         var delMsg = WSMessage(
@@ -639,6 +655,28 @@ extension AppState: DaemonServerDelegate {
             let sourceName = sourceBrowser == .safari ? "Safari" : "Chrome"
             self.syncService.log("Answering pull request from [\(clientId)]: Pushed \(finalBookmarksToSend.count) \(sourceName) bookmarks (isFullMirror: \(msg.isFullMirror ?? false))")
             server.send(msg, toClientId: clientId)
+        }
+    }
+
+    /// Called when the user taps "Apply Deletions" on the mass-bookmark-deletion
+    /// warning notification, confirming a suspicious offline-deletion diff.
+    func applyPendingMassBookmarkDeletion(from clientId: String) {
+        guard let pending = pendingMassBookmarkDeletions.removeValue(forKey: clientId) else { return }
+        let clientBrowserRawId = clientId.components(separatedBy: "-").first ?? clientId
+        syncService.log("User approved \(pending.items.count) offline bookmark deletions for [\(clientId)].")
+        for deletedBm in pending.items {
+            var delMsg = WSMessage(
+                type: .sync,
+                site: "*",
+                category: "bookmarks_removed",
+                payload: .bookmarksRemoved(deletedBm),
+                messageId: UUID().uuidString,
+                timestamp: Date().timeIntervalSince1970
+            )
+            if let browser = Browser(rawValue: clientBrowserRawId) {
+                delMsg.targetBookmarkFolder = settingsService.syncSettings.bookmarkFolder(for: browser)
+            }
+            daemon.send(delMsg, toClientId: clientId)
         }
     }
 

@@ -39,6 +39,37 @@ if [ ! -x "${SPARKLE_BIN_PATH}/generate_appcast" ]; then
     echo "✅ Sparkle tools installed to ./Sparkle/bin"
 fi
 
+# Apple's notary upload occasionally times out on a flaky connection
+# (HTTPClientError.deadlineExceeded during the S3 multipart upload) with
+# nothing wrong with the submitted artifact. Retry a few times before
+# treating it as a real failure.
+notarize_submit() {
+    local file_path="$1"
+    local max_attempts=3
+    local delay=30
+    local attempt=1
+
+    while [ "$attempt" -le "$max_attempts" ]; do
+        echo "🔐 Submitting ${file_path} for notarization (attempt ${attempt}/${max_attempts})..."
+        if xcrun notarytool submit "${file_path}" \
+            --apple-id "${APPLE_ID}" \
+            --password "${APPLE_PASSWORD}" \
+            --team-id "${TEAM_ID}" \
+            --wait; then
+            return 0
+        fi
+
+        if [ "$attempt" -eq "$max_attempts" ]; then
+            echo "❌ notarytool submit failed after ${max_attempts} attempts."
+            return 1
+        fi
+
+        echo "⚠️ notarytool submit failed, retrying in ${delay}s..."
+        sleep "$delay"
+        attempt=$((attempt + 1))
+    done
+}
+
 set -e
 
 echo "🚀 Starting packaging process..."
@@ -74,12 +105,8 @@ if [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ]; then
     rm -f "${RESULT_DIR}/BrowSync_app.zip"
     /usr/bin/ditto -c -k --keepParent "${EXPORTED_APP}" "${RESULT_DIR}/BrowSync_app.zip"
     
-    xcrun notarytool submit "${RESULT_DIR}/BrowSync_app.zip" \
-        --apple-id "${APPLE_ID}" \
-        --password "${APPLE_PASSWORD}" \
-        --team-id "${TEAM_ID}" \
-        --wait
-    
+    notarize_submit "${RESULT_DIR}/BrowSync_app.zip"
+
     echo "🖋️ Stapling notarization ticket to the .app..."
     xcrun stapler staple "${EXPORTED_APP}"
     rm -f "${RESULT_DIR}/BrowSync_app.zip"
@@ -105,12 +132,7 @@ else
 fi
 
 if [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ]; then
-    echo "🔐 Submitting for notarization..."
-    xcrun notarytool submit "${DMG_PATH}" \
-        --apple-id "${APPLE_ID}" \
-        --password "${APPLE_PASSWORD}" \
-        --team-id "${TEAM_ID}" \
-        --wait
+    notarize_submit "${DMG_PATH}"
 
     echo "🖋️ Stapling notarization ticket..."
     xcrun stapler staple "${DMG_PATH}"

@@ -54,6 +54,17 @@ final class SyncService: ObservableObject {
     private var pendingEmptyBookmarkSnapshots: [String: PendingEmptyBookmarkSnapshot] = [:]
     private var forceAcceptedEmptyBookmarkMessageIds = Set<String>()
 
+    // A single deliberate deletion arrives as one `bookmarks_removed` message, but a
+    // misbehaving extension/browser sync can emit dozens within seconds. Each one is
+    // applied to Safari and rebroadcast to every other participant, so an unchecked
+    // burst can wipe every synced browser in one shot. Buffer per-client and only
+    // auto-apply small batches; anything larger waits for explicit user confirmation.
+    private static let bookmarkRemovalBurstThreshold = 8
+    private static let bookmarkRemovalBurstDebounceNanoseconds: UInt64 = 2_500_000_000
+    private var pendingBookmarkRemovalBuffers: [String: [Bookmark]] = [:]
+    private var bookmarkRemovalBurstTasks: [String: Task<Void, Never>] = [:]
+    private var pendingBookmarkRemovalBursts: [String: [Bookmark]] = [:]
+
     var daemon: DaemonServer?
     var settingsService: SettingsService?
     var settings: SyncSettings {
@@ -209,6 +220,121 @@ final class SyncService: ObservableObject {
             return selectedSnapshot.contains { $0.isFolder && $0.title.lowercased() == title }
         }
         return false
+    }
+
+    /// Entry point for every incoming `bookmarks_removed` message. Buffered per
+    /// client and coalesced by a quiet-period debounce so a rapid-fire burst of
+    /// individual removal events (e.g. a browser's own account sync churning
+    /// through reconciliation) is evaluated as one batch instead of each item
+    /// being trusted and propagated the instant it arrives.
+    private func handleIncomingBookmarkRemoval(_ bm: Bookmark, clientId: String) {
+        pendingBookmarkRemovalBuffers[clientId, default: []].append(bm)
+        bookmarkRemovalBurstTasks[clientId]?.cancel()
+        bookmarkRemovalBurstTasks[clientId] = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.bookmarkRemovalBurstDebounceNanoseconds)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.flushBookmarkRemovalBuffer(for: clientId)
+            }
+        }
+    }
+
+    private func flushBookmarkRemovalBuffer(for clientId: String) {
+        bookmarkRemovalBurstTasks[clientId] = nil
+        guard let items = pendingBookmarkRemovalBuffers.removeValue(forKey: clientId), !items.isEmpty else { return }
+
+        guard items.count <= Self.bookmarkRemovalBurstThreshold else {
+            log("Suspicious burst of \(items.count) individual bookmark deletions from [\(clientId)] within a few seconds. Nothing was applied — asking user to confirm.")
+            pendingBookmarkRemovalBursts[clientId] = items
+            AppState.shared.notificationService.notifyBookmarkRemovalBurstSuspected(source: clientId, count: items.count)
+            return
+        }
+        applyBookmarkRemovals(items, clientId: clientId)
+    }
+
+    /// Called when the user taps "Apply Deletions" on the burst-deletion warning.
+    func forceApplyPendingBookmarkRemovalBurst(from clientId: String) {
+        guard let items = pendingBookmarkRemovalBursts.removeValue(forKey: clientId) else { return }
+        log("User approved \(items.count) buffered bookmark deletions from [\(clientId)].")
+        applyBookmarkRemovals(items, clientId: clientId)
+    }
+
+    private func applyBookmarkRemovals(_ items: [Bookmark], clientId: String) {
+        for bm in items {
+            applyIncomingBookmarkRemoval(bm, clientId: clientId)
+        }
+        let isPro = AppState.shared.purchaseService.isProUnlocked
+        let shouldSync = (isPro && settings.bookmarkAutoSync && settings.enabledCategories.contains(.bookmarks)) || isSyncing
+        guard shouldSync else { return }
+        // Request a fresh sync from all clients to update counts and snapshots accurately.
+        Task {
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s debounce to let extensions process deletions
+            let req = WSMessage(
+                type: .sync,
+                site: "*",
+                category: "bookmarks",
+                payload: nil,
+                messageId: UUID().uuidString,
+                timestamp: Date().timeIntervalSince1970
+            )
+            await MainActor.run {
+                self.logSyncPayload(req, direction: "outgoing", clientId: "all-bookmark-participants", note: "post-removal-pull-request")
+                self.daemon?.broadcast(req, participatingBrowsers: self.settings.bookmarkParticipatingBrowsers)
+            }
+        }
+    }
+
+    private func applyIncomingBookmarkRemoval(_ bm: Bookmark, clientId: String) {
+        if let browser = Browser(rawValue: clientId.components(separatedBy: "-").first ?? clientId),
+           !bookmarkDeletionIsInsideSelectedFolder(bm, browser: browser, clientId: clientId) {
+            log("Ignored bookmark deletion from [\(clientId)] outside selected sync folder: \(bm.title)")
+            return
+        }
+        backupService?.addDeletedBookmarks([
+            DeletedBookmark(
+                id: bm.id,
+                title: bm.title,
+                url: bm.url ?? nil,
+                parentId: bm.parentId,
+                isFolder: bm.isFolder,
+                deletedAt: Date(),
+                sourceBrowser: clientId,
+                children: nil
+            )
+        ])
+        prepareSafariForIncomingBookmarkMutation()
+        safariBookmarks.removeBookmark(id: bm.id, title: bm.title, url: bm.url ?? nil)
+        log("Removed bookmark '\(bm.title)' from Safari (triggered by [\(clientId)])")
+        // Refresh Safari count after removal
+        let updatedCount = safariBookmarks.readBookmarks().count
+        if updatedCount > 0 { bookmarkCounts["safari"] = updatedCount }
+
+        if !isSyncing && AppState.shared.settingsService.general.notifySyncComplete {
+            var deletionStats = SyncStats()
+            deletionStats.bookmarksDeleted = bm.isFolder ? 0 : 1
+            deletionStats.bookmarkFoldersDeleted = bm.isFolder ? 1 : 0
+            AppState.shared.notificationService.notifyAutoSyncComplete(
+                stats: deletionStats,
+                categories: [.bookmarks]
+            )
+        }
+
+        let isPro = AppState.shared.purchaseService.isProUnlocked
+        let shouldSync = (isPro && settings.bookmarkAutoSync && settings.enabledCategories.contains(.bookmarks)) || isSyncing
+        guard shouldSync else { return }
+        let outgoing = WSMessage(
+            type: .sync,
+            site: "*",
+            category: "bookmarks_removed",
+            payload: .bookmarksRemoved(bm),
+            messageId: UUID().uuidString,
+            timestamp: Date().timeIntervalSince1970
+        )
+        logSyncPayload(outgoing, direction: "outgoing", clientId: clientId, note: "rebroadcast-bookmark-removal")
+        broadcastBookmarkMessage(outgoing, excluding: nil)
+        // NOTE: Do NOT save bookmarks_removed to GlobalStateStore.
+        // These are point-in-time events; replaying them to reconnecting
+        // clients causes destructive false deletions.
     }
 
     private func sendBookmarkMessage(_ message: WSMessage, to browser: Browser, excluding excludedId: String? = nil) {
@@ -969,67 +1095,7 @@ final class SyncService: ObservableObject {
 
         if category == "bookmarks_removed" {
             if case .bookmarksRemoved(let bm) = filteredMessage.payload {
-                let browserId = clientId.components(separatedBy: "-").first ?? clientId
-                if let browser = Browser(rawValue: browserId),
-                   !bookmarkDeletionIsInsideSelectedFolder(bm, browser: browser, clientId: clientId) {
-                    log("Ignored bookmark deletion from [\(clientId)] outside selected sync folder: \(bm.title)")
-                    return
-                }
-                backupService?.addDeletedBookmarks([
-                    DeletedBookmark(
-                        id: bm.id,
-                        title: bm.title,
-                        url: bm.url ?? nil,
-                        parentId: bm.parentId,
-                        isFolder: bm.isFolder,
-                        deletedAt: Date(),
-                        sourceBrowser: clientId,
-                        children: nil
-                    )
-                ])
-                prepareSafariForIncomingBookmarkMutation()
-                safariBookmarks.removeBookmark(id: bm.id, title: bm.title, url: bm.url ?? nil)
-                log("Removed bookmark '\(bm.title)' from Safari (triggered by [\(clientId)])")
-                // Refresh Safari count after removal
-                let updatedCount = safariBookmarks.readBookmarks().count
-                if updatedCount > 0 { bookmarkCounts["safari"] = updatedCount }
-
-                if !isSyncing && AppState.shared.settingsService.general.notifySyncComplete {
-                    var deletionStats = SyncStats()
-                    deletionStats.bookmarksDeleted = bm.isFolder ? 0 : 1
-                    deletionStats.bookmarkFoldersDeleted = bm.isFolder ? 1 : 0
-                    AppState.shared.notificationService.notifyAutoSyncComplete(
-                        stats: deletionStats,
-                        categories: [.bookmarks]
-                    )
-                }
-                
-                let isPro = AppState.shared.purchaseService.isProUnlocked
-                let shouldSync = (isPro && settings.bookmarkAutoSync && settings.enabledCategories.contains(.bookmarks)) || isSyncing
-                if shouldSync {
-                    logSyncPayload(filteredMessage, direction: "outgoing", clientId: clientId, note: "rebroadcast-bookmark-removal")
-                    broadcastBookmarkMessage(filteredMessage, excluding: nil)
-                    // NOTE: Do NOT save bookmarks_removed to GlobalStateStore.
-                    // These are point-in-time events; replaying them to reconnecting
-                    // clients causes destructive false deletions.
-                    
-                    // Request a fresh sync from all clients to update counts and snapshots accurately
-                    Task {
-                        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s debounce to let extensions process deletions
-                        let req = WSMessage(
-                            type: .sync,
-                            site: "*",
-                            category: "bookmarks",
-                            payload: nil,
-                            messageId: UUID().uuidString,
-                            timestamp: Date().timeIntervalSince1970
-                        )
-                        await MainActor.run {
-                            self.logSyncPayload(req, direction: "outgoing", clientId: "all-bookmark-participants", note: "post-removal-pull-request")
-                            self.daemon?.broadcast(req, participatingBrowsers: self.settings.bookmarkParticipatingBrowsers)
-                        }
-                    }
-                }
+                handleIncomingBookmarkRemoval(bm, clientId: clientId)
             }
             return
         }
@@ -1663,6 +1729,11 @@ final class SyncService: ObservableObject {
 
     private func sanitizeIncomingBookmarksForSafari(_ bookmarks: [Bookmark], from clientId: String) -> [Bookmark] {
         guard !clientId.lowercased().contains("safari") else { return bookmarks }
+
+        // A bookmark the user manually restored still matches its old tombstone
+        // (matched by URL/title, not id) for up to 24h, which would otherwise
+        // silently strip it back out of every incoming sync as "still deleted".
+        backupService?.resurrectDeletedBookmarks(seenIn: bookmarks)
 
         let rootIds = Set(["0", "1", "2", "3"])
         let bookmarksById = Dictionary(bookmarks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })

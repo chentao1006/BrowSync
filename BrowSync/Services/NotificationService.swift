@@ -11,6 +11,10 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     private static let emptyBookmarkSnapshotCategory = "browsync.empty-bookmark-snapshot"
     private static let forceEmptyBookmarkSnapshotAction = "browsync.force-empty-bookmark-snapshot"
     private static let openRecentBackupsAction = "browsync.open-recent-bookmark-backups"
+    private static let massBookmarkDeletionCategory = "browsync.mass-bookmark-deletion"
+    private static let applyMassBookmarkDeletionAction = "browsync.apply-mass-bookmark-deletion"
+    private static let bookmarkRemovalBurstCategory = "browsync.bookmark-removal-burst"
+    private static let applyBookmarkRemovalBurstAction = "browsync.apply-bookmark-removal-burst"
     private let logger = Logger(subsystem: "com.ct106.browsync", category: "NotificationService")
     /// Some sites continuously rewrite storage for analytics, sessions, or
     /// heartbeats. Showing a completion banner for every one of those writes
@@ -207,25 +211,55 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// `setNotificationCategories` replaces the whole registered set, so every
+    /// interactive bookmark-safety category must be registered together —
+    /// otherwise whichever notification type registers last silently strips
+    /// the action buttons from the other type's already-delivered alerts.
+    private func registerBookmarkSafetyNotificationCategories() {
+        let forceAction = UNNotificationAction(
+            identifier: Self.forceEmptyBookmarkSnapshotAction,
+            title: String(localized: "Force Sync", bundle: langBundle),
+            options: [.destructive]
+        )
+        let backupsAction = UNNotificationAction(
+            identifier: Self.openRecentBackupsAction,
+            title: String(localized: "Open Recent Automatic Backups", bundle: langBundle),
+            options: [.foreground]
+        )
+        let emptySnapshotCategory = UNNotificationCategory(
+            identifier: Self.emptyBookmarkSnapshotCategory,
+            actions: [forceAction, backupsAction],
+            intentIdentifiers: [],
+            options: []
+        )
+        let applyAction = UNNotificationAction(
+            identifier: Self.applyMassBookmarkDeletionAction,
+            title: String(localized: "Apply Deletions", bundle: langBundle),
+            options: [.destructive]
+        )
+        let massDeletionCategory = UNNotificationCategory(
+            identifier: Self.massBookmarkDeletionCategory,
+            actions: [applyAction],
+            intentIdentifiers: [],
+            options: []
+        )
+        let applyBurstAction = UNNotificationAction(
+            identifier: Self.applyBookmarkRemovalBurstAction,
+            title: String(localized: "Apply Deletions", bundle: langBundle),
+            options: [.destructive]
+        )
+        let removalBurstCategory = UNNotificationCategory(
+            identifier: Self.bookmarkRemovalBurstCategory,
+            actions: [applyBurstAction],
+            intentIdentifiers: [],
+            options: []
+        )
+        UNUserNotificationCenter.current().setNotificationCategories([emptySnapshotCategory, massDeletionCategory, removalBurstCategory])
+    }
+
     func notifyUnexpectedEmptyBookmarkSnapshot(source: String, previousCount: Int) {
         Task {
-            let forceAction = UNNotificationAction(
-                identifier: Self.forceEmptyBookmarkSnapshotAction,
-                title: String(localized: "Force Sync", bundle: langBundle),
-                options: [.destructive]
-            )
-            let backupsAction = UNNotificationAction(
-                identifier: Self.openRecentBackupsAction,
-                title: String(localized: "Open Recent Automatic Backups", bundle: langBundle),
-                options: [.foreground]
-            )
-            let category = UNNotificationCategory(
-                identifier: Self.emptyBookmarkSnapshotCategory,
-                actions: [forceAction, backupsAction],
-                intentIdentifiers: [],
-                options: []
-            )
-            UNUserNotificationCenter.current().setNotificationCategories([category])
+            registerBookmarkSafetyNotificationCategories()
             await requestPermission()
 
             let content = UNMutableNotificationContent()
@@ -246,7 +280,63 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
             }
         }
     }
-    
+
+    /// A single unretried Safari read that would delete most of a target
+    /// browser's bookmarks is more likely a thin/partial read than a real mass
+    /// deletion, so this is never applied automatically — the user decides.
+    func notifyMassBookmarkDeletionSuspected(source: String, deletedCount: Int, totalCount: Int) {
+        Task {
+            registerBookmarkSafetyNotificationCategories()
+            await requestPermission()
+
+            let content = UNMutableNotificationContent()
+            content.title = String(localized: "Large Bookmark Deletion Blocked", bundle: langBundle)
+            content.body = String(
+                format: String(localized: "%d of %d bookmarks in %@ would be removed based on a single read. Nothing was changed — tap Apply Deletions if this is expected.", bundle: langBundle),
+                deletedCount,
+                totalCount,
+                source
+            )
+            content.categoryIdentifier = Self.massBookmarkDeletionCategory
+            content.userInfo = ["clientId": source]
+
+            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+            do {
+                try await UNUserNotificationCenter.current().add(request)
+            } catch {
+                self.logger.error("Failed to schedule mass bookmark deletion warning: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// A real single bookmark deletion arrives as one explicit event. A burst of
+    /// many within a few seconds from the same browser looks like reconciliation
+    /// churn rather than a deliberate user action, so it is held for confirmation
+    /// instead of being applied to Safari and rebroadcast to every other browser.
+    func notifyBookmarkRemovalBurstSuspected(source: String, count: Int) {
+        Task {
+            registerBookmarkSafetyNotificationCategories()
+            await requestPermission()
+
+            let content = UNMutableNotificationContent()
+            content.title = String(localized: "Bookmark Deletion Burst Blocked", bundle: langBundle)
+            content.body = String(
+                format: String(localized: "%@ reported %d individual bookmark deletions within a few seconds. Nothing was changed — tap Apply Deletions if this is expected.", bundle: langBundle),
+                source,
+                count
+            )
+            content.categoryIdentifier = Self.bookmarkRemovalBurstCategory
+            content.userInfo = ["clientId": source]
+
+            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+            do {
+                try await UNUserNotificationCenter.current().add(request)
+            } catch {
+                self.logger.error("Failed to schedule bookmark removal burst warning: \(error.localizedDescription)")
+            }
+        }
+    }
+
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         return [.banner]
     }
@@ -258,6 +348,14 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         await MainActor.run {
             if actionIdentifier == Self.forceEmptyBookmarkSnapshotAction, let clientId {
                 AppState.shared.syncService.forceAcceptPendingEmptyBookmarkSnapshot(from: clientId)
+                return
+            }
+            if actionIdentifier == Self.applyMassBookmarkDeletionAction, let clientId {
+                AppState.shared.applyPendingMassBookmarkDeletion(from: clientId)
+                return
+            }
+            if actionIdentifier == Self.applyBookmarkRemovalBurstAction, let clientId {
+                AppState.shared.syncService.forceApplyPendingBookmarkRemovalBurst(from: clientId)
                 return
             }
             if actionIdentifier == Self.openRecentBackupsAction {

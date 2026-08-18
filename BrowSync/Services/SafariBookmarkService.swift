@@ -16,6 +16,7 @@ final class SafariBookmarkService {
     private var fileMonitor: DispatchSourceFileSystemObject?
     private var isWritingInternally = false
     private let logger = Logger(subsystem: "com.ct106.browsync", category: "SafariBookmarks")
+    private static let maxOrphanedFolderPruneCount = 2
 
     private var bookmarksURL: URL? {
 #if APP_STORE
@@ -368,14 +369,27 @@ final class SafariBookmarkService {
             // folders that BrowSync previously wrote but the current source tree no
             // longer has; this removes stale browser-system-root contamination
             // without relying on localized folder names.
-            let retainedSafariOnlyNodes = safariNodes.filter { node in
+            var orphanedFolderIndices = Set<Int>()
+            for (idx, node) in safariNodes.enumerated() {
                 guard pruneOrphanedManagedFolders,
                       (node["WebBookmarkType"] as? String) == "WebBookmarkTypeList",
                       node["BrowSyncSourceRoot"] != nil,
-                      let title = node["Title"] as? String else {
-                    return true
-                }
-                return incomingFolderTitles.contains(title)
+                      let title = node["Title"] as? String,
+                      !incomingFolderTitles.contains(title) else { continue }
+                orphanedFolderIndices.insert(idx)
+            }
+            // An incoming payload that's missing most folder titles (a bad read,
+            // a filter bug, a stale tombstone) looks identical to "these folders
+            // were really deleted" from here. Pruning more than a couple at once
+            // is far more likely to be the former, so refuse and keep everything.
+            let retainedSafariOnlyNodes: [[String: Any]]
+            if orphanedFolderIndices.count > Self.maxOrphanedFolderPruneCount {
+                logger.warning("Refusing to prune \(orphanedFolderIndices.count) previously-synced folders in one pass from \(sourceBrowser) — keeping them instead of risking a false mass deletion.")
+                retainedSafariOnlyNodes = safariNodes
+            } else {
+                retainedSafariOnlyNodes = safariNodes.enumerated()
+                    .filter { !orphanedFolderIndices.contains($0.offset) }
+                    .map(\.element)
             }
             addedCount += safariNodes.count - retainedSafariOnlyNodes.count
             newSafariNodes.append(contentsOf: retainedSafariOnlyNodes)

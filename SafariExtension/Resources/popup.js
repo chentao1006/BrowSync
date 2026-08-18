@@ -51,6 +51,25 @@ function displayBrowserName(browserId, detail) {
   return String(browserId).replace(/[-_]+/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
 }
 
+// Some Chromium builds (observed on Edge) fail to decode a long inline
+// data: URI assigned directly to <img src> in an extension popup. Re-wrap
+// the same bytes as a blob: URL first, which is universally supported.
+function setBrowserIconSrc(imgEl, dataURL) {
+  const fallback = '../icons/icon16.png';
+  imgEl.onerror = () => { imgEl.onerror = null; imgEl.src = fallback; };
+  if (!dataURL) { imgEl.src = fallback; return; }
+  try {
+    const [header, base64] = dataURL.split(',');
+    const mime = /data:(.*?);base64/.exec(header)?.[1] || 'image/png';
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    imgEl.src = URL.createObjectURL(new Blob([bytes], { type: mime }));
+  } catch (e) {
+    imgEl.src = fallback;
+  }
+}
+
 function renderOpenInBrowsers(installedBrowsers, currentBrowserId, currentUrl, installedBrowserDetails = []) {
   const section = document.getElementById('openInBrowserSection');
   const list = document.getElementById('openInBrowserList');
@@ -102,9 +121,8 @@ function renderOpenInBrowsers(installedBrowsers, currentBrowserId, currentUrl, i
     });
 
     const icon = document.createElement('img');
-    icon.src = detail.iconDataURL || '../icons/icon16.png';
     icon.alt = '';
-    icon.onerror = () => { icon.src = '../icons/icon16.png'; };
+    setBrowserIconSrc(icon, detail.iconDataURL);
 
     button.appendChild(icon);
     list.appendChild(button);
@@ -417,8 +435,7 @@ async function renderRemoteTabs() {
 
       const icon = document.createElement('img');
       icon.className = 'remote-tab-icon';
-      icon.src = detailsById.get(browser)?.iconDataURL || '../icons/icon16.png';
-      icon.onerror = () => { icon.src = '../icons/icon16.png'; };
+      setBrowserIconSrc(icon, detailsById.get(browser)?.iconDataURL);
 
       const tabTitle = document.createElement('div');
       tabTitle.className = 'remote-tab-title';

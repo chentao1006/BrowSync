@@ -268,6 +268,52 @@ final class BackupService: ObservableObject {
         deletedBookmarks.removeAll { $0.id == id }
         saveDeletedItems()
     }
+
+    /// Tombstones are matched by URL/title (not id) elsewhere, precisely so a
+    /// browser regenerating ids doesn't defeat the match — but that same
+    /// loose match means a bookmark the user manually restores still matches
+    /// its old tombstone for up to 24h, silently suppressing it again on the
+    /// next sync. Clear any tombstone whose signature reappears in a live tree.
+    func resurrectDeletedBookmarks(seenIn bookmarks: [Bookmark]) {
+        ensureDeletedItemsLoadedForMutation()
+        guard !deletedBookmarks.isEmpty else { return }
+
+        let liveURLs = Set(bookmarks.compactMap { $0.url.flatMap { $0 }?.lowercased() })
+        // Folders are matched by title alone, not parentId: a folder's parentId
+        // at deletion time may be a reporting browser's raw native id (e.g.
+        // Chrome's own numeric id for a non-root parent), which won't match a
+        // differently-sourced tree's id for that same folder later. Resurrection
+        // should err toward clearing a stale tombstone, not toward re-suppressing
+        // a folder the user restored, so title alone is the safer match here —
+        // unlike the stricter parentId+title match used when deciding what to
+        // exclude in the first place.
+        let liveFolderTitles = Set(bookmarks.filter(\.isFolder).map { $0.title.lowercased() })
+
+        func matchesLiveBookmark(_ item: DeletedBookmark) -> Bool {
+            if item.isFolder, item.url == nil {
+                return liveFolderTitles.contains(item.title.lowercased())
+            } else if let url = item.url?.lowercased() {
+                return liveURLs.contains(url)
+            }
+            return false
+        }
+
+        // If a tombstoned folder itself reappears, its captured children were
+        // taken down along with it and are restored too — drop the whole
+        // subtree. Otherwise recurse so an unrelated sibling's restoration
+        // doesn't erase a deletion that's still real.
+        func filterStillDeleted(_ items: [DeletedBookmark]) -> [DeletedBookmark] {
+            items.compactMap { item in
+                guard !matchesLiveBookmark(item) else { return nil }
+                var updated = item
+                updated.children = item.children.map(filterStillDeleted)
+                return updated
+            }
+        }
+
+        deletedBookmarks = filterStillDeleted(deletedBookmarks)
+        saveDeletedItems()
+    }
     
     func clearAllDeletedBookmarks() {
         ensureDeletedItemsLoadedForMutation()
