@@ -22,15 +22,13 @@ fi
 
 # 2. Run compilation
 echo "🏗️ Compiling Release version..."
-xcodebuild -project "${PROJECT_ROOT}/BrowSync.xcodeproj" \
+if xcodebuild -project "${PROJECT_ROOT}/BrowSync.xcodeproj" \
            -scheme "BrowSync" \
            -configuration "Release" \
            -destination "platform=macOS,arch=arm64" \
            -derivedDataPath "${DERIVED_DATA_DIR}" \
            SWIFT_ACTIVE_COMPILATION_CONDITIONS="\$(inherited) LOCAL_PRO_TEST" \
-           build > /dev/null
-
-if [ $? -eq 0 ]; then
+           build; then
     echo "✅ Compilation successful!"
 else
     echo "❌ Compilation failed, please check errors."

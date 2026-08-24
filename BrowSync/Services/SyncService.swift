@@ -37,6 +37,8 @@ final class SyncService: ObservableObject {
     }
     private let logger = Logger(subsystem: "com.ct106.browsync", category: "SyncService")
     private let dataDir: URL
+    private static let syncLogRetention: TimeInterval = 7 * 24 * 60 * 60
+    private static let syncLogMaximumBytes = 10 * 1024 * 1024
 
     @Published var lastSyncDate: Date? = nil
     @Published var isSyncing: Bool = false
@@ -110,6 +112,12 @@ final class SyncService: ObservableObject {
 #if !APP_STORE
         startSafariBookmarkMonitor()
 #endif
+        // Do not put potentially large file-system cleanup on the initialization
+        // path. The app must become launchable before maintenance begins.
+        DispatchQueue.main.async { [weak self] in
+            self?.removeLegacyPayloadLogs()
+            self?.pruneManagedSyncLogs()
+        }
     }
 
     func bookmarkFolderMissing(_ browser: Browser, folder: String?) -> Bool {
@@ -278,7 +286,6 @@ final class SyncService: ObservableObject {
                 timestamp: Date().timeIntervalSince1970
             )
             await MainActor.run {
-                self.logSyncPayload(req, direction: "outgoing", clientId: "all-bookmark-participants", note: "post-removal-pull-request")
                 self.daemon?.broadcast(req, participatingBrowsers: self.settings.bookmarkParticipatingBrowsers)
             }
         }
@@ -330,7 +337,6 @@ final class SyncService: ObservableObject {
             messageId: UUID().uuidString,
             timestamp: Date().timeIntervalSince1970
         )
-        logSyncPayload(outgoing, direction: "outgoing", clientId: clientId, note: "rebroadcast-bookmark-removal")
         broadcastBookmarkMessage(outgoing, excluding: nil)
         // NOTE: Do NOT save bookmarks_removed to GlobalStateStore.
         // These are point-in-time events; replaying them to reconnecting
@@ -429,7 +435,6 @@ final class SyncService: ObservableObject {
         )
         message.isFullMirror = false
 
-        logSyncPayload(message, direction: "outgoing", clientId: "safari", note: "final-safari-convergence")
         for browser in settings.bookmarkParticipatingBrowsers where browser != .safari {
             sendBookmarkMessage(message, to: browser)
         }
@@ -529,7 +534,7 @@ final class SyncService: ObservableObject {
     // MARK: - Data Directories
 
     private func createDataDirectories() {
-        let dirs = ["sites", "bookmarks", "history", "logs", "logs/payloads"]
+        let dirs = ["sites", "bookmarks", "history", "logs"]
         for dir in dirs {
             let url = dataDir.appendingPathComponent(dir)
             try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -828,7 +833,6 @@ final class SyncService: ObservableObject {
                                     messageId: UUID().uuidString,
                                     timestamp: Date().timeIntervalSince1970
                                 )
-                                logSyncPayload(msg, direction: "outgoing", clientId: "safari", note: "safari-deletion")
                                 broadcastBookmarkMessage(msg)
                                 // NOTE: Do NOT save bookmarks_removed to GlobalStateStore.
                                 // These are point-in-time events; replaying them to reconnecting
@@ -865,7 +869,6 @@ final class SyncService: ObservableObject {
                             timestamp: Date().timeIntervalSince1970
                         )
                         pushMsg.isFullMirror = (strategy == .oneWay) // Root selection keeps the old full mirror behavior; targeted folders are handled per receiver.
-                        logSyncPayload(pushMsg, direction: "outgoing", clientId: "safari", note: "push-safari-bookmarks")
                         broadcastBookmarkMessage(pushMsg)
                         log("Pushed \(bookmarks.count) Safari bookmarks to clients")
                         
@@ -901,7 +904,6 @@ final class SyncService: ObservableObject {
                     messageId: UUID().uuidString,
                     timestamp: Date().timeIntervalSince1970
                 )
-                logSyncPayload(requestMessage, direction: "outgoing", clientId: sourceBrowser.id, note: "bookmark-pull-request")
                 daemon?.broadcast(requestMessage, participatingBrowsers: [sourceBrowser])
             } else if strategy == .twoWayMerge {
                 let requestMessage = WSMessage(
@@ -912,7 +914,6 @@ final class SyncService: ObservableObject {
                     messageId: UUID().uuidString,
                     timestamp: Date().timeIntervalSince1970
                 )
-                logSyncPayload(requestMessage, direction: "outgoing", clientId: "all-bookmark-participants", note: "bookmark-pull-request")
                 daemon?.broadcast(requestMessage, participatingBrowsers: settings.bookmarkParticipatingBrowsers)
             }
         } else {
@@ -925,7 +926,6 @@ final class SyncService: ObservableObject {
                 messageId: UUID().uuidString,
                 timestamp: Date().timeIntervalSince1970
             )
-            logSyncPayload(requestMessage, direction: "outgoing", clientId: "all", note: "pull-request")
             daemon?.broadcast(requestMessage)
             
             // Proactively push the globally cached state from the central app.
@@ -939,10 +939,8 @@ final class SyncService: ObservableObject {
                         if liveOnly.isEmpty { continue }
                         var cleaned = msg
                         cleaned.payload = .cookies(liveOnly)
-                        logSyncPayload(cleaned, direction: "outgoing", clientId: "cached-state", note: "cached-live-cookies")
                         daemon?.broadcast(cleaned)
                     } else {
-                        logSyncPayload(msg, direction: "outgoing", clientId: "cached-state", note: "cached-state")
                         daemon?.broadcast(msg)
                     }
                 }
@@ -956,7 +954,6 @@ final class SyncService: ObservableObject {
         guard message.type == .sync, let category = message.category else { return }
         
         var filteredMessage = message
-        logSyncPayload(message, direction: "incoming", clientId: clientId, note: "raw-received")
 
         // This is the hard master gate for all state payloads.  It must run
         // before filtering, persistence, statistics, or notifications: an
@@ -1079,7 +1076,6 @@ final class SyncService: ObservableObject {
             if sanitizedBookmarks.count != bms.count {
                 log("Sanitized \(bms.count - sanitizedBookmarks.count) non-Safari bookmark nodes from [\(clientId)] before snapshot/persist")
                 filteredMessage.payload = .bookmarks(sanitizedBookmarks)
-                logSyncPayload(filteredMessage, direction: "incoming", clientId: clientId, note: "sanitized-bookmarks")
             }
             guard let sourceAdjustedBookmarks = folderAdjustedBookmarksForSource(sanitizedBookmarks, browser: sourceBrowserForFolder) else {
                 return
@@ -1298,7 +1294,6 @@ final class SyncService: ObservableObject {
                 daemon?.broadcast(filteredMessage, excluding: clientId)
             } else {
                 for requesterId in silentBrowserDataPullRequesters(for: filteredMessage, from: clientId) {
-                    logSyncPayload(filteredMessage, direction: "outgoing", clientId: requesterId, note: "silent-browser-data-pull-response")
                     daemon?.send(filteredMessage, toClientId: requesterId)
                 }
                 log("Automatic sync is disabled. Received data but did not broadcast.")
@@ -1965,42 +1960,124 @@ final class SyncService: ObservableObject {
         }
     }
 
-    private func logSyncPayload(_ message: WSMessage, direction: String, clientId: String, note: String) {
-        let payloadDir = dataDir.appendingPathComponent("logs/payloads")
-        try? FileManager.default.createDirectory(at: payloadDir, withIntermediateDirectories: true)
+    /// Raw sync payloads may contain cookies and storage values. They are never
+    /// persisted in normal operation; remove diagnostic payloads left by older builds.
+    private func removeLegacyPayloadLogs() {
+        let fileManager = FileManager.default
+        for payloadDir in managedPayloadLogDirectories() {
+            let logDir = payloadDir.deletingLastPathComponent()
+            var pendingRemovalDirs = (try? fileManager.contentsOfDirectory(
+                at: logDir,
+                includingPropertiesForKeys: nil,
+                options: []
+            ))?.filter { $0.lastPathComponent.hasPrefix(".payloads-deleting-") } ?? []
 
-        let timestamp = ISO8601DateFormatter().string(from: Date())
-            .replacingOccurrences(of: ":", with: "-")
-            .replacingOccurrences(of: ".", with: "-")
-        let category = message.category ?? "unknown"
-        let messageId = message.messageId ?? UUID().uuidString
-        let safeClientId = clientId.replacingOccurrences(of: "/", with: "_")
-        let safeNote = note.replacingOccurrences(of: "/", with: "_")
-        let fileURL = payloadDir.appendingPathComponent("\(timestamp)_\(direction)_\(safeClientId)_\(category)_\(safeNote)_\(messageId).json")
+            if fileManager.fileExists(atPath: payloadDir.path) {
+            // Renaming within the same directory is immediate, even when a legacy
+            // payload directory contains many thousands of files. The UI can start
+            // without waiting for recursive deletion to finish.
+                let pendingRemovalDir = logDir.appendingPathComponent(
+                    ".payloads-deleting-\(UUID().uuidString)"
+                )
+                do {
+                    try fileManager.moveItem(at: payloadDir, to: pendingRemovalDir)
+                    pendingRemovalDirs.append(pendingRemovalDir)
+                    log("Scheduled removal of legacy raw payload logs at \(payloadDir.path).")
+                } catch {
+                    log("Failed to schedule legacy raw payload log removal: \(error.localizedDescription)")
+                }
+            }
 
-        do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(message)
-            try data.write(to: fileURL, options: .atomic)
-            log("Payload \(direction) [\(clientId)] \(category) \(payloadSummary(message.payload)) note=\(note) file=\(fileURL.path)")
-        } catch {
-            logger.error("Failed to save sync payload log: \(error)")
+            for pendingRemovalDir in pendingRemovalDirs {
+                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                    do {
+                        try FileManager.default.removeItem(at: pendingRemovalDir)
+                        DispatchQueue.main.async {
+                            self?.log("Removed legacy raw payload logs at \(pendingRemovalDir.path).")
+                        }
+                    } catch {
+                        DispatchQueue.main.async {
+                            self?.log("Failed to remove legacy raw payload logs: \(error.localizedDescription)")
+                        }
+                    }
+                }
+            }
         }
     }
 
-    private func payloadSummary(_ payload: WSPayload?) -> String {
-        guard let payload else { return "(request/no payload)" }
-        switch payload {
-        case .bookmarks(let items): return "(\(items.count) bookmarks)"
-        case .tabs(let items): return "(\(items.count) tabs)"
-        case .browserState(let items): return "(\(items.count) browserState tabs)"
-        case .localStorage(let items): return "(\(items.count) localStorage)"
-        case .sessionStorage(let items): return "(\(items.count) sessionStorage)"
-        case .cookies(let items): return "(\(items.count) cookies)"
-        case .history(let items): return "(\(items.count) history)"
-        case .bookmarksRemoved(let item): return "(removed id=\(item.id) title=\(item.title))"
-        case .raw(let raw): return "(\(raw.count) raw fields)"
+    private func managedPayloadLogDirectories() -> [URL] {
+        managedLogDirectories().map { $0.appendingPathComponent("payloads") }
+    }
+
+    private func managedLogDirectories() -> [URL] {
+        let current = dataDir.appendingPathComponent("logs")
+        let actualUserHome = NSHomeDirectoryForUser(NSUserName()).map(URL.init(fileURLWithPath:))
+        let containerHome = FileManager.default.homeDirectoryForCurrentUser
+        let candidateHomes = [actualUserHome, containerHome].compactMap { $0 }
+        let legacyContainerLogs = candidateHomes.map {
+            $0.appendingPathComponent("Library/Containers/com.ct106.browsync/Data/Library/Application Support/BrowSync/logs")
+        }
+        return ([current] + legacyContainerLogs).reduce(into: []) { directories, directory in
+            if !directories.contains(where: { $0.standardizedFileURL == directory.standardizedFileURL }) {
+                directories.append(directory)
+            }
+        }
+    }
+
+    /// Text logs are small daily files; clean them deterministically after app
+    /// initialization rather than relying on an unobserved background task.
+    private func pruneManagedSyncLogs() {
+        for logDir in managedLogDirectories() {
+            Self.pruneSyncLogs(
+                in: logDir,
+                retention: Self.syncLogRetention,
+                maximumBytes: Self.syncLogMaximumBytes
+            )
+        }
+    }
+
+    nonisolated private static func pruneSyncLogs(
+        in logDir: URL,
+        retention: TimeInterval,
+        maximumBytes: Int
+    ) {
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: logDir,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+
+        struct LogFile {
+            let url: URL
+            let modifiedAt: Date
+            let size: Int
+        }
+
+        let cutoff = Date().addingTimeInterval(-retention)
+        var retained: [LogFile] = []
+        for url in urls where url.pathExtension == "log" {
+            guard let values = try? url.resourceValues(forKeys: keys), values.isRegularFile == true else {
+                continue
+            }
+            let file = LogFile(
+                url: url,
+                modifiedAt: values.contentModificationDate ?? .distantPast,
+                size: values.fileSize ?? 0
+            )
+            if file.modifiedAt < cutoff {
+                try? FileManager.default.removeItem(at: file.url)
+            } else {
+                retained.append(file)
+            }
+        }
+
+        var totalBytes = retained.reduce(0) { $0 + $1.size }
+        for file in retained.sorted(by: { $0.modifiedAt < $1.modifiedAt }) where totalBytes > maximumBytes {
+            guard (try? FileManager.default.removeItem(at: file.url)) != nil else { continue }
+            totalBytes -= file.size
         }
     }
 
