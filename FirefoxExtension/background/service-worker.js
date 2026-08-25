@@ -14,20 +14,10 @@ const applyingCookies = new Set();
 // Batch rapid cookie updates before sending them to the macOS sync service.
 const cookieSyncQueue = new Map();
 let cookieSyncTimer = null;
-const incomingCookieDomains = new Map();
+let badgeResetTimer = null;
 
 function cookieIdentity(cookie) {
   return `${cookie.domain}::${cookie.path || '/'}::${cookie.name}`;
-}
-
-function isIncomingCookieDomain(cookie) {
-  const domain = (cookie.domain || '').replace(/^\./, '').toLowerCase();
-  const expiresAt = incomingCookieDomains.get(domain) || 0;
-  if (expiresAt <= Date.now()) {
-    incomingCookieDomains.delete(domain);
-    return false;
-  }
-  return true;
 }
 
 async function filterIncomingCookiesBySource(cookies, senderBrowser) {
@@ -125,7 +115,9 @@ async function connect() {
     await chrome.storage.local.set({ wsState: 'open' }).catch(() => { });
 
     send({ type: 'register', browser: DETECTED_BROWSER, instanceId: INSTANCE_ID });
-    send({ type: 'pull' });
+    // Do not request an unscoped snapshot on every connection. It makes every
+    // browser stream all cookies back to this worker; state is pulled only for
+    // the site being opened or explicitly synced.
     while (outboundQueue.length > 0) {
       ws.send(JSON.stringify(outboundQueue.shift()));
     }
@@ -179,12 +171,16 @@ function scheduleReconnect() {
 
 function updateBadge(state = null) {
   if (state === 'syncing') {
+    if (badgeResetTimer) clearTimeout(badgeResetTimer);
     chrome.action.setBadgeText({ text: 'SYNC' });
     chrome.action.setBadgeBackgroundColor({ color: '#3b82f6' });
     if (chrome.action.setBadgeTextColor) {
       try { chrome.action.setBadgeTextColor({ color: '#ffffff' }); } catch (e) {}
     }
-    setTimeout(() => updateBadge(), 2000);
+    badgeResetTimer = setTimeout(() => {
+      badgeResetTimer = null;
+      updateBadge();
+    }, 2000);
     return;
   }
   
@@ -410,7 +406,10 @@ async function sendCookiesSnapshot(site) {
   // Include tombstones
   const allStorage = await chrome.storage.local.get(null);
   for (const [key, value] of Object.entries(allStorage)) {
-    if (key.startsWith('tombstone_cookies_') && value) {
+    // A targeted pull must not drag every site's old deletion tombstones into
+    // the response. Besides being unrelated, they can delay the requested
+    // session cookie until the app-side repair window expires.
+    if (key.startsWith('tombstone_cookies_') && value && (!site || cookieMatchesSite(value, site))) {
       const mapKey = cookieIdentity(value);
       if (!mappedMap.has(mapKey)) {
         mappedMap.set(mapKey, value);
@@ -1122,8 +1121,6 @@ if (chrome.cookies) {
 
     const cookieKey = cookieIdentity(cookie);
     if (applyingCookies.has(cookieKey)) return;
-    // Ignore follow-up cookies a site writes immediately after we imported its session.
-    if (isIncomingCookieDomain(cookie)) return;
     const updatedAt = Date.now();
     await setCookieTimestamp(cookie, updatedAt);
 
@@ -1173,16 +1170,22 @@ async function applyCookieSync(cookies) {
   let failCount = 0;
   const failures = [];
   if (!chrome.cookies) return;
+  const localTimestamps = await getCookieTimestamps();
+  const localCookies = new Set((await chrome.cookies.getAll({})).map(cookieIdentity));
   for (const cookie of cookies) {
-    const domain = (cookie.domain || '').replace(/^\./, '').toLowerCase();
-    incomingCookieDomains.set(domain, Date.now() + 8000);
     const baseDomain = cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain;
-    const urlsToTry = (baseDomain === 'localhost' || baseDomain.startsWith('127.0.0.'))
-      ? [`http://${baseDomain}${cookie.path}`, `https://${baseDomain}${cookie.path}`]
-      : [`https://${baseDomain}${cookie.path}`];
+    const isIPAddress = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(baseDomain);
+    const urlsToTry = (baseDomain === 'localhost' || isIPAddress)
+      ? [`http://${baseDomain}${cookie.path || '/'}`, `https://${baseDomain}${cookie.path || '/'}`]
+      : [`https://${baseDomain}${cookie.path || '/'}`];
       
     const cookieKey = cookieIdentity(cookie);
     const updatedAt = cookie.updatedAt || Date.now();
+
+    // Never overwrite or delete an existing local cookie with a snapshot that
+    // is not newer. This preserves a freshly authenticated session when a
+    // second browser reloads and returns the same (or older) state.
+    if (localCookies.has(cookieKey) && (localTimestamps[cookieKey] || 0) >= updatedAt) continue;
     applyingCookies.add(cookieKey);
 
     if (cookie.removed) {
@@ -1208,10 +1211,12 @@ async function applyCookieSync(cookies) {
     const base = {
       name: cookie.name,
       value: cookie.value,
-      path: cookie.path,
-      expirationDate: cookie.expirationDate,
+      path: cookie.path || '/',
       httpOnly: cookie.httpOnly,
     };
+    // Session cookies have no expirationDate. Omitting the field (rather than
+    // passing undefined) is required by some browser cookie API bridges.
+    if (Number.isFinite(cookie.expirationDate)) base.expirationDate = cookie.expirationDate;
     const validSameSite = ['no_restriction', 'lax', 'strict'];
     if (cookie.sameSite && validSameSite.includes(cookie.sameSite)) {
       base.sameSite = cookie.sameSite;
@@ -1283,6 +1288,7 @@ async function applyCookieSync(cookies) {
     }
     setTimeout(() => applyingCookies.delete(cookieKey), 1000);
   }
+  if (successCount === 0 && failCount === 0) return;
   console.log(`[BrowSync] Cookie sync done: ${successCount} set, ${failCount} failed`);
   send({
     type: 'sync',
@@ -1358,12 +1364,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  if (message.type === 'PULL_SITE_DATA') {
-    send({
-      type: 'pull', browser: DETECTED_BROWSER, category: 'browserData', site: message.domain,
-      messageId: crypto.randomUUID(), timestamp: Date.now()
-    });
-    sendResponse({ ok: true });
+  if (message.type === 'SYNC_SITE_DATA') {
+    handlePullRequest('browserData', message.domain)
+      .then(() => sendResponse({ ok: true }))
+      .catch(error => sendResponse({ ok: false, error: String(error) }));
     return true;
   }
   
@@ -1543,7 +1547,8 @@ if (chrome.tabs) {
   chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (changeInfo.status === 'loading' && tab.url) {
       pendingSiteReloads.delete(tabId);
-      navigationSyncSites.delete(`${tabId}:${syncDomainForHostname(safeHostname(tab.url))}`);
+      // Do not re-pull on form POSTs or redirects in this tab: that can replace
+      // a freshly issued session cookie with stale state from another browser.
       void requestCurrentSiteState(tabId, tab.url);
     }
     if (changeInfo.status !== 'complete' || !tab.url) return;
@@ -1573,6 +1578,13 @@ if (chrome.tabs) {
         timestamp: Date.now(),
       });
     }, 10000);
+  });
+
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    pendingSiteReloads.delete(tabId);
+    for (const key of navigationSyncSites.keys()) {
+      if (key.startsWith(`${tabId}:`)) navigationSyncSites.delete(key);
+    }
   });
 }
 

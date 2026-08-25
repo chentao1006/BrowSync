@@ -708,7 +708,10 @@ final class SyncService: ObservableObject {
             SilentBrowserDataPull(
                 requesterClientId: requesterClientId,
                 site: normalizedSite(site),
-                expiresAt: Date().addingTimeInterval(12)
+                // A browser can still be draining an older cookie batch when
+                // the requested site snapshot arrives. Keep this repair window
+                // long enough for that queue without retaining it indefinitely.
+                expiresAt: Date().addingTimeInterval(30)
             )
         )
     }
@@ -954,6 +957,11 @@ final class SyncService: ObservableObject {
         guard message.type == .sync, let category = message.category else { return }
         
         var filteredMessage = message
+        // A per-site browserData pull is a repair operation: the requester may
+        // have lost a cookie while the source still has the same version. Keep
+        // the requester before conflict filtering so an unchanged snapshot can
+        // be sent back instead of being mistaken for a duplicate update.
+        let silentPullRequesters = silentBrowserDataPullRequesters(for: message, from: clientId)
 
         // This is the hard master gate for all state payloads.  It must run
         // before filtering, persistence, statistics, or notifications: an
@@ -1112,7 +1120,12 @@ final class SyncService: ObservableObject {
             
             switch payload {
             case .cookies(let cookies):
-                let filtered = filterCookies(cookies, clientId: clientId, policy: policy)
+                let filtered = filterCookies(
+                    cookies,
+                    clientId: clientId,
+                    policy: policy,
+                    acceptingUnchangedSnapshot: !silentPullRequesters.isEmpty
+                )
                 if filtered.isEmpty {
                     return
                 }
@@ -1165,6 +1178,17 @@ final class SyncService: ObservableObject {
         }
         
         log("Received sync data from [\(clientId)]: \(category)\(countStr)")
+
+        // Do not rebroadcast a requested snapshot as a new automatic update.
+        // Its sole purpose is to restore the requesting browser, including
+        // session cookies whose updatedAt timestamp has not changed.
+        if !silentPullRequesters.isEmpty {
+            for requesterId in silentPullRequesters {
+                daemon?.send(filteredMessage, toClientId: requesterId)
+            }
+            log("Delivered requested \(category) snapshot from [\(clientId)] to \(silentPullRequesters.count) browser(s).")
+            return
+        }
 
         // Apply conflict resolution and persist
         if let payload = filteredMessage.payload {
@@ -1330,7 +1354,12 @@ final class SyncService: ObservableObject {
         }
     }
 
-    private func filterCookies(_ cookies: [SyncCookie], clientId: String, policy: WebsiteListPolicy) -> [SyncCookie] {
+    private func filterCookies(
+        _ cookies: [SyncCookie],
+        clientId: String,
+        policy: WebsiteListPolicy,
+        acceptingUnchangedSnapshot: Bool = false
+    ) -> [SyncCookie] {
         cookies.filter { cookie in
             let domain = cookie.domain.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
             let cleanDomain = domain.starts(with: ".") ? String(domain.dropFirst()) : domain
@@ -1354,7 +1383,7 @@ final class SyncService: ObservableObject {
                 let source = siteMatch?.sourceBrowser ?? settings.stateSourceBrowser
                 return clientId.lowercased().starts(with: source.rawValue.lowercased())
             case .latestWins:
-                return acceptLatestCookie(cookie, clientId: clientId)
+                return acceptingUnchangedSnapshot || acceptLatestCookie(cookie, clientId: clientId)
             }
         }
     }

@@ -358,12 +358,7 @@ if (btnSyncSiteNow) {
     const domain = e.target.dataset.domain;
     if (domain) {
       btnSyncSiteNow.style.opacity = '0.5';
-      chrome.runtime.sendMessage({ type: 'PULL_SITE_DATA', domain: domain }, () => {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-          if (tabs[0]) {
-            chrome.tabs.reload(tabs[0].id);
-          }
-        });
+      chrome.runtime.sendMessage({ type: 'SYNC_SITE_DATA', domain: domain }, () => {
         setTimeout(() => { btnSyncSiteNow.style.opacity = '1'; }, 1000);
       });
     }
