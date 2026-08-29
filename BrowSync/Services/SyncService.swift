@@ -1076,16 +1076,13 @@ final class SyncService: ObservableObject {
                 return
             }
 
-            // Explicit bookmarks_removed is preferred, but manual sync may only receive
-            // a fresh full snapshot. Diff it against the previous same-browser snapshot
-            // with URL/title fallbacks so offline Chrome-family deletions do not get
-            // resurrected by Safari's older tree.
-            let sanitizedBookmarks = sanitizeIncomingBookmarksForSafari(bms, from: clientId)
-            if sanitizedBookmarks.count != bms.count {
-                log("Sanitized \(bms.count - sanitizedBookmarks.count) non-Safari bookmark nodes from [\(clientId)] before snapshot/persist")
-                filteredMessage.payload = .bookmarks(sanitizedBookmarks)
-            }
-            guard let sourceAdjustedBookmarks = folderAdjustedBookmarksForSource(sanitizedBookmarks, browser: sourceBrowserForFolder) else {
+            // A full snapshot is state, not deletion authority.  In particular, do not
+            // filter it through local deletion tombstones before applying it: Chrome
+            // legitimately echoes Safari's tree after a native write, but Safari UUIDs
+            // differ from Chrome's.  Filtering that echo can remove its parent folders
+            // and leave otherwise valid children to be recreated at a browser root.
+            // Explicit `bookmarks_removed` messages below remain the only deletion path.
+            guard let sourceAdjustedBookmarks = folderAdjustedBookmarksForSource(bms, browser: sourceBrowserForFolder) else {
                 return
             }
             let previousForDeletion = BookmarkTreeMerger.extractExistingSubtreeAsRoot(
@@ -1093,7 +1090,7 @@ final class SyncService: ObservableObject {
                 folderPath: settings.bookmarkFolder(for: sourceBrowserForFolder)
             ) ?? preSyncAutoBookmarks
             processDeletedBookmarksFromFullSnapshot(previous: previousForDeletion, current: sourceAdjustedBookmarks, from: clientId)
-            saveSnapshotAliases(bookmarks: sanitizedBookmarks, clientId: clientId)
+            saveSnapshotAliases(bookmarks: bms, clientId: clientId)
             filteredMessage.payload = .bookmarks(sourceAdjustedBookmarks)
         }
 
