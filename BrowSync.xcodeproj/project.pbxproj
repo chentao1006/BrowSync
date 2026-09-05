@@ -889,7 +889,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync.extension.legacy;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync.extensionLegacy;
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 			};
@@ -909,7 +909,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync.extension.legacy;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync.extensionLegacy;
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 			};
@@ -931,7 +931,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D APP_STORE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync.extension.legacy;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync.extensionLegacy;
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 			};
@@ -953,7 +953,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D APP_STORE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync.extension.legacy;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ct106.browsync.extensionLegacy;
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 			};

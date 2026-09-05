@@ -41,7 +41,7 @@ struct AppConfig {
     /// extension. Keep the existing identifier on that majority path so an
     /// update does not make those users re-enable the extension.
     static let safariModernExtensionBundleIdentifier = "com.ct106.browsync.extension"
-    static let safariLegacyExtensionBundleIdentifier = "com.ct106.browsync.extension.legacy"
+    static let safariLegacyExtensionBundleIdentifier = "com.ct106.browsync.extensionLegacy"
 
     /// The compatible extension identifier for the Safari installed on this Mac.
     static var safariExtensionBundleIdentifier: String {
