@@ -19,15 +19,9 @@ final class SafariBookmarkService {
     private static let maxOrphanedFolderPruneCount = 2
 
     private var bookmarksURL: URL? {
-#if APP_STORE
         // Must be called inside withSafariAccess so the security-scoped resource is active.
         // SandboxAccessManager caches the resolved URL for this purpose.
         return SandboxAccessManager.shared.safariBookmarksPlistURL
-#else
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let url = home.appendingPathComponent("Library/Safari/Bookmarks.plist")
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
-#endif
     }
 
     private var isSafariRunning: Bool {
@@ -657,56 +651,58 @@ final class SafariBookmarkService {
 
     @discardableResult
     func removeBookmark(id: String, title: String? = nil, url: String? = nil) -> Bool {
-        guard let urlPath = bookmarksURL else { return false }
-        do {
-            let data = try Data(contentsOf: urlPath)
-            guard var plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-                  var children = plist["Children"] as? [[String: Any]] else {
-                return false
-            }
-            
-            var didRemove = false
-            func traverseAndRemove(nodes: inout [[String: Any]]) {
-                nodes.removeAll { node in
-                    if let uuid = node["WebBookmarkUUID"] as? String, uuid == id {
-                        didRemove = true
-                        return true
-                    }
-                    if let t = title, let u = url, let nodeU = node["URLString"] as? String {
-                        let nodeT = (node["URIDictionary"] as? [String: Any])?["title"] as? String ?? node["Title"] as? String
-                        if nodeU == u && nodeT == t {
-                            didRemove = true
-                            return true
-                        }
-                    } else if let t = title, url == nil, (node["WebBookmarkType"] as? String) == "WebBookmarkTypeList" {
-                        if let nodeT = node["Title"] as? String, nodeT == t {
-                            didRemove = true
-                            return true
-                        }
-                    }
+        return SandboxAccessManager.shared.withSafariAccess {
+            guard let urlPath = bookmarksURL else { return false }
+            do {
+                let data = try Data(contentsOf: urlPath)
+                guard var plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                      var children = plist["Children"] as? [[String: Any]] else {
                     return false
                 }
-                for i in 0..<nodes.count {
-                    if var subChildren = nodes[i]["Children"] as? [[String: Any]] {
-                        traverseAndRemove(nodes: &subChildren)
-                        nodes[i]["Children"] = subChildren
+
+                var didRemove = false
+                func traverseAndRemove(nodes: inout [[String: Any]]) {
+                    nodes.removeAll { node in
+                        if let uuid = node["WebBookmarkUUID"] as? String, uuid == id {
+                            didRemove = true
+                            return true
+                        }
+                        if let t = title, let u = url, let nodeU = node["URLString"] as? String {
+                            let nodeT = (node["URIDictionary"] as? [String: Any])?["title"] as? String ?? node["Title"] as? String
+                            if nodeU == u && nodeT == t {
+                                didRemove = true
+                                return true
+                            }
+                        } else if let t = title, url == nil, (node["WebBookmarkType"] as? String) == "WebBookmarkTypeList" {
+                            if let nodeT = node["Title"] as? String, nodeT == t {
+                                didRemove = true
+                                return true
+                            }
+                        }
+                        return false
+                    }
+                    for i in 0..<nodes.count {
+                        if var subChildren = nodes[i]["Children"] as? [[String: Any]] {
+                            traverseAndRemove(nodes: &subChildren)
+                            nodes[i]["Children"] = subChildren
+                        }
                     }
                 }
+
+                traverseAndRemove(nodes: &children)
+
+                if didRemove {
+                    plist["Children"] = children
+                    let newData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+                    try newData.write(to: urlPath, options: .atomic)
+                    logger.info("Removed Safari bookmark with ID: \(id) or title: \(title ?? "")")
+                    return true
+                }
+                return false
+            } catch {
+                logger.error("Failed to remove Safari bookmark: \(error)")
+                return false
             }
-            
-            traverseAndRemove(nodes: &children)
-            
-            if didRemove {
-                plist["Children"] = children
-                let newData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
-                try newData.write(to: urlPath, options: .atomic)
-                logger.info("Removed Safari bookmark with ID: \(id) or title: \(title ?? "")")
-                return true
-            }
-            return false
-        } catch {
-            logger.error("Failed to remove Safari bookmark: \(error)")
-            return false
         }
     }
 }
@@ -729,14 +725,10 @@ import os.log
 final class SafariCleanup {
     static func cleanDirtyBookmarks() {
         let logger = Logger(subsystem: "com.ct106.browsync", category: "SafariCleanup")
-        // SafariCleanup must also go through withSafariAccess on App Store builds
+        // SafariCleanup must also go through withSafariAccess
         // to get a security-scoped resource for the real ~/Library/Safari path.
         SandboxAccessManager.shared.withSafariAccess {
-#if APP_STORE
             let bookmarksPlistURL = SandboxAccessManager.shared.safariBookmarksPlistURL
-#else
-            let bookmarksPlistURL: URL? = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Safari/Bookmarks.plist")
-#endif
             guard let url = bookmarksPlistURL,
                   let data = try? Data(contentsOf: url),
                   var plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],

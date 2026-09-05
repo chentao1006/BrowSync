@@ -15,6 +15,7 @@ const applyingCookies = new Set();
 const cookieSyncQueue = new Map();
 let cookieSyncTimer = null;
 let badgeResetTimer = null;
+let permissionBadgeNeeded = false;
 
 function cookieIdentity(cookie) {
   return `${cookie.domain}::${cookie.path || '/'}::${cookie.name}`;
@@ -67,6 +68,128 @@ function detectBrowserId() {
 const DETECTED_BROWSER = detectBrowserId();
 const INSTANCE_ID = `${DETECTED_BROWSER}-main`;
 chrome.storage.local.set({ currentBrowserId: DETECTED_BROWSER }).catch(() => {});
+
+const STATE_SYNC_PERMISSIONS = {
+  permissions: ['tabs', 'cookies', 'scripting'],
+  origins: ['<all_urls>']
+};
+const TAB_SHARING_PERMISSIONS = { permissions: ['tabs'] };
+const STATE_SYNC_CONTENT_SCRIPT_ID = 'browsync-state-sync';
+const STATE_SYNC_CONTENT_SCRIPT = 'content/content-script.js';
+
+async function hasOptionalPermissions(details) {
+  if (!chrome.permissions?.contains) return false;
+  try { return await chrome.permissions.contains(details); } catch (_) { return false; }
+}
+
+async function isStateSyncConfigured() {
+  const { appSettings = {} } = await chrome.storage.local.get('appSettings').catch(() => ({}));
+  // Older BrowSync apps do not send stateSyncEnabled. Treat that as legacy
+  // behavior, while an explicit false from a current app remains authoritative.
+  return appSettings.stateSyncEnabled !== false && appSettings.stateParticipatingBrowsers?.[DETECTED_BROWSER] === true;
+}
+
+async function isTabSharingConfigured() {
+  const { appSettings = {} } = await chrome.storage.local.get('appSettings').catch(() => ({}));
+  return appSettings.tabSharingEnabled === true &&
+    appSettings.tabSharingParticipatingBrowsers?.[DETECTED_BROWSER] === true;
+}
+
+async function canSyncState() {
+  return await isStateSyncConfigured() && await hasOptionalPermissions(STATE_SYNC_PERMISSIONS);
+}
+
+async function canShareTabs() {
+  return await isTabSharingConfigured() && await hasOptionalPermissions(TAB_SHARING_PERMISSIONS);
+}
+
+async function updatePermissionBadge() {
+  if (!chrome.action?.setBadgeText) return;
+  const needsStateSyncPermission = await isStateSyncConfigured() &&
+    !(await hasOptionalPermissions(STATE_SYNC_PERMISSIONS));
+  const needsTabSharingPermission = await isTabSharingConfigured() &&
+    !(await hasOptionalPermissions(TAB_SHARING_PERMISSIONS));
+  permissionBadgeNeeded = needsStateSyncPermission || needsTabSharingPermission;
+  updateBadge();
+}
+
+async function reconcileOptionalFeaturePermissions() {
+  if (!chrome.permissions?.remove || await isStateSyncConfigured()) return;
+  // The popup sends its settings write only after chrome.permissions.request()
+  // resolves (required to preserve the user-gesture context), so this can run
+  // via permissions.onAdded before that write lands. Re-check after a brief
+  // pause rather than revoking a permission the user just turned on.
+  await new Promise(resolve => setTimeout(resolve, 300));
+  if (await isStateSyncConfigured()) return;
+
+  // State Sync is the only feature that needs cookies, scripting, and host
+  // access. Tabs remain granted only when Tab Sharing still needs them.
+  const permissions = ['cookies', 'scripting'];
+  if (!(await isTabSharingConfigured())) permissions.push('tabs');
+  try {
+    await chrome.permissions.remove({ permissions, origins: ['<all_urls>'] });
+  } catch (error) {
+    console.warn('[BrowSync] Could not revoke unused feature permissions:', error);
+  }
+}
+
+// Dynamic registrations only apply to later navigations.  State Sync must also
+// begin observing pages that were already open when the user granted access or
+// reloaded the extension; otherwise storage changes and the update banner are
+// both silently absent until the user happens to reload every tab.
+async function injectStateContentScriptIntoOpenTabs() {
+  if (!chrome.scripting?.executeScript || !chrome.tabs?.query) return;
+  const tabs = await chrome.tabs.query({}).catch(() => []);
+  await Promise.all(tabs
+    .filter(tab => tab.id && /^https?:\/\//i.test(tab.url || ''))
+    .map(tab => chrome.scripting.executeScript({
+      target: { tabId: tab.id }, files: [STATE_SYNC_CONTENT_SCRIPT]
+    }).catch(() => {})));
+}
+
+async function reconcileStateContentScript() {
+  if (!chrome.scripting?.getRegisteredContentScripts) {
+    await chrome.storage.local.set({ stateSyncRuntimeEnabled: false }).catch(() => {});
+    await reconcileOptionalFeaturePermissions();
+    await updatePermissionBadge();
+    return;
+  }
+  const shouldRegister = await canSyncState();
+  let stateSyncRuntimeEnabled = false;
+  try {
+    const registered = await chrome.scripting.getRegisteredContentScripts({ ids: [STATE_SYNC_CONTENT_SCRIPT_ID] });
+    if (shouldRegister && registered.length === 0) {
+      await chrome.scripting.registerContentScripts([{
+        id: STATE_SYNC_CONTENT_SCRIPT_ID,
+        matches: ['<all_urls>'],
+        js: [STATE_SYNC_CONTENT_SCRIPT],
+        runAt: 'document_idle',
+        persistAcrossSessions: true
+      }]);
+    } else if (!shouldRegister && registered.length > 0) {
+      await chrome.scripting.unregisterContentScripts({ ids: [STATE_SYNC_CONTENT_SCRIPT_ID] });
+    }
+    stateSyncRuntimeEnabled = shouldRegister;
+  } catch (error) {
+    // A concurrent reconcile (e.g. permissions.onAdded firing back-to-back with
+    // this settings-driven call, which happens on every toggle) may have already
+    // applied this exact change, making register/unregister throw "already
+    // exists"/"not found". Re-check the actual registration state rather than
+    // assuming the desired state failed to apply and persisting a false "off".
+    try {
+      const registeredNow = await chrome.scripting.getRegisteredContentScripts({ ids: [STATE_SYNC_CONTENT_SCRIPT_ID] });
+      stateSyncRuntimeEnabled = registeredNow.length > 0;
+    } catch (_) {
+      console.warn('[BrowSync] Could not update State Sync content script:', error);
+    }
+  }
+  await chrome.storage.local.set({ stateSyncRuntimeEnabled }).catch(() => {});
+  if (stateSyncRuntimeEnabled) await injectStateContentScriptIntoOpenTabs();
+  // Unregister first, then revoke scripting so a disabled State Sync cannot
+  // leave an already-registered content script behind.
+  await reconcileOptionalFeaturePermissions();
+  await updatePermissionBadge();
+}
 
 // ─── WebSocket management ────────────────────────────────────────────────────
 
@@ -183,6 +306,15 @@ function updateBadge(state = null) {
     }, 2000);
     return;
   }
+
+  if (permissionBadgeNeeded) {
+    chrome.action.setBadgeText({ text: '!' }).catch(() => {});
+    chrome.action.setBadgeBackgroundColor({ color: '#FF9500' }).catch(() => {});
+    if (chrome.action.setBadgeTextColor) {
+      try { chrome.action.setBadgeTextColor({ color: '#ffffff' }).catch(() => {}); } catch (e) {}
+    }
+    return;
+  }
   
   if (ws && ws.readyState === WebSocket.OPEN) {
     chrome.action.setBadgeText({ text: '' }).catch(() => {});
@@ -225,6 +357,10 @@ async function handleIncoming(message) {
         chrome.storage.local.get('appSettings').then(({ appSettings }) => {
           let settings = appSettings || {};
           if (raw.routerDefault !== undefined) settings.routerDefault = raw.routerDefault;
+          if (raw.routerEnabled !== undefined) settings.routerEnabled = raw.routerEnabled;
+          if (raw.interfaceLanguage !== undefined) settings.interfaceLanguage = raw.interfaceLanguage;
+          if (raw.bookmarkSyncEnabled !== undefined) settings.bookmarkSyncEnabled = raw.bookmarkSyncEnabled;
+          if (raw.stateSyncEnabled !== undefined) settings.stateSyncEnabled = raw.stateSyncEnabled;
           if (raw.automaticSync !== undefined) settings.automaticSync = raw.automaticSync;
           if (raw.tabSharingEnabled !== undefined) settings.tabSharingEnabled = raw.tabSharingEnabled;
           if (raw.stateParticipatingBrowsers) settings.stateParticipatingBrowsers = raw.stateParticipatingBrowsers;
@@ -237,9 +373,10 @@ async function handleIncoming(message) {
           if (raw.installedBrowserDetails !== undefined) settings.installedBrowserDetails = raw.installedBrowserDetails;
           if (raw.syncDisabledDomains !== undefined) settings.syncDisabledDomains = raw.syncDisabledDomains;
           chrome.storage.local.set({ appSettings: settings }).then(async () => {
+            await reconcileStateContentScript();
             // A service worker can receive settings after the first navigation event.
             // Re-check the active page once the automatic-sync gate is available.
-            if (raw.automaticSync !== undefined || raw.stateParticipatingBrowsers) {
+            if ((raw.automaticSync !== undefined || raw.stateParticipatingBrowsers) && await canSyncState()) {
               const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
               for (const tab of tabs) {
                 if (tab.id && tab.url) void requestCurrentSiteState(tab.id, tab.url);
@@ -345,6 +482,7 @@ async function applySync(message) {
       break;
     case 'localStorage':
     case 'sessionStorage': {
+      if (!(await canSyncState())) break;
       const items = payload[category] || [];
       if (items.length > 0) {
         const byOrigin = {};
@@ -367,12 +505,14 @@ async function applySync(message) {
       break;
     }
     case 'cookies':
+      if (!(await canSyncState())) break;
       const acceptedCookies = await filterIncomingCookiesBySource(payload.cookies || [], message.browser);
       if (acceptedCookies.length === 0) break;
       await applyCookieSync(acceptedCookies);
       await showStateSyncUpdatePrompt(acceptedCookies);
       break;
     case 'tabSharing':
+      if (!(await canShareTabs())) break;
       // Store remote tabs in local storage for popup.js to read
       if (payload.kind === 'tabs') {
         const tabs = payload.tabs || [];
@@ -390,6 +530,7 @@ async function applySync(message) {
 }
 
 async function sendCookiesSnapshot(site) {
+  if (!(await canSyncState())) return;
   console.log(`[BrowSync] Processing full cookie pull request for site: ${site || 'all'}`);
   if (!chrome.cookies) return;
   const timestamps = await getCookieTimestamps();
@@ -436,6 +577,7 @@ async function sendCookiesSnapshot(site) {
 }
 
 async function sendStorageSnapshot(storageType, site) {
+  if (!(await canSyncState())) return;
   if (!chrome.scripting || !chrome.tabs) return;
   const tabs = await chrome.tabs.query({});
   const allItemsMap = new Map(); // Use Map to deduplicate by key+origin
@@ -594,17 +736,20 @@ async function handlePullRequest(category, site) {
       break;
     }
     case 'browserData': {
+      if (!(await canSyncState())) return;
       await sendCookiesSnapshot(site);
       await sendStorageSnapshot('localStorage', site);
       await sendStorageSnapshot('sessionStorage', site);
       break;
     }
     case 'cookies': {
+      if (!(await canSyncState())) return;
       await sendCookiesSnapshot(site);
       break;
     }
     case 'browserState':
     case 'tabSharing': {
+      if (!(await canShareTabs())) return;
       if (!chrome.tabs) return;
       const tabs = await chrome.tabs.query({});
       // Filter out incognito tabs for privacy, and non-HTTP(S) tabs, if it's tab sharing
@@ -624,10 +769,26 @@ async function handlePullRequest(category, site) {
     }
     case 'localStorage':
     case 'sessionStorage': {
+      if (!(await canSyncState())) return;
       await sendStorageSnapshot(category);
       break;
     }
   }
+}
+
+// A popup-initiated sync is a repair pull, not merely an upload from the
+// currently open browser.  Asking the daemon for this site makes it return the
+// cached state immediately and request fresh snapshots from the other browsers.
+// Without this, "Sync Now" is a silent no-op whenever this browser has no new
+// local cookies/storage to upload (or automatic sync is unavailable).
+async function requestSiteStateSync(site) {
+  if (!(await canSyncState())) return false;
+  send({
+    type: 'pull', browser: DETECTED_BROWSER, category: 'browserData', site,
+    messageId: crypto.randomUUID(), timestamp: Date.now()
+  });
+  await handlePullRequest('browserData', site);
+  return true;
 }
 
 // ─── Bookmarks ───────────────────────────────────────────────────────────────
@@ -1023,42 +1184,9 @@ async function handleBookmarkChange(reason, event = {}) {
     if (isApplyingSync) return; // double check
     if (!(await isBookmarkEventInSelectedFolder(event))) return;
     console.log(`[BrowSync] Bookmark changed (${reason}), preparing to sync after debounce...`);
-    const preTree = await chrome.bookmarks.getTree();
-    const snapshot = [];
-    function flatForBackup(nodes) {
-      for (const node of nodes) {
-        if (!systemRoots.has(node.id)) {
-          let pId = node.parentId;
-          if (pId === localBarId) pId = '1';
-          else if (pId === localOtherId) pId = '2';
-          else if (pId === localMobileId) pId = '3';
-          else if (pId === 'unfiled_____') pId = '2';
-          else if (pId === '0' || pId === 'root________') pId = '1';
-          
-          snapshot.push({
-            id: node.id,
-            title: node.title,
-            url: node.url || null,
-            parentId: pId,
-            isFolder: !node.url,
-            inBookmarksBar: pId === '1'
-          });
-        }
-        if (node.children) flatForBackup(node.children);
-      }
-    }
-    flatForBackup(preTree);
-    console.log(`[BrowSync] Sending pre-sync backup: ${snapshot.length} items`);
-    send({
-      type: 'sync',
-      browser: DETECTED_BROWSER,
-      category: 'bookmark_backup',
-      payload: { kind: 'bookmarks', bookmarks: snapshot },
-      messageId: crypto.randomUUID(),
-      timestamp: Date.now()
-    });
-    
-    // Actually trigger the full sync!
+    // Bookmark events fire after the mutation. Treating this tree as a
+    // pre-change backup would replace the app's diff baseline and suppress
+    // reorder notifications, so only send the actual full snapshot.
     await handlePullRequest('bookmarks');
   }, 10000);
 }
@@ -1115,8 +1243,16 @@ if (chrome.bookmarks) {
 
 // ─── Cookies ─────────────────────────────────────────────────────────────────
 
-if (chrome.cookies) {
+// "cookies" is an optional permission: chrome.cookies is undefined until the
+// user grants it. It becomes defined immediately once granted, even in an
+// already-running background script, so this must be re-attempted after grant
+// (see attachOptionalEventListeners below) rather than only at startup.
+let cookiesListenerAttached = false;
+function attachCookiesListener() {
+  if (cookiesListenerAttached || !chrome.cookies) return;
+  cookiesListenerAttached = true;
   chrome.cookies.onChanged.addListener(async ({ cookie, removed, cause }) => {
+    if (!(await canSyncState())) return;
     if (cause !== 'explicit' && cause !== 'overwrite') return;
 
     const cookieKey = cookieIdentity(cookie);
@@ -1164,8 +1300,10 @@ if (chrome.cookies) {
     }, 500);
   });
 }
+attachCookiesListener();
 
 async function applyCookieSync(cookies) {
+  if (!(await canSyncState())) return;
   let successCount = 0;
   let failCount = 0;
   const failures = [];
@@ -1316,24 +1454,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       messageId: crypto.randomUUID(),
       timestamp: Date.now()
     });
-    chrome.storage.local.get('appSettings').then(({ appSettings }) => {
+    // Await the storage write (and the reconcile it triggers) before
+    // responding. The popup's updateOptionalFeature() awaits this response
+    // before requesting the optional permission, so by the time
+    // chrome.permissions.request() resolves and fires permissions.onAdded,
+    // this write has already landed — otherwise reconcileOptionalFeaturePermissions
+    // (triggered by onAdded) can read stale settings and immediately revoke
+    // the permission that was just granted.
+    (async () => {
+      const { appSettings } = await chrome.storage.local.get('appSettings');
       let settings = appSettings || {};
       const browserId = DETECTED_BROWSER;
       if (message.setting === 'bookmarkSync') {
          if (!settings.bookmarkParticipatingBrowsers) settings.bookmarkParticipatingBrowsers = {};
          settings.bookmarkParticipatingBrowsers[browserId] = message.value;
       } else if (message.setting === 'stateSync') {
-         if (!settings.stateParticipatingBrowsers) settings.stateParticipatingBrowsers = {};
-         settings.stateParticipatingBrowsers[browserId] = message.value;
+        if (!settings.stateParticipatingBrowsers) settings.stateParticipatingBrowsers = {};
+        settings.stateParticipatingBrowsers[browserId] = message.value;
+      } else if (message.setting === 'tabSharing') {
+         if (!settings.tabSharingParticipatingBrowsers) settings.tabSharingParticipatingBrowsers = {};
+         settings.tabSharingParticipatingBrowsers[browserId] = message.value;
       } else if (message.setting === 'routerDefault' && message.value === true) {
          settings.routerDefault = browserId;
       }
-      chrome.storage.local.set({ appSettings: settings });
-    });
-    sendResponse({ ok: true });
+      await chrome.storage.local.set({ appSettings: settings });
+      await reconcileStateContentScript();
+      sendResponse({ ok: true });
+    })();
     return true;
   }
-  
+
   if (message.type === 'UPDATE_SITE_SETTING') {
     send({
       type: 'settings', browser: DETECTED_BROWSER,
@@ -1365,8 +1515,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.type === 'SYNC_SITE_DATA') {
-    handlePullRequest('browserData', message.domain)
-      .then(() => sendResponse({ ok: true }))
+    requestSiteStateSync(message.domain)
+      .then(didRequest => sendResponse({ ok: didRequest }))
       .catch(error => sendResponse({ ok: false, error: String(error) }));
     return true;
   }
@@ -1410,6 +1560,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.source !== 'browsync-content') return;
     if (message.type === 'heartbeat_ping') return;
     if (message.type === 'backup_storage') {
+      if (!(await canSyncState())) return;
       const { storageType, items } = message;
       if (!items || items.length === 0) return;
       const origin = items[0].origin;
@@ -1421,6 +1572,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.type !== 'storage_change') return;
+    if (!(await canSyncState())) return;
 
     // Record tombstones for deleted items
     for (const item of message.items) {
@@ -1450,6 +1602,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function broadcastToContentScripts(category, items, site) {
+  if (!(await canSyncState())) return;
   if (!chrome.tabs) return;
   const tabs = await chrome.tabs.query({});
   for (const tab of tabs) {
@@ -1506,21 +1659,42 @@ async function showStateSyncUpdatePrompt(cookies) {
   const liveCookies = cookies.filter(cookie => cookie.removed !== true);
   if (liveCookies.length === 0) return;
 
-  for (const [tabId, site] of pendingSiteReloads) {
-    if (!liveCookies.some(cookie => cookieMatchesSite(cookie, site))) continue;
-    pendingSiteReloads.delete(tabId);
+  // A state update can arrive long after a tab's navigation pull completed.
+  // Do not rely solely on pendingSiteReloads here: it is only a pull-tracking
+  // aid, not a list of currently open pages. Otherwise Safari login changes
+  // reach another browser and are applied, but an already-open matching tab
+  // never gets the reload banner.
+  const updatedSites = new Set(liveCookies.map(cookie =>
+    syncDomainForHostname((cookie.domain || '').replace(/^\./, '').toLowerCase())
+  ));
+  const tabIdsToPrompt = new Set();
 
-    const tab = await chrome.tabs.get(tabId).catch(() => null);
-    if (tab?.url && syncDomainForHostname(safeHostname(tab.url)) === site) {
-      await chrome.tabs.sendMessage(tabId, {
-        source: 'browsync-background',
-        type: 'state_sync_updated'
-      }).catch(() => {});
+  for (const [tabId, site] of pendingSiteReloads) {
+    if (!updatedSites.has(site)) continue;
+    pendingSiteReloads.delete(tabId);
+    tabIdsToPrompt.add(tabId);
+  }
+
+  const openTabs = await chrome.tabs.query({}).catch(() => []);
+  for (const tab of openTabs) {
+    if (!tab.id || !tab.url) continue;
+    if (updatedSites.has(syncDomainForHostname(safeHostname(tab.url)))) {
+      tabIdsToPrompt.add(tab.id);
     }
   }
+
+  await Promise.all([...tabIdsToPrompt].map(async tabId => {
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (!tab?.url || !updatedSites.has(syncDomainForHostname(safeHostname(tab.url)))) return;
+    await chrome.tabs.sendMessage(tabId, {
+      source: 'browsync-background',
+      type: 'state_sync_updated'
+    }).catch(() => {});
+  }));
 }
 
 async function requestCurrentSiteState(tabId, url) {
+  if (!(await canSyncState())) return;
   if (!url.startsWith('http://') && !url.startsWith('https://')) return;
   const site = syncDomainForHostname(safeHostname(url));
   if (site === '*') return;
@@ -1538,12 +1712,18 @@ async function requestCurrentSiteState(tabId, url) {
   navigationSyncSites.set(tabSiteKey, now);
   pendingSiteReloads.set(tabId, site);
   send({
-    type: 'pull', browser: CURRENT_BROWSER_ID, category: 'browserData', site,
+    type: 'pull', browser: DETECTED_BROWSER, category: 'browserData', site,
     messageId: crypto.randomUUID(), timestamp: now
   });
 }
 
-if (chrome.tabs) {
+// "tabs" is an optional permission: chrome.tabs is undefined until the user
+// grants it. See attachCookiesListener above for why this is a function
+// re-attempted after grant instead of a one-time top-level check.
+let tabsListenerAttached = false;
+function attachTabsListener() {
+  if (tabsListenerAttached || !chrome.tabs) return;
+  tabsListenerAttached = true;
   chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (changeInfo.status === 'loading' && tab.url) {
       pendingSiteReloads.delete(tabId);
@@ -1552,6 +1732,7 @@ if (chrome.tabs) {
       void requestCurrentSiteState(tabId, tab.url);
     }
     if (changeInfo.status !== 'complete' || !tab.url) return;
+    if (!(await canShareTabs())) return;
     
     if (tabDebounceTimer) clearTimeout(tabDebounceTimer);
     tabDebounceTimer = setTimeout(() => {
@@ -1587,6 +1768,7 @@ if (chrome.tabs) {
     }
   });
 }
+attachTabsListener();
 
 // ─── Alarms ──────────────────────────────────────────────────────────────────
 
@@ -1608,8 +1790,27 @@ function safeHostname(urlStr) {
 
 // ─── Startup ─────────────────────────────────────────────────────────────────
 
+// Users can change optional permissions from the browser's extension settings.
+// Keep the persistent content script in sync even when the popup is closed.
+if (chrome.permissions?.onAdded) {
+  chrome.permissions.onAdded.addListener(() => {
+    attachCookiesListener();
+    attachTabsListener();
+    void reconcileStateContentScript();
+  });
+}
+if (chrome.permissions?.onRemoved) {
+  chrome.permissions.onRemoved.addListener(() => void reconcileStateContentScript());
+}
+
 chrome.runtime.onStartup.addListener(() => {
-  chrome.storage.local.set({ wsState: 'closed' }).catch(() => { }).then(() => connect());
+  chrome.storage.local.set({ wsState: 'closed' }).catch(() => { }).then(() => {
+    void reconcileStateContentScript();
+    connect();
+  });
 });
-chrome.runtime.onInstalled.addListener(() => connect());
+chrome.runtime.onInstalled.addListener(() => {
+  void reconcileStateContentScript();
+  connect();
+});
 connect();

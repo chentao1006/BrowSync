@@ -98,6 +98,7 @@
   "thisBrowser": {
     "message": "Este navegador"
   },
+  "safariWebsiteAccessDenied": { "message": "Se denegó el acceso a sitios web. En Safari > Configuración > Extensiones, selecciona BrowSync y establece Acceso a sitios web en Permitir siempre en todos los sitios web." },
   "stateSyncReloadPrompt": { "message": "Se sincronizó tu estado de inicio de sesión. ¿Recargar esta página para aplicarlo?" },
   "stateSyncReload": { "message": "Recargar" },
   "stateSyncLater": { "message": "Más tarde" }

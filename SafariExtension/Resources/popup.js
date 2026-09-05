@@ -4,6 +4,65 @@
 
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
+// Safari exposes the runtime permission API under `browser.permissions`.
+// Keep the Chrome alias as a fallback for compatibility with converted builds.
+const permissionsAPI = (typeof browser !== 'undefined' && browser.permissions) ||
+  (typeof chrome !== 'undefined' ? chrome.permissions : undefined);
+// Safari before 16.4 has no dynamic content-script registration or optional
+// permissions API. The separately packaged legacy extension declares its
+// permissions statically, so it must not show a misleading "Grant Permission"
+// control or attempt a runtime request.
+const usesLegacyStaticPermissions = typeof chrome !== 'undefined' &&
+  !chrome.scripting?.getRegisteredContentScripts;
+
+let appInterfaceLanguage = 'system';
+let appMessages = null;
+const APP_LANGUAGE_LOCALE_DIRECTORIES = {
+  en: ['en'],
+  'zh-Hans': ['zh_CN'],
+  ja: ['ja'],
+  ko: ['ko'],
+  de: ['de'],
+  fr: ['fr'],
+  it: ['it'],
+  es: ['es']
+};
+
+function localizedMessage(key, fallback) {
+  return appMessages?.[key]?.message || chrome.i18n.getMessage(key) || fallback;
+}
+
+async function applyAppLanguage(language) {
+  const requestedLanguage = APP_LANGUAGE_LOCALE_DIRECTORIES[language] ? language : 'system';
+  if (requestedLanguage === appInterfaceLanguage && (requestedLanguage === 'system' || appMessages)) return;
+
+  let messages = null;
+  if (requestedLanguage !== 'system') {
+    for (const directory of APP_LANGUAGE_LOCALE_DIRECTORIES[requestedLanguage]) {
+      try {
+        const response = await fetch(chrome.runtime.getURL(`_locales/${directory}/messages.json`));
+        if (response.ok) {
+          messages = await response.json();
+          break;
+        }
+      } catch (_) {}
+    }
+  }
+  appInterfaceLanguage = requestedLanguage;
+  appMessages = messages;
+  document.documentElement.lang = requestedLanguage === 'system'
+    ? (chrome.i18n.getUILanguage?.() || navigator.language || 'en')
+    : requestedLanguage;
+  localizePopup();
+  updateStatus();
+}
+
+function localizePopup() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const message = localizedMessage(el.getAttribute('data-i18n'), '');
+    if (message) el.textContent = message;
+  });
+}
 
 // ─── Connection status ────────────────────────────────────────────────────────
 
@@ -17,13 +76,13 @@ async function updateStatus() {
   if (connected) {
     if (isWorking) {
       statusDot.classList.add('working');
-      statusText.textContent = chrome.i18n.getMessage("statusSyncing") || 'Syncing...';
+      statusText.textContent = localizedMessage('statusSyncing', 'Syncing...');
     } else {
       statusDot.classList.add('connected');
-      statusText.textContent = chrome.i18n.getMessage("statusConnected") || 'Connected to BrowSync';
+      statusText.textContent = localizedMessage('statusConnected', 'Connected to BrowSync');
     }
   } else {
-    statusText.textContent = chrome.i18n.getMessage("statusDisconnected") || 'Disconnected';
+    statusText.textContent = localizedMessage('statusDisconnected', 'Disconnected');
   }
 }
 
@@ -35,9 +94,165 @@ setInterval(updateStatus, 1500);
 const toggleBookmarkSync = document.getElementById('toggleBookmarkSync');
 const toggleStateSync = document.getElementById('toggleStateSync');
 const toggleTabSharing = document.getElementById('toggleTabSharing');
+const bookmarkSyncRow = document.getElementById('bookmarkSyncRow');
+const stateSyncRow = document.getElementById('stateSyncRow');
+const tabSharingRow = document.getElementById('tabSharingRow');
+const btnGrantStateSyncPermission = document.getElementById('btnGrantStateSyncPermission');
+const btnGrantTabSharingPermission = document.getElementById('btnGrantTabSharingPermission');
+const stateSyncPermissionFeedback = document.getElementById('stateSyncPermissionFeedback');
+const tabSharingPermissionFeedback = document.getElementById('tabSharingPermissionFeedback');
+const routerDefaultContainer = document.getElementById('routerDefaultContainer');
 const btnSetRouterDefault = document.getElementById('btnSetRouterDefault');
 const textIsRouterDefault = document.getElementById('textIsRouterDefault');
 const btnMoreSettings = document.getElementById('btnMoreSettings');
+
+const STATE_SYNC_PERMISSIONS = {
+  permissions: ['tabs', 'cookies', 'scripting'],
+  origins: ['*://*/*']
+};
+const TAB_SHARING_PERMISSIONS = { permissions: ['tabs'] };
+
+async function refreshPermissionStateCache() {
+  const [stateSync, tabSharing] = await Promise.all([
+    hasFeaturePermissions(STATE_SYNC_PERMISSIONS),
+    hasFeaturePermissions(TAB_SHARING_PERMISSIONS)
+  ]);
+  await chrome.storage.local.set({ optionalPermissionState: { stateSync, tabSharing } });
+  return { stateSync, tabSharing };
+}
+
+function setPermissionFeedback(element, message, isError = false) {
+  if (!element) return;
+  element.textContent = message || '';
+  element.classList.toggle('visible', Boolean(message));
+  element.classList.toggle('error', isError);
+}
+
+function safariWebsiteAccessSettingsMessage() {
+  return localizedMessage(
+    'safariWebsiteAccessDenied',
+    'Website access was denied. In Safari > Settings > Extensions, select BrowSync and set Website Access to Always Allow on Every Website.'
+  );
+}
+
+function permissionRequestFailedMessage() {
+  const language = appInterfaceLanguage === 'system'
+    ? (chrome.i18n?.getUILanguage?.() || navigator.language || '')
+    : appInterfaceLanguage;
+  if (/^zh[-_](?:tw|hant)/i.test(language)) return 'Safari 未授予此功能所需的權限。';
+  if (/^zh/i.test(language)) return 'Safari 未授予此功能所需的权限。';
+  return 'Safari did not grant the required permission.';
+}
+
+async function hasFeaturePermissions(details) {
+  if (usesLegacyStaticPermissions) return true;
+  if (!permissionsAPI?.contains) return false;
+  try {
+    // Safari reports a combined APIs + origins contains() query as false even
+    // after each part was granted. Check the two permission classes separately.
+    const checks = [];
+    if (details.permissions?.length) {
+      checks.push(permissionsAPI.contains({ permissions: details.permissions }));
+    }
+    if (details.origins?.length) {
+      checks.push(permissionsAPI.contains({ origins: details.origins }));
+    }
+    return (await Promise.all(checks)).every(Boolean);
+  } catch (_) { return false; }
+}
+
+function grantPermissionMessage() {
+  const language = appInterfaceLanguage === 'system'
+    ? (chrome.i18n?.getUILanguage?.() || navigator.language || '')
+    : appInterfaceLanguage;
+  if (/^zh[-_](?:tw|hant)/i.test(language)) return '授予權限';
+  if (/^zh/i.test(language)) return '授予权限';
+  if (/^ja/i.test(language)) return '許可を与える';
+  if (/^ko/i.test(language)) return '권한 부여';
+  if (/^de/i.test(language)) return 'Berechtigung erteilen';
+  if (/^es/i.test(language)) return 'Conceder permiso';
+  if (/^fr/i.test(language)) return 'Autoriser';
+  if (/^it/i.test(language)) return 'Concedi autorizzazione';
+  return 'Grant Permission';
+}
+
+function renderConfiguredFeature(toggle, grantButton, configured, hasPermissions) {
+  if (!toggle || !grantButton) return;
+  const needsPermission = configured && !hasPermissions;
+  // The App setting is authoritative: it stays visibly on. A disabled switch
+  // distinguishes missing browser authorization from a user-disabled feature.
+  toggle.checked = configured;
+  toggle.disabled = needsPermission;
+  grantButton.textContent = grantPermissionMessage();
+  grantButton.style.display = needsPermission ? 'inline-block' : 'none';
+}
+
+async function requestFeaturePermissions(permissions) {
+  if (!permissionsAPI?.request) throw new Error('permissions.request is unavailable');
+
+  // Keep every requested capability in this one call. Safari requires the
+  // request to originate directly from the user's click; a second request
+  // after awaiting the website-access dialog has lost that gesture and Safari
+  // rejects it even if the user chose "Always Allow" in the first dialog.
+  return await permissionsAPI.request(permissions);
+}
+
+async function grantFeaturePermission(button, permissions, feedbackElement) {
+  button.disabled = true;
+  setPermissionFeedback(feedbackElement, '');
+  try {
+    const requested = await requestFeaturePermissions(permissions);
+    const granted = requested && await hasFeaturePermissions(permissions);
+    if (granted) {
+      await refreshPermissionStateCache();
+    } else {
+      if (permissions.origins?.length) {
+        setPermissionFeedback(feedbackElement, safariWebsiteAccessSettingsMessage());
+      } else {
+        setPermissionFeedback(feedbackElement, permissionRequestFailedMessage(), true);
+      }
+    }
+  } catch (error) {
+    console.warn('[BrowSync] Could not request Safari extension permission:', error);
+    setPermissionFeedback(feedbackElement, permissionRequestFailedMessage(), true);
+  } finally {
+    button.disabled = false;
+    void loadSettings();
+  }
+}
+
+const pendingOptionalFeatureUpdates = new Set();
+
+async function updateOptionalFeature(toggle, setting, permissions) {
+  const enabled = toggle.checked;
+  toggle.disabled = true;
+  pendingOptionalFeatureUpdates.add(setting);
+  try {
+    // requestFeaturePermissions() must be the first async call made in direct
+    // response to this click: any await before it — even a fast sendMessage
+    // round-trip — loses the user-gesture context Safari requires, and the
+    // permission prompt silently fails to appear instead of showing. Send the
+    // settings write only after the grant, and let the background's own
+    // reconcile logic tolerate the brief race against permissions.onAdded.
+    if (enabled) {
+      if (!usesLegacyStaticPermissions && !(await requestFeaturePermissions(permissions))) {
+        toggle.checked = false;
+        return;
+      }
+      await chrome.runtime.sendMessage({ type: 'UPDATE_SETTING', setting, value: true });
+    } else {
+      await chrome.runtime.sendMessage({ type: 'UPDATE_SETTING', setting, value: false });
+    }
+  } catch (_) {
+    toggle.checked = false;
+  } finally {
+    toggle.disabled = false;
+    setTimeout(() => {
+      pendingOptionalFeatureUpdates.delete(setting);
+      void loadSettings();
+    }, 500);
+  }
+}
 function detectCurrentBrowserId() {
   const ua = navigator.userAgent.toLowerCase();
   if (ua.includes('firefox/')) return 'firefox';
@@ -132,19 +347,46 @@ function renderOpenInBrowsers(installedBrowsers, currentBrowserId, currentUrl, i
 }
 
 async function loadSettings() {
-  const { appSettings, currentBrowserId } = await chrome.storage.local.get(['appSettings', 'currentBrowserId']);
+  const { appSettings, currentBrowserId, optionalPermissionState } = await chrome.storage.local.get([
+    'appSettings', 'currentBrowserId', 'optionalPermissionState'
+  ]);
   if (!appSettings) return;
+  await applyAppLanguage(appSettings.interfaceLanguage);
 
   const browserId = currentBrowserId || detectCurrentBrowserId();
 
   const isBookmarkSync = appSettings.bookmarkParticipatingBrowsers?.[browserId] === true;
   const isStateSync = appSettings.stateParticipatingBrowsers?.[browserId] === true;
   const isRouterDefault = appSettings.routerDefault === browserId;
+  const isRouterEnabled = appSettings.routerEnabled !== false;
   const isTabSharingEnabled = appSettings.tabSharingEnabled === true;
+  const isBookmarkSyncFeatureEnabled = appSettings.bookmarkSyncEnabled !== false;
+  const isStateSyncFeatureEnabled = appSettings.stateSyncEnabled !== false;
 
-  if (toggleBookmarkSync) toggleBookmarkSync.checked = isBookmarkSync;
-  if (toggleStateSync) toggleStateSync.checked = isStateSync;
-  if (toggleTabSharing) toggleTabSharing.checked = appSettings.tabSharingParticipatingBrowsers?.[browserId] === true;
+  if (bookmarkSyncRow) bookmarkSyncRow.style.display = isBookmarkSyncFeatureEnabled ? 'flex' : 'none';
+  if (stateSyncRow) stateSyncRow.style.display = isStateSyncFeatureEnabled ? 'flex' : 'none';
+  if (tabSharingRow) tabSharingRow.style.display = isTabSharingEnabled ? 'flex' : 'none';
+  if (routerDefaultContainer) routerDefaultContainer.style.display = isRouterEnabled ? 'flex' : 'none';
+
+  if (toggleBookmarkSync) toggleBookmarkSync.checked = isBookmarkSyncFeatureEnabled && isBookmarkSync;
+  const [actualStateSyncPermissions, actualTabSharingPermissions] = await Promise.all([
+    hasFeaturePermissions(STATE_SYNC_PERMISSIONS),
+    hasFeaturePermissions(TAB_SHARING_PERMISSIONS)
+  ]);
+  // Safari can expose a stale permission snapshot during popup creation.
+  // The background maintains this cache from permissions.onAdded/onRemoved, so
+  // a known grant never flashes an incorrect Grant Permission button.
+  const hasStateSyncPermissions = actualStateSyncPermissions || optionalPermissionState?.stateSync === true;
+  const hasTabSharingPermissions = actualTabSharingPermissions || optionalPermissionState?.tabSharing === true;
+  if (toggleStateSync) {
+    renderConfiguredFeature(toggleStateSync, btnGrantStateSyncPermission,
+      isStateSyncFeatureEnabled && isStateSync, hasStateSyncPermissions);
+  }
+  if (toggleTabSharing) {
+    const isTabSharing = appSettings.tabSharingParticipatingBrowsers?.[browserId] === true;
+    renderConfiguredFeature(toggleTabSharing, btnGrantTabSharingPermission,
+      isTabSharingEnabled && isTabSharing, hasTabSharingPermissions);
+  }
   
   const tabSharingSection = document.getElementById('tabSharingSection');
   if (tabSharingSection && !isTabSharingEnabled) {
@@ -182,7 +424,7 @@ async function loadSettings() {
     return parts.slice(-2).join('.');
   }
 
-  if (siteSyncSection) {
+  if (siteSyncSection && isStateSyncFeatureEnabled) {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       siteSyncSection.style.display = 'block'; // ALWAYS SHOW
       const url = tabs.length > 0 ? tabs[0].url : null;
@@ -199,7 +441,7 @@ async function loadSettings() {
       const siteSourceBrowserRow = document.getElementById('siteSourceBrowserRow');
 
       if (!activeHostname) {
-        if (siteDomainName) siteDomainName.textContent = chrome.i18n.getMessage("noWebsite") || 'N/A';
+        if (siteDomainName) siteDomainName.textContent = localizedMessage('noWebsite', 'N/A');
         if (toggleSiteSync) {
           toggleSiteSync.checked = false;
           toggleSiteSync.disabled = true;
@@ -222,7 +464,7 @@ async function loadSettings() {
           toggleSiteSync.checked = false;
           toggleSiteSync.disabled = true;
           const label = document.getElementById('toggleSiteSyncLabel');
-          if (label) label.title = chrome.i18n.getMessage("disabledByBlacklist") || "Sync is disabled for this domain to protect your account security.";
+          if (label) label.title = localizedMessage('disabledByBlacklist', 'Sync is disabled for this domain to protect your account security.');
         }
         if (siteStrategyRow) siteStrategyRow.style.display = 'none';
         if (siteSourceBrowserRow) siteSourceBrowserRow.style.display = 'none';
@@ -297,6 +539,8 @@ async function loadSettings() {
         btnSyncSiteNow.dataset.domain = activeHostname;
       }
     });
+  } else if (siteSyncSection) {
+    siteSyncSection.style.display = 'none';
   }
 }
 
@@ -307,14 +551,30 @@ if (toggleBookmarkSync) {
 }
 
 if (toggleStateSync) {
-  toggleStateSync.addEventListener('change', (e) => {
-    chrome.runtime.sendMessage({ type: 'UPDATE_SETTING', setting: 'stateSync', value: e.target.checked });
+  toggleStateSync.addEventListener('change', () => {
+    void updateOptionalFeature(toggleStateSync, 'stateSync', STATE_SYNC_PERMISSIONS);
   });
 }
 
 if (toggleTabSharing) {
-  toggleTabSharing.addEventListener('change', (e) => {
-    chrome.runtime.sendMessage({ type: 'UPDATE_SETTING', setting: 'tabSharing', value: e.target.checked });
+  toggleTabSharing.addEventListener('change', () => {
+    void updateOptionalFeature(toggleTabSharing, 'tabSharing', TAB_SHARING_PERMISSIONS);
+  });
+}
+
+if (btnGrantStateSyncPermission) {
+  btnGrantStateSyncPermission.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void grantFeaturePermission(btnGrantStateSyncPermission, STATE_SYNC_PERMISSIONS, stateSyncPermissionFeedback);
+  });
+}
+
+if (btnGrantTabSharingPermission) {
+  btnGrantTabSharingPermission.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void grantFeaturePermission(btnGrantTabSharingPermission, TAB_SHARING_PERMISSIONS, tabSharingPermissionFeedback);
   });
 }
 
@@ -384,7 +644,10 @@ if (btnSyncSiteNow) {
 }
 
 loadSettings();
-setInterval(loadSettings, 1000);
+// Gated the same way as the storage.onChanged/permissions.onAdded/onRemoved
+// listeners below: reloading mid-toggle would read "setting on, permission
+// not yet granted" and flicker the toggle back off.
+setInterval(() => { if (pendingOptionalFeatureUpdates.size === 0) void loadSettings(); }, 1000);
 
 // ─── Tab Sharing ──────────────────────────────────────────────────────────────
 
@@ -396,6 +659,10 @@ async function renderRemoteTabs() {
   const { remoteTabs, appSettings } = await chrome.storage.local.get(['remoteTabs', 'appSettings']);
   const detailsById = new Map((appSettings?.installedBrowserDetails || []).map(detail => [detail.id, detail]));
   if (!remoteTabsList) return;
+  if (appSettings?.tabSharingEnabled !== true) {
+    if (tabSharingSection) tabSharingSection.style.display = 'none';
+    return;
+  }
 
   remoteTabsList.innerHTML = '';
 
@@ -453,8 +720,13 @@ if (btnRefreshTabs) {
 }
 
 chrome.storage.onChanged.addListener((changes, namespace) => {
-  if (namespace === 'local' && changes.remoteTabs) {
-    renderRemoteTabs();
+  if (namespace === 'local') {
+    if ((changes.appSettings || changes.currentBrowserId) && pendingOptionalFeatureUpdates.size === 0) {
+      void loadSettings();
+    }
+    if (changes.remoteTabs) {
+      void renderRemoteTabs();
+    }
   }
 });
 
@@ -464,11 +736,7 @@ renderRemoteTabs();
 
 // ─── i18n ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  const elements = document.querySelectorAll('[data-i18n]');
-  elements.forEach(el => {
-    const msg = chrome.i18n.getMessage(el.getAttribute('data-i18n'));
-    if (msg) el.textContent = msg;
-  });
+  localizePopup();
   
   const subtitleEl = document.getElementById('appSubtitle');
   if (subtitleEl) {

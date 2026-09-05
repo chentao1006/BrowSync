@@ -8,10 +8,56 @@
   window.__browsyncInjected = true;
 
   const api = (typeof browser !== 'undefined') ? browser : chrome;
+  let stateSyncActive = false;
+  let resolveStateSyncReady;
+  const stateSyncReady = new Promise(resolve => { resolveStateSyncReady = resolve; });
+
+  function detectCurrentBrowserId() {
+    const ua = navigator.userAgent.toLowerCase();
+    if (ua.includes('firefox/')) return 'firefox';
+    if (ua.includes('edg/')) return 'edge';
+    if (ua.includes('opr/') || ua.includes('opera/')) return 'opera';
+    if (ua.includes('vivaldi/')) return 'vivaldi';
+    if (ua.includes('yabrowser/')) return 'yandex';
+    if (ua.includes('brave/') || navigator.brave) return 'brave';
+    if (ua.includes('orion/')) return 'orion';
+    if (ua.includes('helium/')) return 'helium';
+    if (ua.includes('browseros/')) return 'browseros';
+    if (ua.includes('safari/') && !ua.includes('chrome/') && !ua.includes('chromium/')) return 'safari';
+    return 'chrome';
+  }
+
+  async function refreshStateSyncActivity() {
+    const { appSettings = {}, currentBrowserId, stateSyncRuntimeEnabled } = await api.storage.local
+      .get(['appSettings', 'currentBrowserId', 'stateSyncRuntimeEnabled'])
+      .catch(() => ({}));
+    const browserId = currentBrowserId || detectCurrentBrowserId();
+    const wasActive = stateSyncActive;
+    stateSyncActive = stateSyncRuntimeEnabled === true &&
+      appSettings.stateSyncEnabled !== false &&
+      appSettings.stateParticipatingBrowsers?.[browserId] === true;
+
+    if (!wasActive && stateSyncActive) {
+      lastLocalSnapshot = snapshotStorage(localStorage);
+      lastSessionSnapshot = snapshotStorage(sessionStorage);
+      backupFullStorage();
+    } else if (!stateSyncActive) {
+      document.getElementById('browsync-state-sync-banner')?.remove();
+    }
+    resolveStateSyncReady?.();
+    resolveStateSyncReady = null;
+  }
+
+  api.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && (changes.appSettings || changes.currentBrowserId || changes.stateSyncRuntimeEnabled)) {
+      void refreshStateSyncActivity();
+    }
+  });
 
   // ── Snapshots for Polling ──────────────────────────────────────────────────
 
   function snapshotStorage(storage) {
+    if (!stateSyncActive) return {};
     const snap = {};
     try {
       for (let i = 0; i < storage.length; i++) {
@@ -28,6 +74,7 @@
   let lastSessionSnapshot = snapshotStorage(sessionStorage);
 
   function detectAndSendChanges(storage, lastSnapshot, storageType) {
+    if (!stateSyncActive) return lastSnapshot;
     const currentSnapshot = snapshotStorage(storage);
     const changes = [];
 
@@ -69,6 +116,7 @@
 
   api.runtime.onMessage.addListener((message) => {
     if (message.source !== 'browsync-background') return;
+    if (!stateSyncActive) return;
     if (message.type === 'state_sync_updated') {
       showStateSyncUpdateBanner();
       return;
@@ -82,6 +130,7 @@
   });
 
   function showStateSyncUpdateBanner() {
+    if (!stateSyncActive) return;
     const existingBanner = document.getElementById('browsync-state-sync-banner');
     if (existingBanner) {
       clearTimeout(existingBanner.browsyncDismissTimer);
@@ -208,17 +257,20 @@
     }
 
     function handleCachedStorage(result) {
-      if (result[localKey] && result[localKey].length > 0) {
-        applyStorageItems(localStorage, result[localKey]);
-        api.storage.local.remove(localKey);
-      }
-      if (result[sessionKey] && result[sessionKey].length > 0) {
-        applyStorageItems(sessionStorage, result[sessionKey]);
-        api.storage.local.remove(sessionKey);
-      }
-      
-      // After applying any pending sync, backup current state to background
-      backupFullStorage();
+      stateSyncReady.then(() => {
+        if (!stateSyncActive) return;
+        if (result[localKey] && result[localKey].length > 0) {
+          applyStorageItems(localStorage, result[localKey]);
+          api.storage.local.remove(localKey);
+        }
+        if (result[sessionKey] && result[sessionKey].length > 0) {
+          applyStorageItems(sessionStorage, result[sessionKey]);
+          api.storage.local.remove(sessionKey);
+        }
+
+        // After applying any pending sync, backup current state to background
+        backupFullStorage();
+      });
     }
   } catch (e) {
     console.warn('[BrowSync] Could not fetch cached storage:', e);
@@ -227,6 +279,7 @@
   // ── Passive Accumulation (Backup to Background) ────────────────────────────
 
   function backupFullStorage() {
+    if (!stateSyncActive) return;
     try {
       const localItems = [];
       for (let i = 0; i < localStorage.length; i++) {
@@ -272,6 +325,7 @@
   connectKeepAlive();
 
   setInterval(() => {
+    if (!stateSyncActive) return;
     if (keepAlivePort) {
       try {
         keepAlivePort.postMessage({ type: 'ping' });
@@ -282,5 +336,7 @@
       api.runtime.sendMessage({ source: 'browsync-content', type: 'heartbeat_ping' }).catch(() => {});
     }
   }, 15000);
+
+  void refreshStateSyncActivity();
 
 })();

@@ -259,10 +259,6 @@ enum SyncCategory: String, CaseIterable, Codable, Identifiable {
         }
     }
 
-    /// History is off by default per spec
-    var defaultEnabled: Bool {
-        self != .history && self != .tabSharing
-    }
 }
 
 // MARK: - Conflict Strategy
@@ -346,6 +342,13 @@ struct WebsiteSyncSetting: Codable, Identifiable, Equatable {
 // MARK: - Sync Settings
 
 struct SyncSettings: Codable, Equatable {
+    /// New installations start with every sync category disabled.  This list is
+    /// used only when decoding settings written before `enabledCategories`
+    /// existed, so upgrading a long-time user preserves their historic choices.
+    private static let legacyEnabledCategories: Set<SyncCategory> = [
+        .bookmarks, .browserData, .browserState, .localStorage
+    ]
+
     var conflictStrategy: ConflictStrategy = .primaryWins
     var bookmarkSyncStrategy: BookmarkSyncStrategy = .twoWayMerge
     var bookmarkSourceBrowser: Browser = .safari
@@ -397,13 +400,13 @@ struct SyncSettings: Codable, Equatable {
         tabSharingParticipatingBrowsers = try container.decodeIfPresent(Set<Browser>.self, forKey: .tabSharingParticipatingBrowsers) ?? []
         tabSharingEnabled = try container.decodeIfPresent(Bool.self, forKey: .tabSharingEnabled) ?? false
         // `enabledCategories` was introduced after the original settings file
-        // format.  Give genuinely old files their historic defaults, but keep an
-        // explicitly saved empty set empty: it means the user turned the feature
-        // off and must never be treated as a missing value on the next launch.
+        // format. An explicit empty set is a user's choice and remains empty.
+        // A missing value means this is an older installation, whose historic
+        // enabled categories must be preserved during the upgrade.
         if container.contains(.enabledCategories) {
             enabledCategories = try container.decodeIfPresent(Set<SyncCategory>.self, forKey: .enabledCategories) ?? []
         } else {
-            enabledCategories = Set(SyncCategory.allCases.filter(\.defaultEnabled))
+            enabledCategories = Self.legacyEnabledCategories
         }
         automaticSync = try container.decodeIfPresent(Bool.self, forKey: .automaticSync) ?? false
         iCloudSync = try container.decodeIfPresent(Bool.self, forKey: .iCloudSync) ?? false

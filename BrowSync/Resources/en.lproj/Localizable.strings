@@ -240,8 +240,6 @@
 "Bookmark Strategy" = "Default Strategy";
 "Bookmark Source Browser" = "Source Browser";
 "Cannot read Safari bookmarks" = "Cannot Read Safari Bookmarks";
-"Safari privacy warning" = "Due to macOS privacy restrictions, using Safari as the sync source requires granting Full Disk Access. Without it, BrowSync cannot read your Safari bookmarks.";
-"Safari privacy warning 2" = "Due to macOS privacy restrictions, reading Safari bookmarks requires granting Full Disk Access. Please go to System Settings to authorize.";
 "Grant in System Settings" = "Open System Settings";
 "Already granted, refresh" = "Already granted, refresh";
 "Note restart" = "Note: You may need to fully quit and reopen BrowSync for this to take effect.";
@@ -501,6 +499,9 @@
 "Grant Access" = "Grant Access";
 "Please select the Safari folder to grant BrowSync access for syncing." = "Please select the Safari folder to grant BrowSync access for syncing.";
 "Safari requires folder access due to Sandbox restrictions." = "Safari requires folder access due to Sandbox restrictions.";
+"Safari Bookmark Permission Required" = "Safari Bookmark Permission Required";
+"BrowSync now uses limited folder access instead of Full Disk Access. To keep your existing Safari bookmark sync running, select the Safari folder in the next dialog." = "BrowSync now uses limited folder access instead of Full Disk Access. To keep your existing Safari bookmark sync running, select the Safari folder in the next dialog.";
+"Not Now" = "Not Now";
 
 "Bookmark Backup Warning Header" = "Backup Bookmarks First";
 "Bookmark Backup Warning Detail" = "Before enabling bookmark sync for the first time, please make sure to back up your bookmarks using your browser's built-in export feature to prevent accidental deletion or data loss.";

@@ -98,6 +98,7 @@
   "thisBrowser": {
     "message": "Questo browser"
   },
+  "safariWebsiteAccessDenied": { "message": "L’accesso ai siti web è stato negato. In Safari > Impostazioni > Estensioni, seleziona BrowSync e imposta Accesso ai siti web su Consenti sempre su tutti i siti web." },
   "stateSyncReloadPrompt": { "message": "Il tuo stato di accesso e stato sincronizzato. Ricaricare questa pagina per applicarlo?" },
   "stateSyncReload": { "message": "Ricarica" },
   "stateSyncLater": { "message": "Piu tardi" }

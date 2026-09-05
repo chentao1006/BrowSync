@@ -89,6 +89,7 @@ struct GeneralView: View {
                             newLang == .system ? nil : [newLang.rawValue],
                             forKey: "AppleLanguages"
                         )
+                        appState.broadcastSettings()
                     }
                 } header: {
                     Text(verbatim: String(localized: "Language", bundle: LanguageBundle.systemBundle))

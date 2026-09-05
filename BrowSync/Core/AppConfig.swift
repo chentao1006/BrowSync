@@ -1,6 +1,7 @@
 // AppConfig.swift
 // BrowSync — Application Configuration
 
+import AppKit
 import Foundation
 
 struct AppConfig {
@@ -36,8 +37,31 @@ struct AppConfig {
     /// Firefox Add-ons (AMO) URL.
     static let firefoxExtensionAMOURL = "https://addons.mozilla.org/zh-CN/firefox/addon/brow-sync/"
 
-    /// The bundled Safari Web Extension identifier differs between distribution channels.
+    /// Safari 16.4 introduced the optional-permission APIs used by the modern
+    /// extension. Keep the existing identifier on that majority path so an
+    /// update does not make those users re-enable the extension.
+    static let safariModernExtensionBundleIdentifier = "com.ct106.browsync.extension"
+    static let safariLegacyExtensionBundleIdentifier = "com.ct106.browsync.extension.legacy"
+
+    /// The compatible extension identifier for the Safari installed on this Mac.
     static var safariExtensionBundleIdentifier: String {
-        return "com.ct106.browsync.extension"
+        safariSupportsDynamicExtensionPermissions
+            ? safariModernExtensionBundleIdentifier
+            : safariLegacyExtensionBundleIdentifier
+    }
+
+    private static var safariSupportsDynamicExtensionPermissions: Bool {
+        guard let safariURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Safari"),
+              let safariBundle = Bundle(url: safariURL),
+              let version = safariBundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String else {
+            // Safari is unavailable, or its version cannot be read. Prefer the
+            // current extension; the scanner will only query it when Safari is installed.
+            return true
+        }
+
+        let parts = version.split(separator: ".").compactMap { Int($0) }
+        guard let major = parts.first else { return true }
+        let minor = parts.dropFirst().first ?? 0
+        return major > 16 || (major == 16 && minor >= 4)
     }
 }

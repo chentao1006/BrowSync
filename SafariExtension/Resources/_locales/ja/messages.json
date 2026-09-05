@@ -98,6 +98,7 @@
   "thisBrowser": {
     "message": "このブラウザ"
   },
+  "safariWebsiteAccessDenied": { "message": "Web サイトへのアクセスが拒否されました。Safari > 設定 > 機能拡張で BrowSync を選択し、Web サイトアクセスを「すべての Web サイトで常に許可」に設定してください。" },
   "stateSyncReloadPrompt": { "message": "ログイン状態が同期されました。このページを再読み込みしますか？" },
   "stateSyncReload": { "message": "再読み込み" },
   "stateSyncLater": { "message": "後で" }

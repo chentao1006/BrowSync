@@ -102,16 +102,12 @@ final class SyncService: ObservableObject {
     @Published var missingBookmarkFolders: [String: String] = [:]
 
     init() {
-#if !APP_STORE
         SafariCleanup.cleanDirtyBookmarks()
-#endif
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         dataDir = appSupport.appendingPathComponent("BrowSync")
         createDataDirectories()
         loadBookmarkCountsFromDisk()
-#if !APP_STORE
         startSafariBookmarkMonitor()
-#endif
         // Do not put potentially large file-system cleanup on the initialization
         // path. The app must become launchable before maintenance begins.
         DispatchQueue.main.async { [weak self] in
@@ -561,11 +557,13 @@ final class SyncService: ObservableObject {
     
     // MARK: - Safari Bookmark Monitor
     
-    private func startSafariBookmarkMonitor() {
+    /// Also called after the user grants Safari folder access at runtime
+    /// (see BookmarkSyncTabView's "Grant Access" flow) since the monitor is
+    /// a no-op at init() when no security-scoped bookmark has been saved yet.
+    func startSafariBookmarkMonitor() {
+        guard safariMonitorSource == nil else { return }
         SandboxAccessManager.shared.withSafariAccess {
-            let home = FileManager.default.homeDirectoryForCurrentUser
-            let url = home.appendingPathComponent("Library/Safari/Bookmarks.plist")
-            guard FileManager.default.fileExists(atPath: url.path) else { return }
+            guard let url = SandboxAccessManager.shared.safariBookmarksPlistURL else { return }
         
         safariMonitorFileDescriptor = open(url.path, O_EVTONLY)
         guard safariMonitorFileDescriptor != -1 else { return }
@@ -1852,8 +1850,7 @@ final class SyncService: ObservableObject {
             
             // Also write natively into Safari if the source is a Chromium browser, AND the category is an actual sync (not a backup)
             if shouldSyncToSafari && category != "bookmark_backup" && !clientId.lowercased().contains("safari") && settings.bookmarkParticipatingBrowsers.contains(.safari) {
-#if APP_STORE
-                // In App Store sandbox, writing is gated by the security-scoped bookmark
+                // Safari writes are gated by the security-scoped bookmark
                 // that the user granted via requestSafariAccess(). applyBookmarks() and
                 // readBookmarks() both call withSafariAccess internally.
                 if SandboxAccessManager.shared.hasSafariAccess {
@@ -1909,64 +1906,6 @@ final class SyncService: ObservableObject {
                 } else {
                     log("Skipping Safari bookmark write: no folder access granted yet")
                 }
-#else
-                // Ensure strategy allows it (oneWay from Safari should not accept writes)
-                let strategy = settings.bookmarkSyncStrategy
-                let sourceBrowser = settings.bookmarkSourceBrowser
-                if !(strategy == .oneWay && sourceBrowser == .safari) {
-                    var finalSyncBookmarks: [SyncBookmark] = []
-                    var finalIsFullMirror = isFullMirror
-                    
-                    if let targetFolder = settings.bookmarkFolder(for: .safari) {
-                        let safariTargetBms = safariBookmarks.readBookmarks().map { b in
-                            Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
-                        }
-                        let mergedBookmarks = strategy == .oneWay
-                            ? BookmarkTreeMerger.replaceExistingFolderContents(sourceTree: bookmarks, targetTree: safariTargetBms, targetFolderPath: targetFolder)
-                            : BookmarkTreeMerger.mergeIntoExistingFolder(sourceTree: bookmarks, targetTree: safariTargetBms, targetFolderPath: targetFolder)
-                        guard let finalBookmarksToSend = mergedBookmarks else {
-                            markMissingBookmarkFolder(.safari, folder: targetFolder)
-                            return
-                        }
-                        finalIsFullMirror = strategy == .oneWay
-                        finalSyncBookmarks = finalBookmarksToSend.compactMap { b -> SyncBookmark? in
-                            let urlStr: String?
-                            if let urlOpt = b.url { urlStr = urlOpt } else { urlStr = nil }
-                            if !b.isFolder && urlStr == nil { return nil }
-                            return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar ?? false, dateAdded: b.dateAdded)
-                        }
-                    } else {
-                        finalSyncBookmarks = bookmarks.compactMap { b -> SyncBookmark? in
-                            let urlStr: String?
-                            if let urlOpt = b.url { urlStr = urlOpt } else { urlStr = nil }
-                            if !b.isFolder && urlStr == nil { return nil }
-                            return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar ?? false, dateAdded: b.dateAdded)
-                        }
-                    }
-                    
-                    prepareSafariForIncomingBookmarkMutation()
-                    let sourceName = clientId.components(separatedBy: "-").first ?? clientId
-                    self.lastNetworkSyncTime = Date() // Record time to prevent echo
-                    let count = safariBookmarks.applyBookmarks(finalSyncBookmarks, from: sourceName, isFullMirror: finalIsFullMirror)
-                    if count >= 0 {
-                        log("Wrote \(count) bookmarks into Safari natively")
-                        // CRITICAL: Immediately update Safari snapshot after writing.
-                        // Without this, the next auto-sync will diff the new Safari state
-                        // (possibly with changed folder UUIDs) against the old snapshot,
-                        // incorrectly detecting mass deletions and broadcasting bookmarks_removed.
-                        let freshSafariBms = safariBookmarks.readBookmarks()
-                        if !freshSafariBms.isEmpty {
-                            let snapshotBms = freshSafariBms.map { b in
-                                Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
-                            }
-                            backupService?.saveSnapshot(bookmarks: snapshotBms, sourceBrowser: "safari")
-                            log("Updated Safari snapshot after write (\(snapshotBms.count) items)")
-                        }
-                    } else {
-                        log("Safari is running. Exported HTML for manual import instead.")
-                    }
-                }
-#endif
             }
         case .history(let entries):
             let histDir = dataDir.appendingPathComponent("history")

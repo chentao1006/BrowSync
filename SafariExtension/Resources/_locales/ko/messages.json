@@ -98,6 +98,7 @@
   "thisBrowser": {
     "message": "이 브라우저"
   },
+  "safariWebsiteAccessDenied": { "message": "웹 사이트 접근이 거부되었습니다. Safari > 설정 > 확장 프로그램에서 BrowSync를 선택하고 웹 사이트 접근을 모든 웹 사이트에 대해 항상 허용으로 설정하세요." },
   "stateSyncReloadPrompt": { "message": "로그인 상태가 동기화되었습니다. 적용하려면 이 페이지를 새로고침할까요?" },
   "stateSyncReload": { "message": "새로고침" },
   "stateSyncLater": { "message": "나중에" }

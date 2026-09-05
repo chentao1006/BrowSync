@@ -119,7 +119,6 @@ struct BookmarkSyncTabView: View {
                 bookmarkBackupWarningSection
                 participatingBrowsersSection
                 syncStrategySection
-                safariFullDiskAccessSection
                 recentBackupsSection
                 recentlyDeletedSection
             }
@@ -200,7 +199,7 @@ struct BookmarkSyncTabView: View {
                 .padding(.vertical, 8)
                 .padding(.horizontal, 4)
             }
-#if APP_STORE
+#if SAFARI_SCOPED_ACCESS
             if !sandboxManager.hasSafariAccess {
                 Text(String(localized: "Safari requires folder access due to Sandbox restrictions.", bundle: langBundle.bundle))
                     .font(.caption)
@@ -245,15 +244,6 @@ struct BookmarkSyncTabView: View {
             }
             .pickerStyle(.menu)
 
-#if !APP_STORE
-            if syncSettings.bookmarkSourceBrowser.wrappedValue == .safari && !appState.hasFullDiskAccess {
-                safariPrivacyWarning(detailKey: "Safari privacy warning", includeRestartNote: true)
-                    .padding()
-                    .background(Color.red.opacity(0.1))
-                    .cornerRadius(8)
-                    .padding(.vertical, 4)
-            }
-#endif
         }
     }
 
@@ -305,21 +295,6 @@ struct BookmarkSyncTabView: View {
                 }
             }
         }
-    }
-
-    @ViewBuilder
-    private var safariFullDiskAccessSection: some View {
-#if !APP_STORE
-        let needsAccess = !appState.hasFullDiskAccess &&
-            (syncSettings.bookmarkSyncStrategy.wrappedValue == .twoWayMerge ||
-             (syncSettings.bookmarkSyncStrategy.wrappedValue == .oneWay && syncSettings.bookmarkSourceBrowser.wrappedValue == .safari))
-        if needsAccess {
-            Section {
-                safariPrivacyWarning(detailKey: "Safari privacy warning 2", includeRestartNote: false)
-                    .padding(.vertical, 4)
-            }
-        }
-#endif
     }
 
     private var recentlyDeletedSection: some View {
@@ -376,44 +351,6 @@ struct BookmarkSyncTabView: View {
         )
     }
 
-    private func safariPrivacyWarning(detailKey: String, includeRestartNote: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Image(systemName: "exclamationmark.shield.fill")
-                    .foregroundStyle(.red)
-                Text(String(localized: "Cannot read Safari bookmarks", bundle: langBundle.bundle))
-                    .font(.headline)
-                    .foregroundStyle(.red)
-            }
-
-            Text(String(localized: String.LocalizationValue(detailKey), bundle: langBundle.bundle))
-                .font(.caption)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack {
-                Button(String(localized: "Grant in System Settings", bundle: langBundle.bundle)) {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-
-                Button(String(localized: "Already granted, refresh", bundle: langBundle.bundle)) {
-                    appState.checkFullDiskAccess()
-                }
-                .buttonStyle(.link)
-                .controlSize(.small)
-            }
-
-            if includeRestartNote {
-                Text(String(localized: "Note restart", bundle: langBundle.bundle))
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
     private func handleFolderManagerOpenRequest() {
         guard appState.bookmarkFolderManagerOpenRequest != handledFolderManagerOpenRequest else { return }
         handledFolderManagerOpenRequest = appState.bookmarkFolderManagerOpenRequest
@@ -454,7 +391,7 @@ struct BookmarkSyncTabView: View {
                 ProBadge()
             }
             if info.browser == .safari {
-#if APP_STORE
+#if SAFARI_SCOPED_ACCESS
                 if !sandboxManager.hasSafariAccess {
                     let grantAccessTitle = String(localized: "Grant Access", bundle: langBundle.bundle)
                     Button(action: {
@@ -464,6 +401,9 @@ struct BookmarkSyncTabView: View {
                                 syncSettings.wrappedValue.bookmarkParticipatingBrowsers.insert(.safari)
                                 appState.settingsService.save()
                                 appState.broadcastSettings()
+                                // The monitor is a no-op at app-launch time when no access
+                                // was saved yet, so it must be (re)started once access is granted.
+                                appState.syncService.startSafariBookmarkMonitor()
                             }
                         }
                     }) {
@@ -1122,9 +1062,15 @@ struct RecentlyDeletedBookmarksWindow: View {
     }
 
     private func restoreAllBookmarks() {
-#if APP_STORE
-        return
-#else
+        guard SandboxAccessManager.shared.hasSafariAccess else {
+            SandboxAccessManager.shared.requestSafariAccess { granted in
+                if granted {
+                    appState.syncService.startSafariBookmarkMonitor()
+                    DispatchQueue.main.async { self.restoreAllBookmarks() }
+                }
+            }
+            return
+        }
         let safariSvc = SafariBookmarkService()
         var currentSafariBookmarks = safariSvc.readBookmarks()
 
@@ -1163,13 +1109,18 @@ struct RecentlyDeletedBookmarksWindow: View {
         appState.daemon.broadcast(msg, participatingBrowsers: appState.settingsService.syncSettings.bookmarkParticipatingBrowsers)
 
         backupService.clearAllDeletedBookmarks()
-#endif
     }
 
     private func restoreBookmark(_ item: DeletedBookmark) {
-#if APP_STORE
-        return
-#else
+        guard SandboxAccessManager.shared.hasSafariAccess else {
+            SandboxAccessManager.shared.requestSafariAccess { granted in
+                if granted {
+                    appState.syncService.startSafariBookmarkMonitor()
+                    DispatchQueue.main.async { self.restoreBookmark(item) }
+                }
+            }
+            return
+        }
         let safariSvc = SafariBookmarkService()
         var currentSafariBookmarks = safariSvc.readBookmarks()
 
@@ -1202,7 +1153,6 @@ struct RecentlyDeletedBookmarksWindow: View {
         appState.daemon.broadcast(msg, participatingBrowsers: appState.settingsService.syncSettings.bookmarkParticipatingBrowsers)
 
         backupService.removeDeletedBookmark(id: item.id)
-#endif
     }
 }
 

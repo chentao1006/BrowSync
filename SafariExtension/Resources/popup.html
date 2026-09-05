@@ -181,6 +181,28 @@
       display: none;
     }
 
+    .permission-grant-btn {
+      margin-left: auto;
+      margin-right: 8px;
+    }
+
+    .permission-feedback {
+      display: none;
+      margin-top: -4px;
+      font-size: 11px;
+      line-height: 1.35;
+      opacity: 0.75;
+    }
+
+    .permission-feedback.visible {
+      display: block;
+    }
+
+    .permission-feedback.error {
+      color: #d70015;
+      opacity: 1;
+    }
+
     .slider {
       position: relative;
       width: 36px;
@@ -428,27 +450,31 @@
 
   <div class="settings-section">
     <div class="section-title" data-i18n="thisBrowser">This Browser</div>
-    <div class="toggle-row" id="routerDefaultContainer">
+    <div class="toggle-row" id="routerDefaultContainer" style="display:none;">
       <span data-i18n="settingRouterDefault">Router Default</span>
       <button id="btnSetRouterDefault" class="action-btn" data-i18n="btnSetDefault">Set as Default</button>
       <span id="textIsRouterDefault" class="status-text-success" style="display:none;"><span
           data-i18n="textIsDefault">Default Browser</span></span>
     </div>
-    <label class="toggle-row">
+    <label id="bookmarkSyncRow" class="toggle-row" style="display:none;">
       <span data-i18n="settingBookmarkSync">Bookmark Sync</span>
       <input type="checkbox" id="toggleBookmarkSync">
       <span class="slider"></span>
     </label>
-    <label class="toggle-row">
+    <label id="stateSyncRow" class="toggle-row" style="display:none;">
       <span data-i18n="settingStateSync">State Sync</span>
+      <button id="btnGrantStateSyncPermission" class="action-btn permission-grant-btn" type="button" style="display:none;">Grant Permission</button>
       <input type="checkbox" id="toggleStateSync">
       <span class="slider"></span>
     </label>
-    <label class="toggle-row">
+    <div class="permission-feedback" id="stateSyncPermissionFeedback" role="status"></div>
+    <label id="tabSharingRow" class="toggle-row" style="display:none;">
       <span data-i18n="settingTabSharing">Tab Sharing</span>
+      <button id="btnGrantTabSharingPermission" class="action-btn permission-grant-btn" type="button" style="display:none;">Grant Permission</button>
       <input type="checkbox" id="toggleTabSharing">
       <span class="slider"></span>
     </label>
+    <div class="permission-feedback" id="tabSharingPermissionFeedback" role="status"></div>
 
     <button id="btnMoreSettings" class="btn-more" data-i18n="btnMoreSettings">More Settings</button>
   </div>

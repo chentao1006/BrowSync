@@ -98,6 +98,7 @@
   "thisBrowser": {
     "message": "This Browser"
   },
+  "safariWebsiteAccessDenied": { "message": "Website access was denied. In Safari > Settings > Extensions, select BrowSync and set Website Access to Always Allow on Every Website." },
   "stateSyncReloadPrompt": { "message": "Your sign-in state was synced. Reload this page to apply it?" },
   "stateSyncReload": { "message": "Reload" },
   "stateSyncLater": { "message": "Later" }

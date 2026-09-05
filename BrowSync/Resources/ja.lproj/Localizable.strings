@@ -201,8 +201,6 @@
 "Bookmark Strategy" = "デフォルトの戦略";
 "Bookmark Source Browser" = "ソースブラウザ";
 "Cannot read Safari bookmarks" = "Safariのブックマークを読み込めません";
-"Safari privacy warning" = "Safariを同期元にするにはフルディスクアクセスが必要です。";
-"Safari privacy warning 2" = "Safariのブックマークを読み取るにはフルディスクアクセスが必要です。";
 "Grant in System Settings" = "システム設定を開く";
 "Already granted, refresh" = "許可済み（更新）";
 "Note restart" = "注意：アプリの再起動が必要な場合があります。";
@@ -293,9 +291,7 @@
 "localStorage data for each site" = "各サイトの localStorage データ";
 "Some sites may not sync state successfully" = "Some sites may not sync state successfully";
 "This action cannot be undone." = "This action cannot be undone.";
-"Due to macOS privacy restrictions, reading Safari bookmarks requires granting Full Disk Access. Please go to System Settings to authorize." = "Due to macOS privacy restrictions, reading Safari bookmarks requires granting Full Disk Access. Please go to System Settings to authorize.";
 "The system automatically keeps the most recent 20 backups." = "The system automatically keeps the most recent 20 backups.";
-"Due to macOS privacy restrictions, using Safari as the sync source requires granting Full Disk Access. Without it, BrowSync cannot read your Safari bookmarks." = "Due to macOS privacy restrictions, using Safari as the sync source requires granting Full Disk Access. Without it, BrowSync cannot read your Safari bookmarks.";
 "Cannot Read Safari Bookmarks" = "Cannot Read Safari Bookmarks";
 "Regex Match" = "正規表現一致";
 "No conditions set. This rule will not apply." = "No conditions set. This rule will not apply.";
@@ -460,6 +456,9 @@
 "Grant Access" = "Grant Access";
 "Please select the Safari folder to grant BrowSync access for syncing." = "Please select the Safari folder to grant BrowSync access for syncing.";
 "Safari requires folder access due to Sandbox restrictions." = "Safari requires folder access due to Sandbox restrictions.";
+"Safari Bookmark Permission Required" = "Safariブックマークへのアクセス許可が必要です";
+"BrowSync now uses limited folder access instead of Full Disk Access. To keep your existing Safari bookmark sync running, select the Safari folder in the next dialog." = "BrowSyncはフルディスクアクセスの代わりに、制限付きフォルダアクセスを使用するようになりました。既存のSafariブックマーク同期を継続するには、次のダイアログでSafariフォルダを選択してください。";
+"Not Now" = "今はしない";
 
 
 "Bookmark Backup Warning Header" = "最初にブックマークをバックアップ";

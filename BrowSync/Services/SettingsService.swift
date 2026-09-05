@@ -4,6 +4,7 @@
 import Foundation
 import ServiceManagement
 import os.log
+import Darwin
 
 // MARK: - General Settings
 
@@ -128,6 +129,10 @@ enum AppLanguage: String, CaseIterable, Codable, Identifiable {
 @MainActor
 final class SettingsService: ObservableObject {
     private let logger = Logger(subsystem: "com.ct106.browsync", category: "SettingsService")
+    private static let legacySettingsMigrationKey = "DidMigrateLegacyNonSandboxSettingsV2"
+    private static let legacySettingsMigrationStatusKey = "LegacyNonSandboxSettingsMigrationStatus"
+    private static let legacyDataMigrationKey = "DidMigrateLegacyNonSandboxDataV1"
+    private static let legacyDataMigrationStatusKey = "LegacyNonSandboxDataMigrationStatus"
     private let settingsURL: URL
 
     @Published var general: GeneralSettings = GeneralSettings()
@@ -139,7 +144,245 @@ final class SettingsService: ObservableObject {
         let browsyncDir = appSupport.appendingPathComponent("BrowSync")
         try? FileManager.default.createDirectory(at: browsyncDir, withIntermediateDirectories: true)
         settingsURL = browsyncDir.appendingPathComponent("settings.json")
+        migrateLegacyNonSandboxSettingsIfNeeded()
+        migrateLegacyNonSandboxDataIfNeeded()
         load()
+    }
+
+    /// The direct build used to store settings in ~/Library/Application Support/BrowSync.
+    /// Once it becomes sandboxed, Application Support resolves inside the app container,
+    /// which would otherwise look like a fresh installation and hide existing rules and
+    /// feature switches. The direct-build entitlement grants read-only access to this one
+    /// legacy directory solely for this migration. Directory access is needed
+    /// for the sandbox to resolve the file's parent path.
+    private func migrateLegacyNonSandboxSettingsIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: Self.legacySettingsMigrationKey) else {
+            recordLegacySettingsMigrationStatus("already-migrated-v2")
+            return
+        }
+        guard let userHome = Self.realUserHomeDirectory() else {
+            recordLegacySettingsMigrationStatus("user-home-unavailable")
+            return
+        }
+
+        let legacyURL = userHome
+            .appendingPathComponent("Library/Application Support/BrowSync/settings.json")
+        guard legacyURL.standardizedFileURL != settingsURL.standardizedFileURL else {
+            markLegacySettingsMigrationDone("legacy-path-is-container")
+            return
+        }
+        guard FileManager.default.fileExists(atPath: legacyURL.path) else {
+            markLegacySettingsMigrationDone("legacy-file-not-found")
+            return
+        }
+        let legacyData: Data
+        do {
+            legacyData = try Data(contentsOf: legacyURL)
+        } catch {
+            // The file exists but could not be read. Do not mark migration
+            // complete: this can be a transient sandbox or disk failure, and
+            // giving up would permanently hide an existing user's settings.
+            recordLegacySettingsMigrationStatus("legacy-file-unreadable")
+            logger.error("Failed to read legacy BrowSync settings: \(error.localizedDescription)")
+            return
+        }
+        let legacySettings: SettingsBundle
+        do {
+            legacySettings = try JSONDecoder().decode(SettingsBundle.self, from: legacyData)
+        } catch {
+            markLegacySettingsMigrationDone("legacy-file-invalid")
+            logger.error("Failed to decode legacy BrowSync settings: \(error.localizedDescription)")
+            return
+        }
+
+        let currentSettings = (try? Data(contentsOf: settingsURL))
+            .flatMap { try? JSONDecoder().decode(SettingsBundle.self, from: $0) }
+        guard currentSettings.map(Self.hasMeaningfulConfiguration) != true else {
+            markLegacySettingsMigrationDone("container-settings-kept")
+            return
+        }
+        guard Self.hasMeaningfulConfiguration(legacySettings) else {
+            markLegacySettingsMigrationDone("legacy-settings-empty")
+            return
+        }
+
+        do {
+            try legacyData.write(to: settingsURL, options: .atomicWrite)
+            markLegacySettingsMigrationDone("migrated")
+            logger.notice("Migrated legacy non-sandbox BrowSync settings into the app container")
+        } catch {
+            // Leave the flag unset: a write failure (disk full, permissions)
+            // is worth retrying on the next launch rather than giving up for good.
+            recordLegacySettingsMigrationStatus("container-write-failed")
+            logger.error("Failed to migrate legacy BrowSync settings: \(error.localizedDescription)")
+        }
+    }
+
+    private func markLegacySettingsMigrationDone(_ status: String) {
+        UserDefaults.standard.set(true, forKey: Self.legacySettingsMigrationKey)
+        recordLegacySettingsMigrationStatus(status)
+    }
+
+    private func recordLegacySettingsMigrationStatus(_ status: String) {
+        UserDefaults.standard.set(status, forKey: Self.legacySettingsMigrationStatusKey)
+        UserDefaults.standard.synchronize()
+    }
+
+    /// Besides settings, the direct build persisted bookmark snapshots, backups,
+    /// recovery-bin entries, and cached browser data below the same directory.
+    /// Sandboxing moves that directory into the app container, so these files must
+    /// be brought across before the services that consume them are initialized.
+    /// Never overwrite an item already created in the container: a user may have
+    /// used a newer build before this migration runs.
+    private func migrateLegacyNonSandboxDataIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: Self.legacyDataMigrationKey) else {
+            recordLegacyDataMigrationStatus("already-migrated-v1")
+            return
+        }
+        guard let legacyDirectory = Self.legacyBrowSyncDirectoryURL() else {
+            recordLegacyDataMigrationStatus("user-home-unavailable")
+            return
+        }
+
+        let containerDirectory = settingsURL.deletingLastPathComponent()
+        guard legacyDirectory.standardizedFileURL != containerDirectory.standardizedFileURL else {
+            markLegacyDataMigrationDone("legacy-path-is-container")
+            return
+        }
+        guard FileManager.default.fileExists(atPath: legacyDirectory.path) else {
+            markLegacyDataMigrationDone("legacy-directory-not-found")
+            return
+        }
+
+        // `settings.json` has its own validity-aware migration above. These are
+        // the remaining user data files that are read by the running services.
+        let persistentItems = ["Backups", "bookmarks", "history", "sites", "global_state.json"]
+        do {
+            var copiedItemCount = 0
+            for item in persistentItems {
+                let source = legacyDirectory.appendingPathComponent(item)
+                guard FileManager.default.fileExists(atPath: source.path) else { continue }
+                let destination = containerDirectory.appendingPathComponent(item)
+                copiedItemCount += try copyLegacyItemIfMissing(from: source, to: destination)
+            }
+            markLegacyDataMigrationDone("migrated-\(copiedItemCount)-items")
+            logger.notice("Migrated \(copiedItemCount) legacy BrowSync data items into the app container")
+        } catch {
+            // A future launch retries the incomplete migration. Already copied
+            // files are kept and are never replaced by the legacy copy.
+            recordLegacyDataMigrationStatus("copy-failed")
+            logger.error("Failed to migrate legacy BrowSync data: \(error.localizedDescription)")
+        }
+    }
+
+    /// Recursively merge a legacy item into the sandbox container. The legacy
+    /// directory is read-only; copies first land in a sibling temporary file so
+    /// a failed copy cannot leave a partially-written destination in place.
+    private func copyLegacyItemIfMissing(from source: URL, to destination: URL) throws -> Int {
+        let fileManager = FileManager.default
+        let values = try source.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        guard values.isSymbolicLink != true else {
+            logger.warning("Skipping symbolic link during legacy data migration: \(source.path)")
+            return 0
+        }
+
+        if values.isDirectory == true {
+            if !fileManager.fileExists(atPath: destination.path) {
+                try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
+            }
+            let children = try fileManager.contentsOfDirectory(at: source, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            return try children.reduce(0) { count, child in
+                count + copyLegacyItemIfMissing(
+                    from: child,
+                    to: destination.appendingPathComponent(child.lastPathComponent)
+                )
+            }
+        }
+
+        guard !fileManager.fileExists(atPath: destination.path) else { return 0 }
+        try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let temporaryDestination = destination.deletingLastPathComponent()
+            .appendingPathComponent(".browsync-migration-\(UUID().uuidString)")
+        do {
+            try fileManager.copyItem(at: source, to: temporaryDestination)
+            try fileManager.moveItem(at: temporaryDestination, to: destination)
+            return 1
+        } catch {
+            try? fileManager.removeItem(at: temporaryDestination)
+            throw error
+        }
+    }
+
+    private func recordLegacyDataMigrationStatus(_ status: String) {
+        UserDefaults.standard.set(status, forKey: Self.legacyDataMigrationStatusKey)
+        UserDefaults.standard.synchronize()
+    }
+
+    private func markLegacyDataMigrationDone(_ status: String) {
+        UserDefaults.standard.set(true, forKey: Self.legacyDataMigrationKey)
+        recordLegacyDataMigrationStatus(status)
+    }
+
+    /// `FileManager` and `NSHomeDirectory()` resolve to the sandbox container.
+    /// Read the login account's real home directory from the POSIX account
+    /// database so the legacy path remains correct after sandbox adoption.
+    private static func realUserHomeDirectory() -> URL? {
+        guard let account = getpwuid(getuid()), let path = account.pointee.pw_dir else {
+            return nil
+        }
+        return URL(fileURLWithPath: String(cString: path), isDirectory: true)
+    }
+
+    private static func legacyBrowSyncDirectoryURL() -> URL? {
+        realUserHomeDirectory()?.appendingPathComponent("Library/Application Support/BrowSync")
+    }
+
+    private static func hasMeaningfulConfiguration(_ settings: SettingsBundle) -> Bool {
+        let router = settings.router ?? RouterSettings()
+        let sync = settings.sync
+        if isKnownBrokenSandboxDefault(router: router, sync: sync, general: settings.general) {
+            return false
+        }
+        return router.isEnabled ||
+            router.fallbackBrowserId != nil ||
+            !router.rules.isEmpty ||
+            sync.bookmarkAutoSync ||
+            !sync.bookmarkParticipatingBrowsers.isEmpty ||
+            sync.automaticSync ||
+            sync.tabSharingEnabled ||
+            !sync.tabSharingParticipatingBrowsers.isEmpty ||
+            !sync.stateParticipatingBrowsers.isEmpty ||
+            !sync.websiteSettings.isEmpty ||
+            !settings.general.customBrowsers.isEmpty
+    }
+
+    /// A pre-migration test build wrote this exact set of bookmark defaults to
+    /// the new sandbox file. It did not represent user choices and must not
+    /// block recovery of the real pre-sandbox settings. Any other bookmark
+    /// setup remains meaningful and is preserved.
+    private static func isKnownBrokenSandboxDefault(
+        router: RouterSettings,
+        sync: SyncSettings,
+        general: GeneralSettings
+    ) -> Bool {
+        let brokenCategories: Set<SyncCategory> = [.bookmarks, .browserData, .browserState, .localStorage]
+        return !router.isEnabled &&
+            router.fallbackBrowserId == nil &&
+            router.rules.isEmpty &&
+            sync.bookmarkAutoSync &&
+            sync.bookmarkParticipatingBrowsers == [.safari, .chrome] &&
+            sync.bookmarkSyncStrategy == .oneWay &&
+            sync.bookmarkSourceBrowser == .safari &&
+            sync.browserDataSyncStrategy == .latestWins &&
+            sync.stateSourceBrowser == .safari &&
+            sync.websiteListPolicy == .allowList &&
+            sync.websiteSettings.isEmpty &&
+            !sync.automaticSync &&
+            !sync.tabSharingEnabled &&
+            sync.tabSharingParticipatingBrowsers.isEmpty &&
+            sync.stateParticipatingBrowsers.isEmpty &&
+            sync.enabledCategories == brokenCategories &&
+            general.customBrowsers.isEmpty
     }
 
     // MARK: - Persistence

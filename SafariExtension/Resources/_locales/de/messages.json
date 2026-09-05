@@ -98,6 +98,7 @@
   "thisBrowser": {
     "message": "Dieser Browser"
   },
+  "safariWebsiteAccessDenied": { "message": "Der Website-Zugriff wurde abgelehnt. Wähle in Safari > Einstellungen > Erweiterungen BrowSync und setze Website-Zugriff auf Immer für alle Websites erlauben." },
   "stateSyncReloadPrompt": { "message": "Dein Anmeldestatus wurde synchronisiert. Diese Seite neu laden, um ihn anzuwenden?" },
   "stateSyncReload": { "message": "Neu laden" },
   "stateSyncLater": { "message": "Später" }

@@ -21,28 +21,19 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://127.0.0.1:62333"
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "content/content-script.js"
-      ],
-      "run_at": "document_idle",
-      "all_frames": false
-    }
-  ],
   "permissions": [
     "bookmarks",
+    "storage",
+    "alarms",
+    "unlimitedStorage",
+    "activeTab"
+  ],
+  "optional_permissions": [
     "tabs",
     "cookies",
-    "storage",
-    "scripting",
-    "alarms",
-    "unlimitedStorage"
+    "scripting"
   ],
-  "host_permissions": [
+  "optional_host_permissions": [
     "<all_urls>"
   ],
   "icons": {

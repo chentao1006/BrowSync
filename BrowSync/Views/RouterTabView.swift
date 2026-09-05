@@ -178,7 +178,6 @@ struct RouterTabView: View {
         }
         .onAppear {
             appState.checkDefaultBrowser()
-            appState.requestSystemDefaultBrowserReplacementIfNeeded()
             loadInstalledApps()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in

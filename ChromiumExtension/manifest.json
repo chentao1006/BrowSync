@@ -8,28 +8,19 @@
     "service_worker": "background/service-worker.js",
     "type": "module"
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "content/content-script.js"
-      ],
-      "run_at": "document_idle",
-      "all_frames": false
-    }
-  ],
   "permissions": [
     "bookmarks",
+    "storage",
+    "alarms",
+    "unlimitedStorage",
+    "activeTab"
+  ],
+  "optional_permissions": [
     "tabs",
     "cookies",
-    "storage",
-    "scripting",
-    "alarms",
-    "unlimitedStorage"
+    "scripting"
   ],
-  "host_permissions": [
+  "optional_host_permissions": [
     "<all_urls>"
   ],
   "icons": {

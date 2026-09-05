@@ -201,8 +201,6 @@
 "Bookmark Strategy" = "Strategia predefinita";
 "Bookmark Source Browser" = "Browser sorgente";
 "Cannot read Safari bookmarks" = "Impossibile leggere i segnalibri di Safari";
-"Safari privacy warning" = "È richiesto l'accesso completo al disco per Safari.";
-"Safari privacy warning 2" = "È richiesto l'accesso completo al disco per leggere i segnalibri di Safari.";
 "Grant in System Settings" = "Apri le impostazioni di sistema";
 "Already granted, refresh" = "Già concesso (Aggiorna)";
 "Note restart" = "Nota: Potrebbe essere necessario un riavvio.";
@@ -293,9 +291,7 @@
 "localStorage data for each site" = "dati localStorage per ogni sito";
 "Some sites may not sync state successfully" = "Some sites may not sync state successfully";
 "This action cannot be undone." = "This action cannot be undone.";
-"Due to macOS privacy restrictions, reading Safari bookmarks requires granting Full Disk Access. Please go to System Settings to authorize." = "Due to macOS privacy restrictions, reading Safari bookmarks requires granting Full Disk Access. Please go to System Settings to authorize.";
 "The system automatically keeps the most recent 20 backups." = "The system automatically keeps the most recent 20 backups.";
-"Due to macOS privacy restrictions, using Safari as the sync source requires granting Full Disk Access. Without it, BrowSync cannot read your Safari bookmarks." = "Due to macOS privacy restrictions, using Safari as the sync source requires granting Full Disk Access. Without it, BrowSync cannot read your Safari bookmarks.";
 "Cannot Read Safari Bookmarks" = "Cannot Read Safari Bookmarks";
 "Regex Match" = "Corrispondenza regex";
 "No conditions set. This rule will not apply." = "No conditions set. This rule will not apply.";
@@ -458,6 +454,9 @@
 "Grant Access" = "Grant Access";
 "Please select the Safari folder to grant BrowSync access for syncing." = "Please select the Safari folder to grant BrowSync access for syncing.";
 "Safari requires folder access due to Sandbox restrictions." = "Safari requires folder access due to Sandbox restrictions.";
+"Safari Bookmark Permission Required" = "Autorizzazione per i segnalibri Safari richiesta";
+"BrowSync now uses limited folder access instead of Full Disk Access. To keep your existing Safari bookmark sync running, select the Safari folder in the next dialog." = "BrowSync ora utilizza un accesso limitato alle cartelle invece dell'accesso completo al disco. Per mantenere la sincronizzazione dei segnalibri Safari esistente, seleziona la cartella Safari nella finestra di dialogo successiva.";
+"Not Now" = "Non ora";
 
 
 "Bookmark Backup Warning Header" = "Esegui prima il backup";

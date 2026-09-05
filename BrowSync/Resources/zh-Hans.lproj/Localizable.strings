@@ -236,8 +236,6 @@
 "Bookmark Strategy" = "默认策略";
 "Bookmark Source Browser" = "数据源浏览器";
 "Cannot read Safari bookmarks" = "无法读取 Safari 书签";
-"Safari privacy warning" = "由于 macOS 的隐私机制，将 Safari 作为同步源需要授予应用\"完全磁盘访问权限\"。否则 BrowSync 无法读取您的 Safari 书签。";
-"Safari privacy warning 2" = "由于 macOS 的隐私机制，读取 Safari 书签需要授予应用\"完全磁盘访问权限\"。请前往系统设置进行授权。";
 "Grant in System Settings" = "去系统设置授权";
 "Already granted, refresh" = "已授权，刷新状态";
 "Note restart" = "注：授权后可能需要完全退出并重新打开 BrowSync 才能生效。";
@@ -331,9 +329,7 @@
 "localStorage data for each site" = "每个网站的 localStorage 数据";
 "Some sites may not sync state successfully" = "部分网站可能无法成功同步状态";
 "This action cannot be undone." = "此操作无法撤销。";
-"Due to macOS privacy restrictions, reading Safari bookmarks requires granting Full Disk Access. Please go to System Settings to authorize." = "由于 macOS 隐私限制，读取 Safari 书签需要“完全磁盘访问权限”。请前往系统设置进行授权。";
 "The system automatically keeps the most recent 20 backups." = "系统会自动保留最近的 20 个备份。";
-"Due to macOS privacy restrictions, using Safari as the sync source requires granting Full Disk Access. Without it, BrowSync cannot read your Safari bookmarks." = "由于 macOS 隐私限制，使用 Safari 作为同步源需要“完全磁盘访问权限”。否则 BrowSync 无法读取 Safari 书签。";
 "Cannot Read Safari Bookmarks" = "无法读取 Safari 书签";
 "Regex Match" = "正则匹配";
 "No conditions set. This rule will not apply." = "未设置条件。此规则将不会生效。";
@@ -529,6 +525,9 @@
 "Grant Access" = "授权访问";
 "Please select the Safari folder to grant BrowSync access for syncing." = "请选择 Safari 文件夹以授予 BrowSync 同步权限。";
 "Safari requires folder access due to Sandbox restrictions." = "由于沙盒限制，Safari 同步需要您手动授权目录访问权限。";
+"Safari Bookmark Permission Required" = "需要授权 Safari 书签访问权限";
+"BrowSync now uses limited folder access instead of Full Disk Access. To keep your existing Safari bookmark sync running, select the Safari folder in the next dialog." = "BrowSync 已改用受限目录访问权限，不再请求全盘访问。为继续使用原有的 Safari 书签同步，请在下一个对话框中选择 Safari 文件夹。";
+"Not Now" = "暂不授权";
 
 "Bookmark Backup Warning Header" = "建议先备份书签";
 "Bookmark Backup Warning Detail" = "在首次开启书签同步前，请务必先通过浏览器自带功能备份各浏览器的书签，以防误删或数据丢失。";

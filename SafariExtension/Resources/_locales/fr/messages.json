@@ -98,6 +98,7 @@
   "thisBrowser": {
     "message": "Ce navigateur"
   },
+  "safariWebsiteAccessDenied": { "message": "L’accès aux sites web a été refusé. Dans Safari > Réglages > Extensions, sélectionnez BrowSync et réglez l’accès aux sites web sur Toujours autoriser sur tous les sites web." },
   "stateSyncReloadPrompt": { "message": "Votre etat de connexion a ete synchronise. Recharger cette page pour l'appliquer ?" },
   "stateSyncReload": { "message": "Recharger" },
   "stateSyncLater": { "message": "Plus tard" }

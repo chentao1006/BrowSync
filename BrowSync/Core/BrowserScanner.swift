@@ -42,10 +42,14 @@ final class BrowserScanner: ObservableObject {
 
         if browser == .safari {
             info.extensionStatus = await checkSafariExtensionStatus()
-        } else if browser == .firefox {
-            info.extensionStatus = checkFirefoxExtensionStatus()
         } else {
-            info.extensionStatus = checkChromiumExtensionStatus(for: browser)
+            // A sandboxed app cannot inspect another browser's profile or
+            // extension database. Treating the container's empty profile as
+            // Chrome/Firefox data produced false "Extension Required" and
+            // "Extension Disabled" states. AppState promotes this state as
+            // soon as the extension itself connects to the local daemon, and
+            // remembers a prior successful connection for offline browsers.
+            info.extensionStatus = .extensionRequired
         }
 
         // 3. Check if default
@@ -93,118 +97,4 @@ final class BrowserScanner: ObservableObject {
         }
     }
 
-    // MARK: - Chromium Extension Status
-
-    private func checkChromiumExtensionStatus(for browser: Browser) -> ExtensionStatus {
-        guard let basePath = browser.extensionBasePath else { return .extensionRequired }
-
-        let libraryURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let browserURL = libraryURL.appendingPathComponent(basePath)
-        
-        var foundAnyDisabled = false
-
-        // Scan all possible profile directories (Default, Profile 1, Profile 2, etc.)
-        if let subdirs = try? FileManager.default.contentsOfDirectory(at: browserURL, includingPropertiesForKeys: [.isDirectoryKey]) {
-            for subdir in subdirs {
-                let prefsURL = subdir.appendingPathComponent("Preferences")
-                if FileManager.default.fileExists(atPath: prefsURL.path) {
-                    // Check the Preferences file which is the ultimate source of truth
-                    if let data = try? Data(contentsOf: prefsURL),
-                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let extensions = (json["extensions"] as? [String: Any])?["settings"] as? [String: Any] {
-                        
-                        // Check if our official ID is present
-                        if let extInfo = extensions[Self.chromiumExtensionID] as? [String: Any] {
-                            let state = extInfo["state"] as? Int ?? 1
-                            if state == 1 { return .waitingConnection }
-                            foundAnyDisabled = true
-                        }
-                        
-                        // Fallback: check if ANY unpacked extension has a path containing "browsync"
-                        for (_, info) in extensions {
-                            guard let extInfo = info as? [String: Any] else { continue }
-                            let path = (extInfo["path"] as? String)?.lowercased() ?? ""
-                            let manifest = extInfo["manifest"] as? [String: Any]
-                            let name = (manifest?["name"] as? String)?.lowercased() ?? ""
-                            
-                            if path.contains("browsync") || name.contains("browsync") || name.contains("__msg_extname__") {
-                                let state = extInfo["state"] as? Int ?? 1
-                                if state == 1 { return .waitingConnection }
-                                foundAnyDisabled = true
-                            }
-                        }
-                    }
-                }
-
-                // If Preferences check fails, do a fallback folder scan
-                let extensionsURL = subdir.appendingPathComponent("Extensions")
-                if scanExtensionDirectory(extensionsURL) {
-                    return .waitingConnection
-                }
-            }
-        }
-
-        return foundAnyDisabled ? .extensionDisabled : .extensionRequired
-    }
-
-    /// Scan extension directory for a manifest.json containing BrowSync's extension name
-    private func scanExtensionDirectory(_ directoryURL: URL) -> Bool {
-        guard let contents = try? FileManager.default.contentsOfDirectory(
-            at: directoryURL,
-            includingPropertiesForKeys: nil
-        ) else { return false }
-
-        for folder in contents {
-            // Check version subfolders
-            guard let versions = try? FileManager.default.contentsOfDirectory(
-                at: folder,
-                includingPropertiesForKeys: nil
-            ) else { continue }
-            for versionFolder in versions {
-                let manifestURL = versionFolder.appendingPathComponent("manifest.json")
-                guard
-                    let data = try? Data(contentsOf: manifestURL),
-                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                    let name = json["name"] as? String,
-                    name.lowercased().contains("browsync") || name.lowercased().contains("__msg_extname__")
-                else { continue }
-                return true
-            }
-        }
-        return false
-    }
-
-    // MARK: - Firefox Extension Status
-
-    private func checkFirefoxExtensionStatus() -> ExtensionStatus {
-        let libraryURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let firefoxURL = libraryURL.appendingPathComponent("Firefox/Profiles")
-        
-        var foundExtension = false
-        
-        if let subdirs = try? FileManager.default.contentsOfDirectory(at: firefoxURL, includingPropertiesForKeys: [.isDirectoryKey]) {
-            for subdir in subdirs {
-                let extensionsJsonURL = subdir.appendingPathComponent("extensions.json")
-                if let data = try? Data(contentsOf: extensionsJsonURL),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let addons = json["addons"] as? [[String: Any]] {
-                    
-                    for addon in addons {
-                        if let name = addon["name"] as? String,
-                           let active = addon["active"] as? Bool {
-                            if name.lowercased().contains("browsync") || name.lowercased().contains("__msg_extname__") {
-                                if active {
-                                    return .waitingConnection
-                                } else {
-                                    foundExtension = true
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        return foundExtension ? .extensionDisabled : .extensionRequired
-    }
 }

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	 Move the direct-build settings before the first sandboxed launch. Each
+	 entry is a single home-relative path (Apple's documented "Move" schema
+	 is a flat array of path-token strings, not [source, destination] pairs);
+	 the OS resolves it against both the real home and the new container.
+	-->
+	<key>Move</key>
+	<array>
+		<string>${ApplicationSupport}/BrowSync/settings.json</string>
+	</array>
+</dict>
+</plist>

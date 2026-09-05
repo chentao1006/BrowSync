@@ -11,10 +11,13 @@ final class AppState: ObservableObject {
     static let shared = AppState()
     private static let disabledDomainsCacheKey = "syncDisabledDomainsCache"
     // Services
+    // SettingsService performs the one-time direct-install → sandbox migration
+    // during initialization. It must come first so the daemon, sync service,
+    // and backup service load the migrated files rather than an empty container.
+    let settingsService = SettingsService()
     let daemon = DaemonServer()
     let scanner = BrowserScanner()
     let syncService = SyncService()
-    let settingsService = SettingsService()
     let notificationService = NotificationService()
     let backupService = BackupService()
     let iCloudSyncManager = ICloudSyncManager()
@@ -56,6 +59,7 @@ final class AppState: ObservableObject {
             settingsService.routerSettings.isEnabled = isRouterEnabled
             settingsService.save()
             guard hasFinishedInitialSetup else { return }
+            broadcastSettings()
             if oldValue && !isRouterEnabled {
                 requestSystemDefaultBrowserReplacementIfNeeded()
             } else if !oldValue && isRouterEnabled {
@@ -77,7 +81,6 @@ final class AppState: ObservableObject {
         }
     }
     @Published var isDefaultBrowser: Bool = false
-    @Published var hasFullDiskAccess: Bool = false
 
     init() {
         // Wire up services
@@ -106,17 +109,7 @@ final class AppState: ObservableObject {
             loadBundledDisabledDomains()
         }
         
-        checkFullDiskAccess()
         hasFinishedInitialSetup = true
-    }
-    
-    func checkFullDiskAccess() {
-#if APP_STORE
-        hasFullDiskAccess = false
-#else
-        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Safari/Bookmarks.plist")
-        hasFullDiskAccess = FileManager.default.isReadableFile(atPath: url.path)
-#endif
     }
 
     // MARK: - Startup
@@ -135,7 +128,25 @@ final class AppState: ObservableObject {
         
         // Check default browser status
         checkDefaultBrowser()
+
+        // `isRouterEnabled`'s didSet (which calls this when the router is
+        // switched off) never fires for the assignment made in init() — Swift
+        // property observers don't run for assignments inside the declaring
+        // type's own initializer. Without this call, a user who quit with the
+        // router disabled but BrowSync still set as the system default browser
+        // would never get it restored. The function itself no-ops unless the
+        // router is actually off and BrowSync actually is the current default.
         requestSystemDefaultBrowserReplacementIfNeeded()
+
+#if SAFARI_SCOPED_ACCESS
+        SandboxAccessManager.shared.promptForSafariAccessAfterUpgradeIfNeeded(
+            syncSettings: settingsService.syncSettings
+        ) { [weak self] in
+            // The initial monitor setup ran before this security-scoped access
+            // existed, so restart it immediately after the user grants access.
+            self?.syncService.startSafariBookmarkMonitor()
+        }
+#endif
         
     }
     
@@ -796,6 +807,10 @@ extension AppState: DaemonServerDelegate {
         let routerDefault = fallbackBrowserId
         var payload: [String: AnyCodable] = [
             "routerDefault": AnyCodable(routerDefault ?? ""),
+            "routerEnabled": AnyCodable(isRouterEnabled),
+            "interfaceLanguage": AnyCodable(resolvedExtensionLanguage()),
+            "bookmarkSyncEnabled": AnyCodable(settingsService.syncSettings.enabledCategories.contains(.bookmarks)),
+            "stateSyncEnabled": AnyCodable(settingsService.syncSettings.enabledCategories.contains(.browserData)),
             // Extensions use this value to decide whether navigation and cookie
             // changes may start an automatic state pull.  Keep it aligned with
             // the master State Sync switch, not only the secondary real-time
@@ -852,6 +867,24 @@ extension AppState: DaemonServerDelegate {
         } else {
             daemon.broadcast(msg)
         }
+    }
+
+    private func resolvedExtensionLanguage() -> String {
+        let selectedLanguage = settingsService.general.language
+        guard selectedLanguage == .system else { return selectedLanguage.rawValue }
+
+        let preferred = Bundle.preferredLocalizations(
+            from: Bundle.main.localizations,
+            forPreferences: Locale.preferredLanguages
+        ).first?.lowercased() ?? "en"
+        if preferred.hasPrefix("zh") { return AppLanguage.chineseSimplified.rawValue }
+        if preferred.hasPrefix("ja") { return AppLanguage.japanese.rawValue }
+        if preferred.hasPrefix("ko") { return AppLanguage.korean.rawValue }
+        if preferred.hasPrefix("de") { return AppLanguage.german.rawValue }
+        if preferred.hasPrefix("fr") { return AppLanguage.french.rawValue }
+        if preferred.hasPrefix("it") { return AppLanguage.italian.rawValue }
+        if preferred.hasPrefix("es") { return AppLanguage.spanish.rawValue }
+        return AppLanguage.english.rawValue
     }
 
     private func browserIconDataURL(for appURL: URL) -> String? {
