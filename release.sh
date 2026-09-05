@@ -10,6 +10,8 @@ VERSIONED_PLISTS=(
     "SafariExtension/Info.plist"
     "BrowSync/Resources/InfoAppStore.plist"
     "SafariExtension/InfoAppStore.plist"
+    "SafariExtension/InfoLegacy.plist"
+    "SafariExtension/InfoLegacyAppStore.plist"
 )
 RESULT_DIR="./dist"
 
@@ -98,6 +100,7 @@ else
     sed -i '' -E "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" "ChromiumExtension/manifest.json"
     sed -i '' -E "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" "FirefoxExtension/manifest.json"
     sed -i '' -E "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" "SafariExtension/Resources/manifest.json"
+    sed -i '' -E "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" "SafariExtension/LegacyResources/manifest.json"
 
     echo "✅ Local configuration updated."
     # xcodegen > /dev/null (Removed: to allow manual Xcode settings to be preserved)

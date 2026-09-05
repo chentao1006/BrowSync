@@ -292,10 +292,10 @@ final class SettingsService: ObservableObject {
             }
             let children = try fileManager.contentsOfDirectory(at: source, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             return try children.reduce(0) { count, child in
-                count + copyLegacyItemIfMissing(
+                count + (try copyLegacyItemIfMissing(
                     from: child,
                     to: destination.appendingPathComponent(child.lastPathComponent)
-                )
+                ))
             }
         }
 
