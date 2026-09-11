@@ -216,15 +216,26 @@ final class SafariBookmarkService {
             return false
         }
 
-        var extractedLeaves = [String: [[String: Any]]]()
+        var extractedLeavesByID = [String: [String: Any]]()
+        var extractedLeavesByURL = [String: [[String: Any]]]()
         var extractedFolders = [String: [[String: Any]]]()
+
+        let incomingLeafIDs = Set(validBookmarks.filter { !$0.isFolder }.map(\.id))
+        let incomingLeafURLs = Set(validBookmarks.compactMap { bookmark -> String? in
+            guard !bookmark.isFolder else { return nil }
+            return bookmark.url.flatMap { $0 }
+        })
 
         func extractExistingNodes(from nodes: inout [[String: Any]]) {
             for i in (0..<nodes.count).reversed() {
                 if let url = nodes[i]["URLString"] as? String {
-                    if validBookmarks.contains(where: { !$0.isFolder && $0.url == url }) {
+                    let uuid = nodes[i]["WebBookmarkUUID"] as? String
+                    if let uuid, incomingLeafIDs.contains(uuid) {
                         let removed = nodes.remove(at: i)
-                        extractedLeaves[url, default: []].append(removed)
+                        extractedLeavesByID[uuid] = removed
+                    } else if incomingLeafURLs.contains(url) {
+                        let removed = nodes.remove(at: i)
+                        extractedLeavesByURL[url, default: []].append(removed)
                     }
                 } else if let type = nodes[i]["WebBookmarkType"] as? String, type == "WebBookmarkTypeList", let title = nodes[i]["Title"] as? String {
                     if validBookmarks.contains(where: { $0.isFolder && $0.title == title }) {
@@ -276,11 +287,17 @@ final class SafariBookmarkService {
                 ]
             } else {
                 guard let urlStr = bookmark.url else { return nil }
-                
-                if var existingNodesList = extractedLeaves[urlStr], !existingNodesList.isEmpty {
-                    var existingNode = existingNodesList.removeLast()
-                    extractedLeaves[urlStr] = existingNodesList
-                    
+
+                var existingNode = extractedLeavesByID.removeValue(forKey: bookmark.id)
+                if existingNode == nil,
+                   var existingNodesList = extractedLeavesByURL[urlStr],
+                   !existingNodesList.isEmpty {
+                    existingNode = existingNodesList.removeLast()
+                    extractedLeavesByURL[urlStr] = existingNodesList
+                }
+
+                if var existingNode {
+                    existingNode["URLString"] = urlStr
                     existingNode["Title"] = bookmark.title
                     var uriDict = existingNode["URIDictionary"] as? [String: Any] ?? [String: Any]()
                     uriDict["title"] = bookmark.title
@@ -340,10 +357,16 @@ final class SafariBookmarkService {
                         }
                     }
                 } else if let urlStr = bookmark.url {
-                    if var existingNodesList = extractedLeaves[urlStr], !existingNodesList.isEmpty {
-                        var existingNode = existingNodesList.removeLast()
-                        extractedLeaves[urlStr] = existingNodesList
-                        
+                    var existingNode = extractedLeavesByID.removeValue(forKey: bookmark.id)
+                    if existingNode == nil,
+                       var existingNodesList = extractedLeavesByURL[urlStr],
+                       !existingNodesList.isEmpty {
+                        existingNode = existingNodesList.removeLast()
+                        extractedLeavesByURL[urlStr] = existingNodesList
+                    }
+
+                    if var existingNode {
+                        existingNode["URLString"] = urlStr
                         existingNode["Title"] = bookmark.title
                         var uriDict = existingNode["URIDictionary"] as? [String: Any] ?? [String: Any]()
                         uriDict["title"] = bookmark.title
@@ -439,7 +462,10 @@ final class SafariBookmarkService {
         processRoot(chromeParentId: "2", rootMatcher: nil, children: &children)
 
         // Restore any extracted nodes that weren't placed back (e.g., they were moved to a system folder not managed here)
-        for (_, nodesList) in extractedLeaves {
+        for (_, node) in extractedLeavesByID {
+            children.append(node)
+        }
+        for (_, nodesList) in extractedLeavesByURL {
             children.append(contentsOf: nodesList)
         }
         for (_, nodesList) in extractedFolders {

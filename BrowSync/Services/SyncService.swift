@@ -62,10 +62,15 @@ final class SyncService: ObservableObject {
     // burst can wipe every synced browser in one shot. Buffer per-client and only
     // auto-apply small batches; anything larger waits for explicit user confirmation.
     private static let bookmarkRemovalBurstThreshold = 8
-    private static let bookmarkRemovalBurstDebounceNanoseconds: UInt64 = 2_500_000_000
+    // Extensions report removals immediately so MV3 worker suspension cannot
+    // lose an in-memory timer. The native app owns the quiet window instead:
+    // collect a browser's removal burst for 10 seconds, then deduplicate and
+    // apply it or require confirmation when it crosses the safety threshold.
+    private static let bookmarkRemovalBurstDebounceNanoseconds: UInt64 = 10_000_000_000
     private var pendingBookmarkRemovalBuffers: [String: [Bookmark]] = [:]
     private var bookmarkRemovalBurstTasks: [String: Task<Void, Never>] = [:]
     private var pendingBookmarkRemovalBursts: [String: [Bookmark]] = [:]
+    private var bookmarkChangeDebounceTasks: [String: Task<Void, Never>] = [:]
 
     var daemon: DaemonServer?
     var settingsService: SettingsService?
@@ -243,12 +248,36 @@ final class SyncService: ObservableObject {
         }
     }
 
+    /// Browser workers report create/update/move activity immediately. Keep
+    /// the restartable quiet-period timer in the long-lived native app.
+    private func handleIncomingBookmarkChangeSignal(clientId: String) {
+        let browserId = clientId.components(separatedBy: "-").first ?? clientId
+        guard let browser = Browser(rawValue: browserId),
+              settings.bookmarkParticipatingBrowsers.contains(browser),
+              settings.bookmarkSyncStrategy != .oneWay || settings.bookmarkSourceBrowser == browser else { return }
+        let isPro = AppState.shared.purchaseService.isProUnlocked
+        guard (isPro && settings.bookmarkAutoSync && settings.enabledCategories.contains(.bookmarks)) || isSyncing else { return }
+
+        bookmarkChangeDebounceTasks[clientId]?.cancel()
+        bookmarkChangeDebounceTasks[clientId] = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self else { return }
+                self.bookmarkChangeDebounceTasks[clientId] = nil
+                let request = WSMessage(type: .sync, site: "*", category: "bookmarks", payload: nil, messageId: UUID().uuidString, timestamp: Date().timeIntervalSince1970)
+                self.daemon?.broadcast(request, participatingBrowsers: [browser])
+                self.log("Bookmark changes from [\(clientId)] were quiet for 10 seconds; requested a fresh snapshot.")
+            }
+        }
+    }
+
     private func flushBookmarkRemovalBuffer(for clientId: String) {
         bookmarkRemovalBurstTasks[clientId] = nil
         guard let items = pendingBookmarkRemovalBuffers.removeValue(forKey: clientId), !items.isEmpty else { return }
 
         guard items.count <= Self.bookmarkRemovalBurstThreshold else {
-            log("Suspicious burst of \(items.count) individual bookmark deletions from [\(clientId)] within a few seconds. Nothing was applied — asking user to confirm.")
+            log("Suspicious burst of \(items.count) individual bookmark deletions from [\(clientId)] within the 10-second collection window. Nothing was applied — asking user to confirm.")
             pendingBookmarkRemovalBursts[clientId] = items
             AppState.shared.notificationService.notifyBookmarkRemovalBurstSuspected(source: clientId, count: items.count)
             return
@@ -978,6 +1007,11 @@ final class SyncService: ObservableObject {
                let folder = raw["folder"]?.value as? String {
                 markMissingBookmarkFolder(browser, folder: folder)
             }
+            return
+        }
+
+        if category == "bookmark_changed" {
+            handleIncomingBookmarkChangeSignal(clientId: clientId)
             return
         }
         

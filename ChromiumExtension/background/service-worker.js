@@ -1037,9 +1037,10 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmark
         } else if (bm.url) {
           const searchResults = await chrome.bookmarks.search({ url: bm.url });
           existingNode = searchResults.find(r => r.parentId === localParentId);
-          if (!existingNode && !targetRootId && searchResults.length > 0) {
-            existingNode = searchResults[0];
-          }
+          // A URL is not a bookmark identity: the same URL may intentionally
+          // exist in several folders. Never adopt an arbitrary global match,
+          // because the move below would pull that bookmark out of its real
+          // folder and persist the bad source-ID mapping across restarts.
         }
       }
 
@@ -1064,6 +1065,13 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmark
         localId = created.id;
       }
 
+      // Keep the mapping one-to-one. Safari can regenerate UUIDs after its
+      // plist is rewritten; retaining both the old and new source IDs for the
+      // same Chrome node makes the reverse map pick a stale identity after a
+      // restart, which can repeatedly resurrect an old parent relationship.
+      for (const [sourceId, mappedLocalId] of idMap.entries()) {
+        if (sourceId !== bm.id && mappedLocalId === localId) idMap.delete(sourceId);
+      }
       idMap.set(bm.id, localId);
 
       if (bm.isFolder && byParent.has(bm.id)) {
@@ -1135,36 +1143,18 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmark
   }
 }
 
-let bookmarkDebounceTimer = null;
-let bookmarkRemovalDebounceTimer = null;
-let pendingRemovedBookmarks = [];
-
 function queueRemovedBookmark(deletedBm) {
-  pendingRemovedBookmarks.push(deletedBm);
-  if (bookmarkRemovalDebounceTimer) {
-    clearTimeout(bookmarkRemovalDebounceTimer);
-  }
-
-  bookmarkRemovalDebounceTimer = setTimeout(() => {
-    const unique = new Map();
-    for (const bm of pendingRemovedBookmarks) {
-      unique.set(bm.id, bm);
-    }
-    pendingRemovedBookmarks = [];
-    bookmarkRemovalDebounceTimer = null;
-
-    for (const bm of unique.values()) {
-      console.log('[BrowSync] Debounced explicit bookmark removed:', bm);
-      send({
-        type: 'sync',
-        browser: CURRENT_BROWSER_ID,
-        category: 'bookmarks_removed',
-        payload: { kind: 'bookmarksRemoved', bookmarksRemoved: bm },
-        messageId: crypto.randomUUID(),
-        timestamp: Date.now()
-      });
-    }
-  }, 10000);
+  // MV3 may suspend this worker before an in-memory timer fires. The native
+  // app already buffers per-browser events and guards large deletion bursts.
+  console.log('[BrowSync] Explicit bookmark removed:', deletedBm);
+  send({
+    type: 'sync',
+    browser: CURRENT_BROWSER_ID,
+    category: 'bookmarks_removed',
+    payload: { kind: 'bookmarksRemoved', bookmarksRemoved: deletedBm },
+    messageId: crypto.randomUUID(),
+    timestamp: Date.now()
+  });
 }
 
 async function handleBookmarkChange(reason, event = {}) {
@@ -1174,23 +1164,14 @@ async function handleBookmarkChange(reason, event = {}) {
     return;
   }
   
-  // Clear existing timer to debounce
-  if (bookmarkDebounceTimer) {
-    clearTimeout(bookmarkDebounceTimer);
-  }
-  
-  // Wait for 3 seconds of silence
-  bookmarkDebounceTimer = setTimeout(async () => {
-    if (isApplyingSync) return; // double check
-    if (!(await isBookmarkEventInSelectedFolder(event))) return;
-    console.log(`[BrowSync] Bookmark changed (${reason}), preparing to sync after debounce...`);
-    // Browser bookmark events arrive *after* the mutation. Sending that tree
-    // as a "pre-sync backup" overwrites the app's previous snapshot before
-    // the full sync is compared, turning a reorder into new-versus-new and
-    // suppressing its notification. The existing app snapshot is the only
-    // valid pre-change baseline here.
-    await handlePullRequest('bookmarks');
-  }, 10000);
+  send({
+    type: 'sync',
+    browser: CURRENT_BROWSER_ID,
+    category: 'bookmark_changed',
+    payload: { kind: 'raw', raw: { reason } },
+    messageId: crypto.randomUUID(),
+    timestamp: Date.now()
+  });
 }
 
 if (chrome.bookmarks) {
@@ -1231,16 +1212,7 @@ if (chrome.bookmarks) {
     
     queueRemovedBookmark(deletedBm);
     
-    // Do NOT call handleBookmarkChange here. The debounced bookmarks_removed event above is sufficient
-    // for cross-browser deletion. Calling handleBookmarkChange would trigger a full resync
-    // after a 10s debounce which would then call applyBookmarkSync — that merges Chrome's
-    // state into Safari preserving Safari-only items, potentially undoing the deletion if
-    // removeBookmark on Safari side couldn't match by UUID.
-    // Instead, just reset the debounce timer to avoid it firing from a stale trigger.
-    if (bookmarkDebounceTimer) {
-      clearTimeout(bookmarkDebounceTimer);
-      bookmarkDebounceTimer = null;
-    }
+    // Do not also emit bookmark_changed: this explicit removal is authoritative.
   });
   chrome.bookmarks.onChanged.addListener((id) => handleBookmarkChange('changed', { id }));
   chrome.bookmarks.onMoved.addListener((id, moveInfo) => handleBookmarkChange('moved', { id, oldParentId: moveInfo?.oldParentId, newParentId: moveInfo?.parentId }));
