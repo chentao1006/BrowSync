@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="BrowSync is a native Mac app for cross-browser bookmark sync, smart link routing, session and cookie sync, and tab sharing across Safari, Chrome, Edge, and Firefox.">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://browsync.ct106.com/en/">
+  <link rel="alternate" hreflang="zh-CN" href="https://browsync.ct106.com/">
+  <link rel="alternate" hreflang="en" href="https://browsync.ct106.com/en/">
+  <link rel="alternate" hreflang="x-default" href="https://browsync.ct106.com/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="BrowSync">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="zh_CN">
+  <meta property="og:title" content="Cross-Browser Bookmark Sync for Mac - BrowSync">
+  <meta property="og:description" content="Sync bookmarks, sessions, cookies, and tabs across Safari, Chrome, Edge, and Firefox, and route links to the right browser on macOS.">
+  <meta property="og:url" content="https://browsync.ct106.com/en/">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Cross-Browser Bookmark Sync for Mac - BrowSync">
+  <meta name="twitter:description" content="Sync bookmarks, sessions, cookies, and tabs across Safari, Chrome, Edge, and Firefox on your Mac.">
+  <title>Cross-Browser Bookmark Sync for Mac - BrowSync</title>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "BrowSync",
+    "alternateName": ["Cross-Browser Bookmark Sync", "Browser Session Sync", "macOS Browser Routing"],
+    "inLanguage": "en",
+    "applicationCategory": "BrowserApplication",
+    "operatingSystem": "macOS",
+    "description": "A native Mac app for cross-browser bookmark sync, smart link routing, session and cookie sync, and tab sharing across Safari, Chrome, Edge, and Firefox.",
+    "featureList": "Cross-browser bookmark sync; macOS default browser and rule-based link routing; browser session and cookie sync; cross-browser tab sharing; iCloud sync across Macs; private local processing",
+    "url": "https://browsync.ct106.com/en/",
+    "downloadUrl": "https://apps.apple.com/app/id6784604835?mt=12",
+    "sameAs": ["https://github.com/chentao1006/browsync"]
+  }
+  </script>
+  <script>
+    (function () {
+      var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+    })();
+  </script>
+  <style>
+    :root { color-scheme: dark light; --bg:#000; --surface:rgba(20,20,20,.72); --text:#fff; --muted:#a1a1aa; --border:rgba(255,255,255,.12); --accent:#3b82f6; }
+    html[data-theme="light"] { --bg:#fff; --surface:rgba(250,250,250,.82); --text:#09090b; --muted:#52525b; --border:rgba(0,0,0,.1); }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; min-height:100vh; color:var(--text); background:radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent) 14%, var(--bg)), var(--bg) 55%); font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    a { color:inherit; text-decoration:none; }
+    header { position:sticky; top:0; z-index:10; border-bottom:1px solid var(--border); background:color-mix(in srgb, var(--bg) 76%, transparent); backdrop-filter:blur(16px); }
+    nav { max-width:1160px; margin:auto; padding:15px 24px; display:flex; align-items:center; justify-content:space-between; gap:24px; }
+    .brand { display:flex; align-items:center; gap:11px; font-weight:750; }
+    .brand img { width:32px; height:32px; border-radius:8px; }
+    .links { display:flex; align-items:center; gap:22px; color:var(--muted); font-size:.94rem; }
+    .language { padding:6px 12px; border:1px solid var(--border); border-radius:7px; color:var(--text); font-weight:700; }
+    main { max-width:1160px; margin:auto; padding:0 24px; }
+    .hero { padding:100px 0 84px; display:grid; grid-template-columns:1.05fr .95fr; align-items:center; gap:56px; }
+    .eyebrow { display:inline-block; padding:6px 14px; border:1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius:999px; color:var(--accent); font-weight:700; font-size:.88rem; }
+    h1 { margin:22px 0; font-size:clamp(2.7rem,5.6vw,4.8rem); line-height:1.03; letter-spacing:-.05em; }
+    .lead { max-width:720px; color:var(--muted); font-size:clamp(1.08rem,2vw,1.28rem); }
+    .hero-art { padding:30px; border:1px solid var(--border); border-radius:28px; background:var(--surface); }
+    .hero-art img { display:block; width:100%; border-radius:15px; }
+    .browser-row { display:flex; justify-content:center; align-items:center; gap:20px; margin-bottom:24px; }
+    .browser-row img { width:48px; height:48px; }
+    .browser-row span { color:var(--muted); font-size:1.5rem; }
+    .actions { display:flex; align-items:center; flex-wrap:wrap; gap:18px; margin-top:32px; }
+    .store img { display:block; height:48px; max-width:170px; }
+    .secondary { padding:10px 16px; border:1px solid var(--border); border-radius:9px; font-weight:650; }
+    section { scroll-margin-top:90px; }
+    h2 { margin:0 0 42px; font-size:clamp(2rem,4vw,3rem); line-height:1.15; text-align:center; letter-spacing:-.03em; }
+    .features { padding:30px 0 90px; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px; }
+    .card { padding:32px; border:1px solid var(--border); border-radius:22px; background:var(--surface); }
+    .card h3 { margin:0 0 12px; font-size:1.32rem; line-height:1.3; }
+    .card p { margin:0; color:var(--muted); }
+    .wide { grid-column:1/-1; }
+    .supported { padding:0 0 90px; }
+    .browser-list { display:flex; flex-wrap:wrap; justify-content:center; gap:12px; }
+    .browser-list span { padding:8px 14px; border:1px solid var(--border); border-radius:999px; background:var(--surface); font-weight:650; }
+    .download { margin-bottom:90px; padding:52px 24px; text-align:center; border:1px solid var(--border); border-radius:26px; background:var(--surface); }
+    .download h2 { margin-bottom:12px; }
+    .download p { color:var(--muted); }
+    .download .actions { justify-content:center; }
+    footer { max-width:1160px; margin:auto; padding:35px 24px; border-top:1px solid var(--border); display:flex; justify-content:space-between; gap:20px; color:var(--muted); }
+    footer div { display:flex; flex-wrap:wrap; gap:20px; }
+    @media (max-width:760px) { .links a:not(.language) { display:none; } .hero { grid-template-columns:1fr; padding-top:70px; } .grid { grid-template-columns:1fr; } .wide { grid-column:auto; } footer { flex-direction:column; } }
+  </style>
+</head>
+<body>
+  <header>
+    <nav aria-label="Main navigation">
+      <a class="brand" href="/en/"><img src="../assets/BrowSync.png" alt="BrowSync app icon"><span>BrowSync</span></a>
+      <div class="links">
+        <a href="#features">Features</a>
+        <a href="#browsers">Browsers</a>
+        <a href="#download">Download</a>
+        <a class="language" href="/" hreflang="zh-CN" lang="zh-CN"
+          onclick="try { localStorage.setItem('browsync-lang', 'zh'); } catch (error) {}">中文</a>
+      </div>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <div>
+        <span class="eyebrow">Native macOS App</span>
+        <h1>Cross-Browser Bookmark Sync for Mac</h1>
+        <p class="lead">BrowSync makes Safari, Chrome, Edge, Firefox, and other Chromium browsers work together. Sync bookmarks, sessions, cookies, and tabs in real time, and route every link to the right browser—all locally on your Mac.</p>
+        <div class="actions">
+          <a class="store" href="https://apps.apple.com/app/id6784604835?mt=12" target="_blank" rel="noopener"><img src="../BrowSync/Resources/Marketing/download-on-app-store-en.svg" alt="Download BrowSync for Mac on the App Store"></a>
+          <a class="secondary" href="https://github.com/chentao1006/browsync">View on GitHub</a>
+        </div>
+      </div>
+      <div class="hero-art">
+        <div class="browser-row">
+          <img src="../assets/safari.svg" alt="Safari"><span>↔</span>
+          <img src="../assets/chrome.svg" alt="Google Chrome"><span>↔</span>
+          <img src="../ChromiumExtension/icons/firefox.png" alt="Firefox">
+        </div>
+        <img src="../screenshots/en/000001.jpg" alt="BrowSync cross-browser bookmark sync interface for Mac">
+      </div>
+    </section>
+
+    <section id="features" class="features">
+      <h2>Cross-Browser Sync &amp; Link Routing Features</h2>
+      <div class="grid">
+        <article class="card"><h3>macOS Default Browser &amp; Smart Link Routing</h3><p>Use BrowSync as your Mac default browser to automatically open links in Safari, Chrome, Edge, Firefox, or another browser based on website, URL, and custom routing rules.</p></article>
+        <article class="card"><h3>Safari, Chrome, Edge &amp; Firefox Bookmark Sync</h3><p>Sync bookmarks in real time across browsers on Mac. Choose a dedicated bookmark sync folder for each browser without changing its other bookmarks.</p></article>
+        <article class="card"><h3>Cross-Browser Session &amp; Cookie Sync</h3><p>Sync cookies, website data, and caches across supported browsers to keep website login sessions consistent.</p></article>
+        <article class="card"><h3>Private, Local Browser Data Sync</h3><p>Bookmark and session sync plus link-rule matching run locally. Your browser data stays on your Mac and is not uploaded to BrowSync servers.</p></article>
+        <article class="card"><h3>Native Mac Browser Sync App</h3><p>Built natively with SwiftUI for macOS, BrowSync supports Dark Mode, menu bar access, and a low memory footprint.</p></article>
+        <article class="card"><h3>iCloud Sync Across Multiple Macs</h3><p>Sync BrowSync settings, browser routing rules, and tabs across multiple Macs for a continuous cross-device workflow.</p></article>
+        <article class="card wide"><h3>Cross-Browser Tab Sharing</h3><p>Share the current tab or all open tabs across Safari, Chrome, Edge, Firefox, and other browsers without copying links one by one.</p></article>
+      </div>
+    </section>
+
+    <section id="browsers" class="supported">
+      <h2>Supported Mac Browsers</h2>
+      <div class="browser-list" aria-label="Supported browsers">
+        <span>Safari</span><span>Google Chrome</span><span>Microsoft Edge</span><span>Firefox</span><span>Arc</span><span>Brave</span><span>Vivaldi</span><span>Opera</span><span>Orion</span><span>Other Chromium Browsers</span>
+      </div>
+    </section>
+
+    <section id="download" class="download">
+      <h2>Download BrowSync for Mac</h2>
+      <p>Connect your browsers and keep bookmarks, sessions, and tabs in sync.</p>
+      <div class="actions"><a class="store" href="https://apps.apple.com/app/id6784604835?mt=12" target="_blank" rel="noopener"><img src="../BrowSync/Resources/Marketing/download-on-app-store-en.svg" alt="Download BrowSync on the Mac App Store"></a></div>
+    </section>
+  </main>
+  <footer>
+    <span>© 2026 BrowSync. Privacy-first browser sync for Mac.</span>
+    <div><a href="https://github.com/chentao1006/browsync">GitHub</a><a href="../README.md">Documentation</a><a href="../privacy.html">Privacy Policy</a></div>
+  </footer>
+  <script>
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function (event) {
+      document.documentElement.dataset.theme = event.matches ? "dark" : "light";
+    });
+  </script>
+</body>
+</html>

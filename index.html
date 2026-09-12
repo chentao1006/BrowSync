@@ -5,32 +5,35 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description"
-    content="同览 BrowSync 是 macOS 跨浏览器分流与同步中枢。 Route links and sync bookmarks, sessions, site data, and tabs across Safari, Chrome, Edge, and Firefox—locally on your Mac." />
+    content="BrowSync 是 Mac 浏览器书签同步工具，可在 Safari、Chrome、Edge、Firefox 间实时同步书签，并支持默认浏览器链接分流、登录状态同步和标签页共享。数据仅在本机处理。" />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://browsync.ct106.com/" />
+  <link rel="alternate" hreflang="zh-CN" href="https://browsync.ct106.com/" />
+  <link rel="alternate" hreflang="en" href="https://browsync.ct106.com/en/" />
+  <link rel="alternate" hreflang="x-default" href="https://browsync.ct106.com/" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="同览 BrowSync" />
   <meta property="og:locale" content="zh_CN" />
   <meta property="og:locale:alternate" content="en_US" />
-  <meta property="og:title" content="BrowSync 同览 — 跨浏览器分流与同步 / Cross-Browser Routing & Sync" />
-  <meta property="og:description" content="让 Safari、Chrome、Edge 和 Firefox 协同工作。 Route links and sync bookmarks, sessions, site data, and tabs locally on your Mac." />
+  <meta property="og:title" content="Mac 浏览器书签同步与链接分流 - BrowSync 同览" />
+  <meta property="og:description" content="在 Mac 上实时同步 Safari、Chrome、Edge 和 Firefox 书签，并按规则分流链接、同步登录状态和共享标签页。" />
   <meta property="og:url" content="https://browsync.ct106.com/" />
   <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content="BrowSync 同览 — 跨浏览器分流与同步 / Cross-Browser Routing & Sync" />
-  <meta name="twitter:description" content="让 Safari、Chrome、Edge 和 Firefox 协同工作。 Route links and sync bookmarks, sessions, site data, and tabs locally on your Mac." />
-  <title>BrowSync 同览 — 跨浏览器分流与同步 / Cross-Browser Routing & Sync</title>
+  <meta name="twitter:title" content="Mac 浏览器书签同步与链接分流 - BrowSync 同览" />
+  <meta name="twitter:description" content="在 Mac 上实时同步 Safari、Chrome、Edge 和 Firefox 书签，并按规则分流链接、同步登录状态和共享标签页。" />
+  <title>Mac 浏览器书签同步与链接分流 - BrowSync 同览</title>
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       "name": "BrowSync 同览 - Cross-Browser Routing & Sync",
-      "alternateName": ["跨浏览器分流与同步", "Safari Bookmark Sync", "Browser Session Sync"],
-      "inLanguage": ["zh-CN", "en"],
-      "keywords": "跨浏览器分流,浏览器书签同步,Safari 书签同步,Chrome 书签同步,Firefox 书签同步,浏览器登录状态同步,Cookie 同步,macOS 默认浏览器,cross-browser routing,bookmark sync,Safari bookmark sync,Chrome bookmark sync,Firefox bookmark sync,browser session sync,cookie sync,macOS default browser",
+      "alternateName": ["Mac 浏览器书签同步", "跨浏览器分流与同步", "Safari Bookmark Sync", "Browser Session Sync"],
+      "inLanguage": "zh-CN",
+      "keywords": "Mac 浏览器书签同步,跨浏览器书签同步,Safari Chrome 书签同步,Firefox 书签同步,Mac 默认浏览器,浏览器链接分流,浏览器登录状态同步,Cookie 同步,跨浏览器标签页共享,iCloud 多 Mac 同步,macOS browser routing,bookmark sync,Safari bookmark sync,Chrome bookmark sync,Firefox bookmark sync,browser session sync,cookie sync,tab sharing",
       "applicationCategory": "BrowserApplication",
       "operatingSystem": "macOS",
-      "description": "让 Safari、Chrome、Edge 和 Firefox 协同工作的本地 macOS 应用。 Route links by rule and sync bookmarks, signed-in sessions, site data, and tabs across browsers.",
-      "featureList": "智能 URL 链接分流 / Rule-based browser routing；Safari、Chrome、Edge 与 Firefox 书签同步 / Bookmark sync；浏览器登录状态与 Cookie 同步 / Session and cookie sync；跨浏览器标签页共享 / Tab sharing；本地运行与隐私保护 / Local and private",
+      "description": "Mac 浏览器书签同步与链接分流工具。A local macOS app for cross-browser bookmark sync, link routing, session and cookie sync, and tab sharing across Safari, Chrome, Edge, and Firefox.",
+      "featureList": "Mac 默认浏览器与智能 URL 链接分流 / Rule-based browser routing；Safari、Chrome、Edge 与 Firefox 跨浏览器书签同步 / Bookmark sync；浏览器登录状态与 Cookie 同步 / Session and cookie sync；跨浏览器标签页共享 / Tab sharing；iCloud 多台 Mac 设置同步 / Multi-Mac settings sync；本地运行与隐私保护 / Local and private",
       "url": "https://browsync.ct106.com/",
       "downloadUrl": "https://apps.apple.com/cn/app/id6784604835?mt=12",
       "sameAs": ["https://github.com/chentao1006/browsync"]
@@ -40,10 +43,23 @@
     (function () {
       var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
       document.documentElement.dataset.theme = prefersDark ? "dark" : "light";
-      var savedLang = localStorage.getItem("browsync-lang");
-      var browserLang = (navigator.language || "en").toLowerCase();
-      var lang = savedLang === "en" || savedLang === "zh" ? savedLang : (browserLang.indexOf("zh") === 0 ? "zh" : "en");
-      document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+      var savedLanguage = null;
+      try {
+        savedLanguage = localStorage.getItem("browsync-lang");
+      } catch (error) {}
+      var browserLanguages = navigator.languages && navigator.languages.length
+        ? navigator.languages
+        : [navigator.language || ""];
+      var firstSupportedLanguage = browserLanguages.map(function (language) {
+        return language.toLowerCase();
+      }).find(function (language) {
+        return language.indexOf("zh") === 0 || language.indexOf("en") === 0;
+      });
+      var preferredLanguage = savedLanguage ||
+        (firstSupportedLanguage && firstSupportedLanguage.indexOf("zh") === 0 ? "zh" : "en");
+      if (preferredLanguage === "en") {
+        location.replace("/en/" + location.search + location.hash);
+      }
     })();
   </script>
   <style>
@@ -1070,7 +1086,8 @@
         <a href="#download" data-i18n="nav.download">立即下载</a>
       </div>
       <div class="controls">
-        <button class="toggle-btn" id="lang-toggle">EN</button>
+        <a class="toggle-btn" id="lang-toggle" href="/en/" hreflang="en" lang="en"
+          onclick="try { localStorage.setItem('browsync-lang', 'en'); } catch (error) {}">EN</a>
       </div>
     </div>
   </header>
@@ -1079,8 +1096,8 @@
     <section class="hero">
       <div class="hero-content">
         <div class="eyebrow" data-i18n="hero.eyebrow">macOS 原生应用</div>
-        <h1 data-i18n="hero.title">跨浏览器分流与同步中枢</h1>
-        <p data-i18n="hero.lead">让 Safari、Chrome、Edge、Firefox 与更多 Chromium 浏览器协同工作。根据规则智能分流链接，并实时同步书签、登录状态和标签页；所有数据只在本机运行。</p>
+        <h1 data-i18n="hero.title">Mac 浏览器书签同步与链接分流</h1>
+        <p data-i18n="hero.lead">BrowSync 让 Safari、Chrome、Edge、Firefox 与更多 Chromium 浏览器在 Mac 上协同工作：实时同步书签，根据规则智能分流链接，并同步登录状态和标签页；所有数据只在本机处理。</p>
         <div class="cta-container">
           <div class="cta-group">
             <div class="main-downloads" style="display: flex; gap: 16px; align-items: center; justify-content: center; flex-wrap: wrap;">
@@ -1097,7 +1114,7 @@
               <a href="https://apps.apple.com/cn/app/id6784604835?mt=12" target="_blank" rel="noopener"
                 class="store-badge app-store-badge">
                 <img data-app-store-badge src="BrowSync/Resources/Marketing/download-on-app-store-zh.svg"
-                  alt="从 App Store 下载">
+                  alt="从 Mac App Store 下载 BrowSync 浏览器书签同步工具">
               </a>
             </div>
             <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0;">
@@ -1155,14 +1172,14 @@
           <button class="carousel-btn prev" aria-label="Previous">‹</button>
           <button class="carousel-btn next" aria-label="Next">›</button>
           <div class="carousel-slides" id="carousel">
-            <div class="carousel-slide"><img src="screenshots/en/000001.jpg" alt="Screenshot 1"></div>
-            <div class="carousel-slide"><img src="screenshots/en/000002.jpg" alt="Screenshot 2"></div>
-            <div class="carousel-slide"><img src="screenshots/en/000003.jpg" alt="Screenshot 3"></div>
-            <div class="carousel-slide"><img src="screenshots/en/000004.jpg" alt="Screenshot 4"></div>
-            <div class="carousel-slide"><img src="screenshots/en/000005.jpg" alt="Screenshot 5"></div>
-            <div class="carousel-slide"><img src="screenshots/en/000006.jpg" alt="Screenshot 6"></div>
-            <div class="carousel-slide"><img src="screenshots/en/000007.jpg" alt="Screenshot 7"></div>
-            <div class="carousel-slide"><img src="screenshots/en/000008.jpg" alt="Screenshot 8"></div>
+            <div class="carousel-slide"><img src="screenshots/zh/000001.jpg" alt="BrowSync Mac 浏览器书签同步界面"></div>
+            <div class="carousel-slide"><img src="screenshots/zh/000002.jpg" alt="BrowSync Safari 与 Chrome 书签同步设置"></div>
+            <div class="carousel-slide"><img src="screenshots/zh/000003.jpg" alt="BrowSync macOS 浏览器链接分流规则"></div>
+            <div class="carousel-slide"><img src="screenshots/zh/000004.jpg" alt="BrowSync 浏览器登录状态同步设置"></div>
+            <div class="carousel-slide"><img src="screenshots/zh/000005.jpg" alt="BrowSync 跨浏览器标签页共享"></div>
+            <div class="carousel-slide"><img src="screenshots/zh/000006.jpg" alt="BrowSync 支持的 Mac 浏览器列表"></div>
+            <div class="carousel-slide"><img src="screenshots/zh/000007.jpg" alt="BrowSync 浏览器同步偏好设置"></div>
+            <div class="carousel-slide"><img src="screenshots/zh/000008.jpg" alt="BrowSync Mac 原生应用界面"></div>
           </div>
           <div class="carousel-dots" id="carousel-dots"></div>
         </div>
@@ -1170,45 +1187,53 @@
     </section>
 
     <section id="features" class="bento-section">
-      <h2 class="section-title" data-i18n="features.title">主要功能</h2>
+      <h2 class="section-title" data-i18n="features.title">Mac 跨浏览器同步与链接分流功能</h2>
 
       <div class="bento-grid">
         <!-- Feature 1 -->
         <div class="bento-card card-large">
-          <h3 data-i18n="feat1.title">🔗 macOS 默认浏览器与链接分流</h3>
-          <p data-i18n="feat1.desc">将 BrowSync 设为 macOS 默认浏览器后，可根据规则自动将链接在 Safari、Chrome、Edge、Firefox 等指定浏览器中打开。</p>
+          <h3 data-i18n="feat1.title">🔗 Mac 默认浏览器与智能链接分流</h3>
+          <p data-i18n="feat1.desc">将 BrowSync 设为 Mac 默认浏览器后，可按网站、URL 与自定义规则自动选择浏览器，让链接在 Safari、Chrome、Edge、Firefox 等指定浏览器中打开。</p>
         </div>
 
         <!-- Feature 2 -->
         <div class="bento-card card-medium">
-          <h3 data-i18n="feat2.title">🔖 Safari、Chrome、Edge、Firefox 书签同步</h3>
-          <p data-i18n="feat2.desc">在 Safari、Chrome、Edge、Firefox 与其他 Chromium 浏览器之间实时同步书签。支持为每个浏览器单独选择同步文件夹，不影响其他书签文件夹。</p>
+          <h3 data-i18n="feat2.title">🔖 跨浏览器书签同步</h3>
+          <p data-i18n="feat2.desc">在 Mac 上实时同步 Safari、Chrome、Edge、Firefox 与其他 Chromium 浏览器的书签。可为每个浏览器单独选择书签同步文件夹，不影响其他书签。</p>
         </div>
 
         <!-- Feature 3 -->
         <div class="bento-card card-medium">
-          <h3 data-i18n="feat3.title">🔄 浏览器登录状态与 Cookie 同步</h3>
-          <p data-i18n="feat3.desc">跨浏览器实时同步 Cookie、站点数据和缓存，保持各浏览器的登录状态一致。</p>
+          <h3 data-i18n="feat3.title">🔄 跨浏览器登录状态与 Cookie 同步</h3>
+          <p data-i18n="feat3.desc">在 Safari、Chrome、Edge 和 Firefox 之间实时同步 Cookie、网站数据与缓存，让同一网站的浏览器登录状态保持一致。</p>
         </div>
 
         <!-- Feature 4 -->
         <div class="bento-card card-large">
-          <h3 data-i18n="feat4.title">🔒 本地运行</h3>
-          <p data-i18n="feat4.desc">数据同步与规则匹配通过本地守护进程进行，数据保存在本地设备，不依赖外部服务器。</p>
+          <h3 data-i18n="feat4.title">🔒 本地浏览器数据同步与隐私保护</h3>
+          <p data-i18n="feat4.desc">书签、登录状态等浏览器数据的同步与链接规则匹配均在 Mac 本地完成，数据保存在本机，不上传到 BrowSync 服务器。</p>
         </div>
 
         <!-- Feature 5 -->
         <div class="bento-card card-large">
           <div style="flex: 1;">
-            <h3 data-i18n="feat5.title">✨ 原生应用</h3>
-            <p data-i18n="feat5.desc">采用原生 SwiftUI 开发，支持深色模式与菜单栏常驻，内存占用低。</p>
+            <h3 data-i18n="feat5.title">✨ 原生 Mac 浏览器同步应用</h3>
+            <p data-i18n="feat5.desc">BrowSync 是采用 SwiftUI 开发的原生 macOS 应用，支持深色模式与菜单栏常驻，低内存占用地连接多个浏览器。</p>
           </div>
         </div>
 
         <!-- Feature 6 -->
         <div class="bento-card card-medium">
-          <h3 data-i18n="feat6.title">☁️ iCloud 同步</h3>
-          <p data-i18n="feat6.desc">在您的所有 Mac 设备之间无缝同步分流规则与偏好设置。</p>
+          <h3 data-i18n="feat6.title">☁️ iCloud 多台 Mac 同步</h3>
+          <p data-i18n="feat6.desc">通过 iCloud 在多台 Mac 之间同步 BrowSync 设置、浏览器分流规则和标签页，延续跨设备浏览工作流。</p>
+        </div>
+
+        <!-- Feature 7 -->
+        <div class="bento-card card-full">
+          <div>
+            <h3 data-i18n="feat7.title">📑 跨浏览器标签页共享</h3>
+            <p data-i18n="feat7.desc">在 Safari、Chrome、Edge、Firefox 等浏览器之间共享当前标签页或全部已打开的标签页，无需逐个复制链接。</p>
+          </div>
         </div>
 
         <!-- Supported Browsers -->
@@ -1447,24 +1472,26 @@
         "nav.plans": "版本对比",
         "nav.download": "立即下载",
         "hero.eyebrow": "macOS 原生应用",
-        "hero.title": "跨浏览器分流与同步中枢",
-        "hero.lead": "让 Safari、Chrome、Edge、Firefox 与更多 Chromium 浏览器协同工作。根据规则智能分流链接，并实时同步书签、登录状态和标签页；所有数据只在本机运行。",
+        "hero.title": "Mac 浏览器书签同步与链接分流",
+        "hero.lead": "BrowSync 让 Safari、Chrome、Edge、Firefox 与更多 Chromium 浏览器在 Mac 上协同工作：实时同步书签，根据规则智能分流链接，并同步登录状态和标签页；所有数据只在本机处理。",
         "hero.cta": "下载安装包",
         "appStore.badge": "BrowSync/Resources/Marketing/download-on-app-store-zh.svg",
-        "appStore.alt": "从 App Store 下载",
-        "features.title": "主要功能",
-        "feat1.title": "🔗 macOS 默认浏览器与链接分流",
-        "feat1.desc": "将 BrowSync 设为 macOS 默认浏览器后，可根据规则自动将链接在 Safari、Chrome、Edge、Firefox 等指定浏览器中打开。",
-        "feat2.title": "🔖 Safari、Chrome、Edge、Firefox 书签同步",
-        "feat2.desc": "在 Safari、Chrome、Edge、Firefox 与其他 Chromium 浏览器之间实时同步书签。支持为每个浏览器单独选择同步文件夹，不影响其他书签文件夹。",
-        "feat3.title": "🔄 浏览器登录状态与 Cookie 同步",
-        "feat3.desc": "跨浏览器实时同步 Cookie、站点数据和缓存，保持各浏览器的登录状态一致。",
-        "feat4.title": "🔒 本地运行",
-        "feat4.desc": "数据同步与规则匹配通过本地守护进程进行，数据保存在本地设备，不依赖外部服务器。",
-        "feat5.title": "✨ 原生应用",
-        "feat5.desc": "采用原生 SwiftUI 开发，支持深色模式与菜单栏常驻，内存占用低。",
-        "feat6.title": "☁️ iCloud 同步",
-        "feat6.desc": "在您的所有 Mac 设备之间无缝同步分流规则与偏好设置。",
+        "appStore.alt": "从 Mac App Store 下载 BrowSync 浏览器书签同步工具",
+        "features.title": "Mac 跨浏览器同步与链接分流功能",
+        "feat1.title": "🔗 Mac 默认浏览器与智能链接分流",
+        "feat1.desc": "将 BrowSync 设为 Mac 默认浏览器后，可按网站、URL 与自定义规则自动选择浏览器，让链接在 Safari、Chrome、Edge、Firefox 等指定浏览器中打开。",
+        "feat2.title": "🔖 Safari、Chrome、Edge、Firefox 跨浏览器书签同步",
+        "feat2.desc": "在 Mac 上实时同步 Safari、Chrome、Edge、Firefox 与其他 Chromium 浏览器的书签。可为每个浏览器单独选择书签同步文件夹，不影响其他书签。",
+        "feat3.title": "🔄 跨浏览器登录状态与 Cookie 同步",
+        "feat3.desc": "在 Safari、Chrome、Edge 和 Firefox 之间实时同步 Cookie、网站数据与缓存，让同一网站的浏览器登录状态保持一致。",
+        "feat4.title": "🔒 本地浏览器数据同步与隐私保护",
+        "feat4.desc": "书签、登录状态等浏览器数据的同步与链接规则匹配均在 Mac 本地完成，数据保存在本机，不上传到 BrowSync 服务器。",
+        "feat5.title": "✨ 原生 Mac 浏览器同步应用",
+        "feat5.desc": "BrowSync 是采用 SwiftUI 开发的原生 macOS 应用，支持深色模式与菜单栏常驻，低内存占用地连接多个浏览器。",
+        "feat6.title": "☁️ iCloud 多台 Mac 同步",
+        "feat6.desc": "通过 iCloud 在多台 Mac 之间同步 BrowSync 设置、浏览器分流规则和标签页，延续跨设备浏览工作流。",
+        "feat7.title": "📑 跨浏览器标签页共享",
+        "feat7.desc": "在 Safari、Chrome、Edge、Firefox 等浏览器之间共享当前标签页或全部已打开的标签页，无需逐个复制链接。",
         "plans.title": "免费版 vs 专业版",
         "plans.desc": "两档都支持 BrowSync 的核心分流与同步能力，区别主要在同步方式、数量限制，以及跨设备能力。",
         "plans.axis.title": "对比维度",
@@ -1522,20 +1549,22 @@
         "hero.lead": "Make Safari, Chrome, Edge, Firefox, and more Chromium browsers work together. Route links by rule and sync bookmarks, signed-in sessions, and tabs in real time; all data stays on your Mac.",
         "hero.cta": "Download",
         "appStore.badge": "BrowSync/Resources/Marketing/download-on-app-store-en.svg",
-        "appStore.alt": "Download on the App Store",
-        "features.title": "Key Features",
-        "feat1.title": "🔗 macOS Default Browser & Link Routing",
-        "feat1.desc": "Set BrowSync as your macOS default browser and use rules to automatically open links in Safari, Chrome, Edge, Firefox, or another browser.",
-        "feat2.title": "🔖 Safari, Chrome, Edge & Firefox Bookmark Sync",
-        "feat2.desc": "Sync bookmarks in real time across Safari, Chrome, Edge, Firefox, and other Chromium browsers. Choose a dedicated sync folder for each browser without affecting its other bookmarks.",
-        "feat3.title": "🔄 Browser Session & Cookie Sync",
-        "feat3.desc": "Sync Cookies, site data, and caches across browsers to keep signed-in sessions consistent.",
-        "feat4.title": "🔒 Local Execution",
-        "feat4.desc": "All synchronization and rule matching happen via a local daemon. Data stays on your device.",
-        "feat5.title": "✨ Native App",
-        "feat5.desc": "Built with SwiftUI for macOS, featuring Dark Mode support and low memory footprint.",
-        "feat6.title": "☁️ iCloud Sync",
-        "feat6.desc": "Seamlessly sync your routing rules and preferences across all your Mac devices.",
+        "appStore.alt": "Download BrowSync for Mac browser bookmark sync on the App Store",
+        "features.title": "Cross-Browser Sync & Link Routing for Mac",
+        "feat1.title": "🔗 macOS Default Browser & Smart Link Routing",
+        "feat1.desc": "Use BrowSync as your Mac default browser to automatically choose Safari, Chrome, Edge, Firefox, or another browser based on website, URL, and custom routing rules.",
+        "feat2.title": "🔖 Cross-Browser Bookmark Sync for Safari, Chrome, Edge & Firefox",
+        "feat2.desc": "Sync bookmarks in real time across Safari, Chrome, Edge, Firefox, and other Chromium browsers on Mac. Choose a dedicated bookmark sync folder for each browser without changing other bookmarks.",
+        "feat3.title": "🔄 Cross-Browser Session & Cookie Sync",
+        "feat3.desc": "Sync cookies, website data, and caches across Safari, Chrome, Edge, and Firefox to keep website login sessions consistent between browsers.",
+        "feat4.title": "🔒 Private, Local Browser Data Sync",
+        "feat4.desc": "Bookmark and session sync plus link-rule matching run locally on your Mac. Your browser data stays on your device and is not uploaded to BrowSync servers.",
+        "feat5.title": "✨ Native Mac Browser Sync App",
+        "feat5.desc": "BrowSync is a native SwiftUI app for macOS with Dark Mode, menu bar access, and a low memory footprint while connecting multiple browsers.",
+        "feat6.title": "☁️ iCloud Sync Across Multiple Macs",
+        "feat6.desc": "Use iCloud to sync BrowSync settings, browser routing rules, and tabs across multiple Macs for a continuous cross-device browsing workflow.",
+        "feat7.title": "📑 Cross-Browser Tab Sharing",
+        "feat7.desc": "Share the current tab or all open tabs across Safari, Chrome, Edge, Firefox, and other browsers without copying links one by one.",
         "plans.title": "Free vs Pro",
         "plans.desc": "Both tiers support BrowSync's core routing and sync workflow. The main differences are sync mode, usage limits, and cross-device capabilities.",
         "plans.axis.title": "Comparison Dimensions",
@@ -1612,16 +1641,8 @@
       }
     }
 
-    document.getElementById('lang-toggle').onclick = () => {
-      let current = document.documentElement.lang.startsWith("zh") ? "zh" : "en";
-      let next = current === "zh" ? "en" : "zh";
-      localStorage.setItem("browsync-lang", next);
-      applyLang(next);
-    };
-
-    // Init language based on local storage or system preference
-    let savedLang = localStorage.getItem("browsync-lang") || (navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en");
-    applyLang(savedLang);
+    // This URL is the fixed Chinese locale. English is served at /en/.
+    applyLang("zh");
 
     // Auto theme sync
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
