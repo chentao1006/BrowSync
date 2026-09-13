@@ -20,6 +20,8 @@ struct SyncStats {
     var sessionStorage: Int = 0
     /// Domains/origins included in this sync, for the completion notification.
     var syncedSites = Set<String>()
+    /// Browsers where the reported bookmark changes originated.
+    var bookmarkSourceBrowserIds = Set<String>()
     
     var stateItems: Int { cookies + localStorage + sessionStorage }
     var isEmpty: Bool {
@@ -102,6 +104,9 @@ final class SyncService: ObservableObject {
     private var safariMonitorSource: DispatchSourceFileSystemObject?
     private var safariMonitorFileDescriptor: Int32 = -1
     private var safariBookmarkDebounceTask: Task<Void, Never>?
+    private var recentSafariPushByClient: [String: (bookmarks: [Bookmark], sentAt: Date)] = [:]
+    // Explicit Safari removals must survive an offline browser and an app restart.
+    private var pendingSafariRemovals: [String: [Bookmark]] = [:]
     private var lastNetworkSyncTime: Date = Date.distantPast
     private var suppressSafariPreSyncBackupUntil: Date = .distantPast
     @Published var missingBookmarkFolders: [String: String] = [:]
@@ -111,6 +116,7 @@ final class SyncService: ObservableObject {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         dataDir = appSupport.appendingPathComponent("BrowSync")
         createDataDirectories()
+        loadPendingSafariRemovals()
         loadBookmarkCountsFromDisk()
         startSafariBookmarkMonitor()
         // Do not put potentially large file-system cleanup on the initialization
@@ -341,10 +347,15 @@ final class SyncService: ObservableObject {
         let updatedCount = safariBookmarks.readBookmarks().count
         if updatedCount > 0 { bookmarkCounts["safari"] = updatedCount }
 
+        if isSyncing {
+            currentManualSyncStats.bookmarkSourceBrowserIds.insert(clientId.components(separatedBy: "-").first ?? clientId)
+        }
+
         if !isSyncing && AppState.shared.settingsService.general.notifySyncComplete {
             var deletionStats = SyncStats()
             deletionStats.bookmarksDeleted = bm.isFolder ? 0 : 1
             deletionStats.bookmarkFoldersDeleted = bm.isFolder ? 1 : 0
+            deletionStats.bookmarkSourceBrowserIds.insert(clientId.components(separatedBy: "-").first ?? clientId)
             AppState.shared.notificationService.notifyAutoSyncComplete(
                 stats: deletionStats,
                 categories: [.bookmarks]
@@ -564,6 +575,52 @@ final class SyncService: ObservableObject {
             let url = dataDir.appendingPathComponent(dir)
             try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         }
+    }
+
+    private var pendingSafariRemovalsURL: URL {
+        dataDir.appendingPathComponent("pending-safari-bookmark-removals.json")
+    }
+
+    private func loadPendingSafariRemovals() {
+        guard let data = try? Data(contentsOf: pendingSafariRemovalsURL),
+              let saved = try? JSONDecoder().decode([String: [Bookmark]].self, from: data) else { return }
+        pendingSafariRemovals = saved
+    }
+
+    private func savePendingSafariRemovals() {
+        guard let data = try? JSONEncoder().encode(pendingSafariRemovals) else { return }
+        do { try data.write(to: pendingSafariRemovalsURL, options: .atomic) }
+        catch { log("Could not save pending Safari bookmark removals: \(error.localizedDescription)") }
+    }
+
+    func deliverPendingSafariRemovals(to clientId: String) -> Bool {
+        let browserId = clientId.components(separatedBy: "-").first ?? clientId
+        guard let browser = Browser(rawValue: browserId),
+              let removals = pendingSafariRemovals[browserId], !removals.isEmpty else { return false }
+        // A user may have restored a bookmark in Safari while the target was offline.
+        // A fresh nonempty read prevents replaying that now-stale removal.
+        let currentSafari = safariBookmarks.readBookmarks()
+        guard !currentSafari.isEmpty else {
+            log("Deferred pending Safari removals for [\(clientId)]: Safari bookmark read was empty.")
+            return false
+        }
+        let toDeliver = removals.filter { removed in
+            !currentSafari.contains { current in
+                current.id == removed.id ||
+                (removed.isFolder && current.isFolder && current.title.caseInsensitiveCompare(removed.title) == .orderedSame) ||
+                (!removed.isFolder && current.url.flatMap { $0 }?.lowercased() == removed.url.flatMap { $0 }?.lowercased())
+            }
+        }
+        for bookmark in toDeliver {
+            let message = WSMessage(type: .sync, site: "*", category: "bookmarks_removed",
+                                    payload: .bookmarksRemoved(bookmark), messageId: UUID().uuidString,
+                                    timestamp: Date().timeIntervalSince1970)
+            sendBookmarkMessage(message, to: browser)
+        }
+        pendingSafariRemovals.removeValue(forKey: browserId)
+        savePendingSafariRemovals()
+        log("Delivered \(toDeliver.count) pending Safari bookmark removals to [\(clientId)]")
+        return !toDeliver.isEmpty
     }
 
     private func loadBookmarkCountsFromDisk() {
@@ -853,6 +910,18 @@ final class SyncService: ObservableObject {
                             
                             let deletedItems = buildDeletedBookmarkForest(from: deletedBms, sourceBrowser: "Safari")
                             backupService?.addDeletedBookmarks(deletedItems)
+
+                            if strategy == .twoWayMerge {
+                                let online = Set(daemon?.connectedClients.map(\.browser) ?? [])
+                                for browser in settings.bookmarkParticipatingBrowsers where browser != .safari && !online.contains(browser) {
+                                    var pending = pendingSafariRemovals[browser.rawValue] ?? []
+                                    for bookmark in deletedBms where !pending.contains(where: { $0.id == bookmark.id }) {
+                                        pending.append(bookmark)
+                                    }
+                                    pendingSafariRemovals[browser.rawValue] = pending
+                                }
+                                savePendingSafariRemovals()
+                            }
                             
                             for deletedBm in deletedBms {
                                 let msg = WSMessage(
@@ -869,7 +938,15 @@ final class SyncService: ObservableObject {
                                 // clients causes destructive false deletions.
                             }
                             if self.isSyncing {
-                                self.currentManualSyncStats.bookmarksDeleted += deletedBms.count
+                                self.currentManualSyncStats.bookmarksDeleted += deletedBms.filter { !$0.isFolder }.count
+                                self.currentManualSyncStats.bookmarkFoldersDeleted += deletedBms.filter(\.isFolder).count
+                                self.currentManualSyncStats.bookmarkSourceBrowserIds.insert(Browser.safari.id)
+                            } else if AppState.shared.settingsService.general.notifySyncComplete {
+                                var stats = SyncStats()
+                                stats.bookmarksDeleted = deletedBms.filter { !$0.isFolder }.count
+                                stats.bookmarkFoldersDeleted = deletedBms.filter(\.isFolder).count
+                                stats.bookmarkSourceBrowserIds.insert(Browser.safari.id)
+                                AppState.shared.notificationService.notifyAutoSyncComplete(stats: stats, categories: [.bookmarks])
                             }
                         }
                     }
@@ -881,6 +958,26 @@ final class SyncService: ObservableObject {
                     if let adjustedBookmarks = folderAdjustedBookmarksForSource(rawBookmarks, browser: .safari),
                        let backupBookmarks = backupBookmarksForSource(rawBookmarks, browser: .safari) {
                         let bookmarks = adjustedBookmarks
+
+                        if !isSyncing, let previous = backupService?.getSnapshot(sourceBrowser: "safari") {
+                            var stats = SyncStats()
+                            populateAutomaticBookmarkChangeStats(previous: previous, current: bookmarks, stats: &stats)
+                            if (stats.bookmarksAdded > 0 || stats.bookmarksModified > 0 ||
+                                stats.bookmarkFoldersAdded > 0 || stats.bookmarkFoldersModified > 0),
+                               AppState.shared.settingsService.general.notifySyncComplete {
+                                stats.bookmarkSourceBrowserIds.insert(Browser.safari.id)
+                                AppState.shared.notificationService.notifyAutoSyncComplete(stats: stats, categories: [.bookmarks])
+                            }
+                        }
+
+                        if isSyncing, let previous = backupService?.getSnapshot(sourceBrowser: "safari") {
+                            let previousById = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0) })
+                            let changed = previousById.count != bookmarks.count || bookmarks.contains { item in
+                                guard let old = previousById[item.id] else { return true }
+                                return old.title != item.title || old.url != item.url || old.parentId != item.parentId
+                            }
+                            if changed { currentManualSyncStats.bookmarkSourceBrowserIds.insert(Browser.safari.id) }
+                        }
 
                         backupService?.savePreSyncBackup(
                             bookmarks: backupBookmarks,
@@ -899,6 +996,9 @@ final class SyncService: ObservableObject {
                             timestamp: Date().timeIntervalSince1970
                         )
                         pushMsg.isFullMirror = (strategy == .oneWay) // Root selection keeps the old full mirror behavior; targeted folders are handled per receiver.
+                        for client in daemon?.connectedClients ?? [] where client.browser != .safari && settings.bookmarkParticipatingBrowsers.contains(client.browser) {
+                            recentSafariPushByClient[client.id] = (bookmarks, Date())
+                        }
                         broadcastBookmarkMessage(pushMsg)
                         log("Pushed \(bookmarks.count) Safari bookmarks to clients")
                         
@@ -1244,6 +1344,9 @@ final class SyncService: ObservableObject {
                 autoStats.syncedSites = syncedSites(for: payload, site: filteredMessage.site)
                 switch payload {
                 case .bookmarks(let bookmarks):
+                    if let source = Browser(rawValue: clientId.components(separatedBy: "-").first ?? clientId) {
+                        autoStats.bookmarkSourceBrowserIds.insert(source.id)
+                    }
                     // A full tree is a state refresh, not an event log. It is
                     // used for content/order sync but must never manufacture
                     // add/delete notifications from transient differences.
@@ -1252,7 +1355,8 @@ final class SyncService: ObservableObject {
                     populateAutomaticBookmarkChangeStats(
                         previous: preSyncAutoBookmarks,
                         current: bookmarks,
-                        stats: &autoStats
+                        stats: &autoStats,
+                        ignoringSafariEchoFor: clientId
                     )
                     
                 case .cookies(let c): autoStats.cookies = c.count
@@ -1570,7 +1674,28 @@ final class SyncService: ObservableObject {
     /// notifications may only report safe updates to a bookmark found in both
     /// snapshots. Explicit `bookmarks_removed` messages remain the sole
     /// source of deletion notifications.
-    private func populateAutomaticBookmarkChangeStats(previous: [Bookmark], current: [Bookmark], stats: inout SyncStats) {
+    private func populateAutomaticBookmarkChangeStats(
+        previous: [Bookmark], current: [Bookmark], stats: inout SyncStats,
+        ignoringSafariEchoFor clientId: String? = nil
+    ) {
+        var echoedIDs = Set<String>()
+        if let clientId, let push = recentSafariPushByClient[clientId] {
+            if Date().timeIntervalSince(push.sentAt) <= 30 {
+                let expectedByID = Dictionary(push.bookmarks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                let previousByID = Dictionary(previous.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                for item in current {
+                    if let expected = expectedByID[item.id],
+                       item.title == expected.title, item.url == expected.url,
+                       (item.parentId == expected.parentId || item.parentId == previousByID[item.id]?.parentId) {
+                        echoedIDs.insert(item.id)
+                    }
+                }
+            } else {
+                recentSafariPushByClient.removeValue(forKey: clientId)
+            }
+        }
+        let previous = previous.filter { !echoedIDs.contains($0.id) }
+        let current = current.filter { !echoedIDs.contains($0.id) }
         func isSystemRoot(_ bookmark: Bookmark) -> Bool {
             let id = bookmark.id.lowercased()
             return ["0", "1", "2", "3"].contains(id) ||
@@ -1725,14 +1850,19 @@ final class SyncService: ObservableObject {
         // A newly present URL is non-destructive and can be reported safely.
         // Missing URLs are intentionally *not* inferred as removals here: a
         // browser may expose a transient or partial tree while it is writing.
-        stats.bookmarksAdded = Set(currentBookmarks.keys)
-            .subtracting(previousBookmarks.keys)
-            .count
+        let previousByID = Dictionary(previous.filter { !$0.isFolder }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        stats.bookmarksAdded = currentBookmarks.values.filter { item in
+            previousByID[item.id] == nil && !previousBookmarks.keys.contains(bookmarkURL(item)?.lowercased() ?? "")
+        }.count
         stats.bookmarksModified = Set(currentBookmarks.keys).intersection(previousBookmarks.keys).reduce(into: 0) { count, url in
             guard let old = previousBookmarks[url], let new = currentBookmarks[url] else { return }
             let reordered = reorderedBookmarks.contains(url)
             let moved = previousParentPaths[old.id] != currentParentPaths[new.id]
             if old.title != new.title || reordered || moved { count += 1 }
+        }
+        stats.bookmarksModified += currentBookmarks.values.reduce(into: 0) { count, item in
+            guard let old = previousByID[item.id], old.url != item.url else { return }
+            count += 1
         }
 
         let previousFolders = Dictionary(
@@ -1921,6 +2051,7 @@ final class SyncService: ObservableObject {
                             }
                         }
                         
+                        let safariBeforeWrite = isSyncing ? safariBookmarks.readBookmarks() : []
                         prepareSafariForIncomingBookmarkMutation()
                         let sourceName = clientId.components(separatedBy: "-").first ?? clientId
                         self.lastNetworkSyncTime = Date()
@@ -1928,6 +2059,15 @@ final class SyncService: ObservableObject {
                         if count >= 0 {
                             log("Wrote \(count) bookmarks into Safari natively (App Store)")
                             let freshSafariBms = safariBookmarks.readBookmarks()
+                            if isSyncing {
+                                let beforeById = Dictionary(uniqueKeysWithValues: safariBeforeWrite.map { ($0.id, $0) })
+                                let afterById = Dictionary(uniqueKeysWithValues: freshSafariBms.map { ($0.id, $0) })
+                                let changed = beforeById.count != afterById.count || afterById.contains { id, item in
+                                    guard let previous = beforeById[id] else { return true }
+                                    return previous.title != item.title || previous.url != item.url || previous.parentId != item.parentId
+                                }
+                                if changed { currentManualSyncStats.bookmarkSourceBrowserIds.insert(sourceName) }
+                            }
                             if !freshSafariBms.isEmpty {
                                 let snapshotBms = freshSafariBms.map { b in
                                     Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)

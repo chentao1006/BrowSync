@@ -60,6 +60,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
             pendingAutoSyncStats.bookmarkFoldersAdded += stats.bookmarkFoldersAdded
             pendingAutoSyncStats.bookmarkFoldersDeleted += stats.bookmarkFoldersDeleted
             pendingAutoSyncStats.bookmarkFoldersModified += stats.bookmarkFoldersModified
+            pendingAutoSyncStats.bookmarkSourceBrowserIds.formUnion(stats.bookmarkSourceBrowserIds)
         }
         pendingAutoSyncStats.tabs += stats.tabs
         pendingAutoSyncStats.cookies += stats.cookies
@@ -124,13 +125,17 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
             let hasBookmarks = categories.contains(where: { $0.rawValue == "bookmarks" })
             let hasState = categories.contains(where: { $0.rawValue != "bookmarks" })
             let storageCount = stats.localStorage + stats.sessionStorage
+            let browserNames = stats.bookmarkSourceBrowserIds.sorted().map { id in
+                Browser(rawValue: id)?.displayName ?? id
+            }.joined(separator: ", ")
+            let sourceSuffix = browserNames.isEmpty ? "" : " (\(browserNames))"
             var bookmarkParts: [String] = []
-            if stats.bookmarksAdded > 0 { bookmarkParts.append(String(format: String(localized: "Added %d bookmarks", bundle: langBundle), stats.bookmarksAdded)) }
-            if stats.bookmarkFoldersAdded > 0 { bookmarkParts.append(String(format: String(localized: "Added %d folders", bundle: langBundle), stats.bookmarkFoldersAdded)) }
-            if stats.bookmarksDeleted > 0 { bookmarkParts.append(String(format: String(localized: "Deleted %d bookmarks", bundle: langBundle), stats.bookmarksDeleted)) }
-            if stats.bookmarkFoldersDeleted > 0 { bookmarkParts.append(String(format: String(localized: "Deleted %d folders", bundle: langBundle), stats.bookmarkFoldersDeleted)) }
-            if stats.bookmarksModified > 0 { bookmarkParts.append(String(format: String(localized: "Modified %d bookmarks", bundle: langBundle), stats.bookmarksModified)) }
-            if stats.bookmarkFoldersModified > 0 { bookmarkParts.append(String(format: String(localized: "Modified %d folders", bundle: langBundle), stats.bookmarkFoldersModified)) }
+            if stats.bookmarksAdded > 0 { bookmarkParts.append(String(format: String(localized: "Added %d bookmarks", bundle: langBundle), stats.bookmarksAdded) + sourceSuffix) }
+            if stats.bookmarkFoldersAdded > 0 { bookmarkParts.append(String(format: String(localized: "Added %d folders", bundle: langBundle), stats.bookmarkFoldersAdded) + sourceSuffix) }
+            if stats.bookmarksDeleted > 0 { bookmarkParts.append(String(format: String(localized: "Deleted %d bookmarks", bundle: langBundle), stats.bookmarksDeleted) + sourceSuffix) }
+            if stats.bookmarkFoldersDeleted > 0 { bookmarkParts.append(String(format: String(localized: "Deleted %d folders", bundle: langBundle), stats.bookmarkFoldersDeleted) + sourceSuffix) }
+            if stats.bookmarksModified > 0 { bookmarkParts.append(String(format: String(localized: "Modified %d bookmarks", bundle: langBundle), stats.bookmarksModified) + sourceSuffix) }
+            if stats.bookmarkFoldersModified > 0 { bookmarkParts.append(String(format: String(localized: "Modified %d folders", bundle: langBundle), stats.bookmarkFoldersModified) + sourceSuffix) }
 
             if hasBookmarks && !hasState {
                 guard !bookmarkParts.isEmpty else { return }
@@ -161,7 +166,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
                 content.body = String(format: String(localized: "Synced %@.", bundle: langBundle), parts.joined(separator: ", "))
             }
 
-            if !stats.syncedSites.isEmpty {
+            if hasState && !stats.syncedSites.isEmpty {
                 let sites = stats.syncedSites.sorted().joined(separator: ", ")
                 content.body += "\n" + String(format: String(localized: "Synced Websites: %@", bundle: langBundle), sites)
             }

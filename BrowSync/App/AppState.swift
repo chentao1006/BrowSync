@@ -473,6 +473,14 @@ extension AppState: DaemonServerDelegate {
         Task { @MainActor in
             self.updateConnectionStatus(for: client.browser, connected: true)
             self.broadcastSettings(to: client)
+            if self.settingsService.syncSettings.enabledCategories.contains(.bookmarks),
+               self.settingsService.syncSettings.bookmarkSyncStrategy == .twoWayMerge,
+               self.syncService.deliverPendingSafariRemovals(to: client.id) {
+                let refresh = WSMessage(type: .sync, site: "*", category: "bookmarks",
+                                        payload: nil, messageId: UUID().uuidString,
+                                        timestamp: Date().timeIntervalSince1970)
+                server.sendWSMessage(refresh, to: client)
+            }
         }
     }
 
@@ -541,6 +549,10 @@ extension AppState: DaemonServerDelegate {
             // Safari extension does not support the WebExtension bookmarks API (it uses native sync instead)
             // so we should never push bookmarks to the Safari extension.
             if clientId.contains("safari") { return }
+
+            if strategy == .twoWayMerge {
+                _ = self.syncService.deliverPendingSafariRemovals(to: clientId)
+            }
             
             // Do not push bookmarks back to the browser that is the source of truth.
             // In one-way mode the source must never receive its own snapshot as a
