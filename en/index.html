@@ -20,6 +20,7 @@
   <meta name="twitter:title" content="Cross-Browser Sync &amp; Link Routing for Mac - BrowSync">
   <meta name="twitter:description" content="Sync bookmarks, sessions, cookies, and tabs across Safari, Chrome, Edge, and Firefox on your Mac.">
   <title>Cross-Browser Sync &amp; Link Routing for Mac - BrowSync</title>
+  <base href="/">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -38,124 +39,1686 @@
   </script>
   <script>
     (function () {
-      var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-      document.documentElement.dataset.theme = dark ? "dark" : "light";
+      var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.dataset.theme = prefersDark ? "dark" : "light";
     })();
   </script>
   <style>
-    :root { color-scheme: dark light; --bg:#000; --surface:rgba(20,20,20,.72); --text:#fff; --muted:#a1a1aa; --border:rgba(255,255,255,.12); --accent:#3b82f6; }
-    html[data-theme="light"] { --bg:#fff; --surface:rgba(250,250,250,.82); --text:#09090b; --muted:#52525b; --border:rgba(0,0,0,.1); }
-    * { box-sizing:border-box; }
-    html { scroll-behavior:smooth; }
-    body { margin:0; min-height:100vh; color:var(--text); background:radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent) 14%, var(--bg)), var(--bg) 55%); font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-    a { color:inherit; text-decoration:none; }
-    header { position:sticky; top:0; z-index:10; border-bottom:1px solid var(--border); background:color-mix(in srgb, var(--bg) 76%, transparent); backdrop-filter:blur(16px); }
-    nav { max-width:1160px; margin:auto; padding:15px 24px; display:flex; align-items:center; justify-content:space-between; gap:24px; }
-    .brand { display:flex; align-items:center; gap:11px; font-weight:750; }
-    .brand img { width:32px; height:32px; border-radius:8px; }
-    .links { display:flex; align-items:center; gap:22px; color:var(--muted); font-size:.94rem; }
-    .language { padding:6px 12px; border:1px solid var(--border); border-radius:7px; color:var(--text); font-weight:700; }
-    main { max-width:1160px; margin:auto; padding:0 24px; }
-    .hero { padding:100px 0 84px; display:grid; grid-template-columns:1.05fr .95fr; align-items:center; gap:56px; }
-    .eyebrow { display:inline-block; padding:6px 14px; border:1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius:999px; color:var(--accent); font-weight:700; font-size:.88rem; }
-    h1 { margin:22px 0; font-size:clamp(2.7rem,5.6vw,4.8rem); line-height:1.03; letter-spacing:-.05em; }
-    .lead { max-width:720px; color:var(--muted); font-size:clamp(1.08rem,2vw,1.28rem); }
-    .hero-art { padding:30px; border:1px solid var(--border); border-radius:28px; background:var(--surface); }
-    .hero-art img { display:block; width:100%; border-radius:15px; }
-    .browser-row { display:flex; justify-content:center; align-items:center; gap:20px; margin-bottom:24px; }
-    .browser-row img { width:48px; height:48px; }
-    .browser-row span { color:var(--muted); font-size:1.5rem; }
-    .actions { display:flex; align-items:center; flex-wrap:wrap; gap:18px; margin-top:32px; }
-    .store img { display:block; height:48px; max-width:170px; }
-    .secondary { padding:10px 16px; border:1px solid var(--border); border-radius:9px; font-weight:650; }
-    section { scroll-margin-top:90px; }
-    h2 { margin:0 0 42px; font-size:clamp(2rem,4vw,3rem); line-height:1.15; text-align:center; letter-spacing:-.03em; }
-    .features { padding:30px 0 90px; }
-    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px; }
-    .card { padding:32px; border:1px solid var(--border); border-radius:22px; background:var(--surface); }
-    .card h3 { margin:0 0 12px; font-size:1.32rem; line-height:1.3; }
-    .card p { margin:0; color:var(--muted); }
-    .wide { grid-column:1/-1; }
-    .supported { padding:0 0 90px; }
-    .browser-list { display:flex; flex-wrap:wrap; justify-content:center; gap:12px; }
-    .browser-list span { padding:8px 14px; border:1px solid var(--border); border-radius:999px; background:var(--surface); font-weight:650; }
-    .download { margin-bottom:90px; padding:52px 24px; text-align:center; border:1px solid var(--border); border-radius:26px; background:var(--surface); }
-    .download h2 { margin-bottom:12px; }
-    .download p { color:var(--muted); }
-    .download .actions { justify-content:center; }
-    footer { max-width:1160px; margin:auto; padding:35px 24px; border-top:1px solid var(--border); display:flex; justify-content:space-between; gap:20px; color:var(--muted); }
-    footer div { display:flex; flex-wrap:wrap; gap:20px; }
-    @media (max-width:760px) { .links a:not(.language) { display:none; } .hero { grid-template-columns:1fr; padding-top:70px; } .grid { grid-template-columns:1fr; } .wide { grid-column:auto; } footer { flex-direction:column; } }
+    /* CSS Variables */
+    :root {
+      color-scheme: dark light;
+      --bg: #000000;
+      --bg-gradient: radial-gradient(circle at 50% 0%, #141f2e 0%, #000000 60%);
+      --text: #ffffff;
+      --muted: #a1a1aa;
+      --border: rgba(255, 255, 255, 0.12);
+      --card-bg: rgba(20, 20, 20, 0.65);
+      --card-bg-hover: rgba(30, 30, 30, 0.85);
+      --glass-bg: rgba(0, 0, 0, 0.5);
+      --accent: #007aff;
+      --accent-hover: #0062cc;
+      --button-text: #ffffff;
+      --hero-title: linear-gradient(180deg, #ffffff 0%, #a1a1aa 100%);
+    }
+
+    html[data-theme="light"] {
+      --bg: #ffffff;
+      --bg-gradient: radial-gradient(circle at 50% 0%, #f0f4f8 0%, #ffffff 60%);
+      --text: #09090b;
+      --muted: #52525b;
+      --border: rgba(0, 0, 0, 0.1);
+      --card-bg: rgba(255, 255, 255, 0.65);
+      --card-bg-hover: rgba(250, 250, 250, 0.95);
+      --glass-bg: rgba(255, 255, 255, 0.7);
+      --hero-title: linear-gradient(180deg, #09090b 0%, #52525b 100%);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg-gradient);
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    a {
+      text-decoration: none;
+      color: inherit;
+    }
+
+    img {
+      max-width: 100%;
+      display: block;
+    }
+
+    /* Header & Nav */
+    header {
+      position: fixed;
+      top: 0;
+      width: 100%;
+      z-index: 50;
+      background: var(--glass-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+      font-size: 1.15rem;
+    }
+
+    .brand img {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 24px;
+      align-items: center;
+      font-size: 0.95rem;
+      font-weight: 500;
+    }
+
+    .nav-links a {
+      color: var(--muted);
+      transition: color 0.2s ease;
+    }
+
+    .nav-links a:hover {
+      color: var(--text);
+    }
+
+    .controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .toggle-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+
+    .toggle-btn:hover {
+      background: var(--border);
+    }
+
+    /* Hero */
+    .hero {
+      max-width: 1200px;
+      margin: 140px auto 80px;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 40px;
+      animation: fadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      opacity: 0;
+      transform: translateY(20px);
+    }
+
+    .hero-content {
+      flex: 1;
+      text-align: left;
+      max-width: 540px;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      padding: 6px 16px;
+      border-radius: 999px;
+      background: rgba(59, 130, 246, 0.1);
+      color: #3b82f6;
+      font-size: 0.875rem;
+      font-weight: 600;
+      margin-bottom: 24px;
+      border: 1px solid rgba(59, 130, 246, 0.2);
+    }
+
+    h1 {
+      font-size: clamp(2.5rem, 4vw, 4rem);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -0.04em;
+      margin-bottom: 24px;
+      background: var(--hero-title);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero p {
+      font-size: clamp(1.1rem, 1.5vw, 1.25rem);
+      color: var(--muted);
+      margin: 0 0 40px 0;
+    }
+
+    .cta-group {
+      display: flex;
+      gap: 16px;
+      justify-content: flex-start;
+      align-items: center;
+      flex-wrap: nowrap;
+      white-space: nowrap;
+      overflow-x: auto;
+      max-width: calc(100% + 32px);
+      padding: 24px 16px 32px 16px;
+      margin: -24px -16px -32px -16px;
+    }
+
+    /* Hide scrollbar for cta-group */
+    .cta-group::-webkit-scrollbar {
+      display: none;
+    }
+
+    .cta-group {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    .btn-primary {
+      background: #000000;
+      color: #ffffff;
+      height: 48px;
+      padding: 0 12px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 1.05rem;
+      transition: all 0.3s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      /* Dark mode styles */
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+
+    .btn-primary:hover {
+      background: #1a1a1a;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+      border-color: rgba(255, 255, 255, 0.5);
+    }
+
+    html[data-theme="light"] .btn-primary {
+      background: #000000;
+      color: #ffffff;
+      border: 1px solid transparent;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+    }
+
+    html[data-theme="light"] .btn-primary:hover {
+      background: #1a1a1a;
+      border-color: transparent;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+
+
+    .store-badge {
+      display: inline-flex;
+      align-items: center;
+      flex: 0 0 auto;
+      transition: all 0.3s ease;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      white-space: nowrap;
+    }
+
+    .store-badge img {
+      width: auto;
+      height: 48px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .store-badge:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    html[data-theme="light"] .store-badge {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    html[data-theme="light"] .store-badge:hover {
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 12px 28px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 1.05rem;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .btn-secondary:hover {
+      background: var(--card-bg);
+      transform: translateY(-2px);
+    }
+
+    .hero-visuals {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+      flex: 1;
+      max-width: 400px;
+    }
+
+    .promo-img {
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+      position: relative;
+      width: 100%;
+      margin: 0;
+    }
+
+    /* Browser Correlation */
+    .browser-correlation {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding: 12px 24px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      width: fit-content;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+    }
+
+    .browser-correlation img {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.15));
+      transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .browser-correlation img:hover {
+      transform: scale(1.15) rotate(-5deg);
+    }
+
+    .sync-arrows {
+      width: 24px;
+      height: 24px;
+      color: var(--muted);
+      animation: pulseSync 2.5s infinite ease-in-out;
+    }
+
+    @keyframes pulseSync {
+
+      0%,
+      100% {
+        opacity: 0.4;
+        transform: scale(0.9);
+      }
+
+      50% {
+        opacity: 1;
+        transform: scale(1.1);
+        color: var(--accent);
+      }
+    }
+
+    /* Icon Button for Extensions */
+    .btn-icon {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      height: 48px;
+      width: 48px;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      flex: 0 0 auto;
+    }
+
+    .btn-icon:hover {
+      background: var(--card-bg-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    html[data-theme="light"] .btn-icon {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    html[data-theme="light"] .btn-icon:hover {
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    }
+
+    .btn-icon img {
+      width: 24px;
+      height: 24px;
+      object-fit: contain;
+    }
+
+    /* Carousel */
+    .carousel-slides {
+      display: flex;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      scroll-behavior: smooth;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+
+    .carousel-slides::-webkit-scrollbar {
+      display: none;
+    }
+
+    .carousel-slide {
+      flex: 0 0 100%;
+      scroll-snap-align: start;
+    }
+
+    .carousel-slide img {
+      width: 100%;
+      height: auto;
+      object-fit: cover;
+      display: block;
+      cursor: zoom-in;
+    }
+
+    /* Lightbox */
+    .lightbox {
+      margin: auto;
+      border: none;
+      border-radius: 16px;
+      padding: 0;
+      background: transparent;
+      max-width: 90vw;
+      max-height: 90vh;
+    }
+
+    .lightbox::backdrop {
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    .lightbox img {
+      display: block;
+      max-width: 100%;
+      max-height: 90vh;
+      border-radius: 8px;
+    }
+
+    .lightbox-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: rgba(0, 0, 0, 0.5);
+      color: white;
+      border: none;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      font-size: 24px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+
+    .lightbox-close:hover {
+      background: rgba(0, 0, 0, 0.8);
+    }
+
+    .carousel-btn {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background: var(--glass-bg);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: var(--text);
+      border: 1px solid var(--border);
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      transition: all 0.2s ease;
+      z-index: 10;
+    }
+
+    .carousel-btn:hover {
+      background: var(--card-bg-hover);
+    }
+
+    .carousel-btn.prev {
+      left: 16px;
+    }
+
+    .carousel-btn.next {
+      right: 16px;
+    }
+
+    .carousel-dots {
+      position: absolute;
+      bottom: 16px;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      z-index: 10;
+    }
+
+    .carousel-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--muted);
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .carousel-dot.active {
+      background: var(--text);
+      width: 24px;
+      border-radius: 5px;
+    }
+
+    /* Bento Box Grid */
+    .bento-section {
+      max-width: 1200px;
+      margin: 0 auto 100px;
+      padding: 0 24px;
+    }
+
+    #features,
+    #browsers,
+    #plans,
+    #download {
+      scroll-margin-top: 96px;
+    }
+
+    .section-title {
+      text-align: center;
+      font-size: clamp(2rem, 4vw, 2.8rem);
+      font-weight: 700;
+      margin-bottom: 56px;
+      letter-spacing: -0.02em;
+    }
+
+    .bento-grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 24px;
+      auto-rows: minmax(320px, auto);
+    }
+
+    .bento-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 40px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .bento-card:hover {
+      transform: translateY(-6px);
+      background: var(--card-bg-hover);
+      border-color: rgba(139, 92, 246, 0.3);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+    }
+
+    .bento-card h3 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .bento-card p {
+      color: var(--muted);
+      font-size: 1.1rem;
+      line-height: 1.6;
+    }
+
+    .card-large {
+      grid-column: span 7;
+    }
+
+    .card-medium {
+      grid-column: span 5;
+    }
+
+    .card-half {
+      grid-column: span 6;
+    }
+
+    .card-full {
+      grid-column: span 12;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .plan-compare {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .plan-compare-head {
+      max-width: 760px;
+    }
+
+    .plan-compare-head p {
+      color: var(--muted);
+      font-size: 1.05rem;
+    }
+
+    .plan-table {
+      display: grid;
+      grid-template-columns: minmax(180px, 1.1fr) minmax(0, 1fr) minmax(0, 1fr);
+      gap: 0;
+      border-radius: 24px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .plan-kicker {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      margin-bottom: 14px;
+    }
+
+    .plan-free-head .plan-kicker {
+      background: rgba(255, 255, 255, 0.08);
+      color: #d4d4d8;
+    }
+
+    .plan-pro-head .plan-kicker {
+      background: rgba(120, 53, 15, 0.16);
+      color: #fcd34d;
+    }
+
+    .plan-tier-head h3 {
+      margin-bottom: 10px;
+      font-size: 1.1rem;
+    }
+
+    .plan-summary {
+      color: var(--muted);
+      font-size: 0.98rem;
+      line-height: 1.6;
+    }
+
+    .plan-recommend {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #facc15, #f59e0b);
+      color: #3b2f07;
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      box-shadow: 0 10px 24px rgba(245, 158, 11, 0.28);
+    }
+
+    .plan-head-spacer,
+    .plan-tier-head,
+    .plan-row-label,
+    .plan-cell {
+      padding: 26px 24px 20px;
+    }
+
+    .plan-head-spacer,
+    .plan-tier-head {
+      min-height: 188px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: flex-start;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .plan-head-spacer {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .plan-head-spacer strong {
+      display: block;
+      font-size: 1.1rem;
+      margin-bottom: 10px;
+      color: var(--text);
+    }
+
+    .plan-head-spacer p {
+      color: var(--muted);
+      font-size: 0.98rem;
+      line-height: 1.6;
+      max-width: 22rem;
+    }
+
+    .plan-tier-head {
+      position: relative;
+    }
+
+    .plan-free-head {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+      border-left: 1px solid var(--border);
+    }
+
+    .plan-pro-head {
+      background: linear-gradient(180deg, rgba(250, 204, 21, 0.2), rgba(161, 98, 7, 0.08));
+      border-left: 1px solid rgba(250, 204, 21, 0.18);
+      box-shadow: inset 0 1px 0 rgba(250, 204, 21, 0.12);
+    }
+
+    .plan-row-label,
+    .plan-cell {
+      padding: 18px 24px;
+      display: flex;
+      align-items: center;
+      border-top: 1px solid var(--border);
+    }
+
+    .plan-row-label {
+      color: var(--text);
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .plan-row-label strong {
+      display: block;
+      font-size: 1rem;
+      margin-bottom: 3px;
+    }
+
+    .plan-row-label span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.92rem;
+      font-weight: 500;
+      line-height: 1.45;
+    }
+
+    .plan-cell {
+      gap: 12px;
+      line-height: 1.5;
+    }
+
+    .plan-free-cell {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+      border-left: 1px solid var(--border);
+    }
+
+    .plan-pro-cell {
+      background: linear-gradient(180deg, rgba(250, 204, 21, 0.2), rgba(161, 98, 7, 0.08));
+      border-left: 1px solid rgba(250, 204, 21, 0.18);
+    }
+
+    .plan-mark {
+      flex: 0 0 auto;
+      width: 24px;
+      text-align: center;
+      font-weight: 800;
+      font-size: 1rem;
+    }
+
+    .plan-free-cell .plan-mark {
+      color: #a3a3a3;
+    }
+
+    .plan-pro-cell .plan-mark {
+      color: #facc15;
+    }
+
+    .plan-pro-cell {
+      color: #fef3c7;
+    }
+
+    .plan-free-cell {
+      color: rgba(255, 255, 255, 0.92);
+    }
+
+    html[data-theme="light"] .plan-free-head,
+    html[data-theme="light"] .plan-free-cell {
+      background: linear-gradient(180deg, rgba(24, 24, 27, 0.03), rgba(24, 24, 27, 0.01));
+    }
+
+    html[data-theme="light"] .plan-pro-head,
+    html[data-theme="light"] .plan-pro-cell {
+      background: linear-gradient(180deg, rgba(250, 204, 21, 0.16), rgba(251, 191, 36, 0.08));
+    }
+
+    html[data-theme="light"] .plan-free-head .plan-kicker {
+      background: rgba(24, 24, 27, 0.06);
+      color: #3f3f46;
+    }
+
+    html[data-theme="light"] .plan-pro-head .plan-kicker {
+      background: rgba(146, 64, 14, 0.12);
+      color: #92400e;
+    }
+
+    html[data-theme="light"] .plan-free-head .plan-summary,
+    html[data-theme="light"] .plan-row-label span {
+      color: #52525b;
+    }
+
+    html[data-theme="light"] .plan-free-cell,
+    html[data-theme="light"] .plan-row-label {
+      color: #27272a;
+    }
+
+    html[data-theme="light"] .plan-head-spacer {
+      background: rgba(24, 24, 27, 0.02);
+    }
+
+    html[data-theme="light"] .plan-head-spacer strong {
+      color: #27272a;
+    }
+
+    html[data-theme="light"] .plan-pro-cell {
+      color: #713f12;
+    }
+
+    html[data-theme="light"] .plan-free-cell .plan-mark {
+      color: #71717a;
+    }
+
+    html[data-theme="light"] .plan-pro-cell .plan-mark {
+      color: #b45309;
+    }
+
+    .plan-note {
+      margin-top: 24px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 24px;
+      text-align: center;
+      color: var(--muted);
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+
+    footer a {
+      transition: color 0.2s ease;
+      font-weight: 500;
+    }
+
+    footer a:hover {
+      color: var(--text);
+    }
+
+    .featured-badge {
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .featured-badge img {
+      width: auto;
+      height: 24px;
+    }
+
+    .featured-badge .badge-light {
+      display: none;
+    }
+
+    .featured-badge .badge-dark {
+      display: block;
+    }
+
+    html[data-theme="light"] .featured-badge .badge-light {
+      display: block;
+    }
+
+    html[data-theme="light"] .featured-badge .badge-dark {
+      display: none;
+    }
+
+    /* Animations */
+    @keyframes fadeUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .bento-card {
+        grid-column: span 12 !important;
+      }
+
+      .card-full {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 20px;
+      }
+
+      .nav-links {
+        display: none;
+      }
+
+      .hero {
+        flex-direction: column;
+        text-align: center;
+        margin-top: 100px;
+      }
+
+      .hero-content {
+        text-align: center;
+        max-width: 100%;
+      }
+
+      .hero p {
+        margin: 0 auto 40px auto;
+      }
+
+      .cta-group {
+        justify-content: center;
+      }
+
+      .hero-visuals {
+        max-width: 500px;
+        margin-top: 40px;
+        width: 100%;
+      }
+
+      .plan-table {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .hero {
+        margin-top: 80px;
+      }
+
+      .cta-group {
+        gap: 16px;
+        flex-direction: column;
+        align-items: center;
+        white-space: normal;
+      }
+
+      .store-badge {
+        justify-content: center;
+      }
+
+      .btn-icon {
+        height: 42px;
+        width: 42px;
+      }
+
+      .btn-icon img {
+        width: 20px;
+        height: 20px;
+      }
+
+      footer {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .bento-card {
+        padding: 32px 24px;
+      }
+
+      .plan-head-spacer,
+      .plan-tier-head,
+      .plan-row-label,
+      .plan-cell {
+        padding-left: 18px;
+        padding-right: 18px;
+      }
+
+      .plan-head-spacer,
+      .plan-tier-head {
+        min-height: 0;
+      }
+    }
   </style>
 </head>
+
 <body>
   <header>
-    <nav aria-label="Main navigation">
-      <a class="brand" href="/en/"><img src="../assets/BrowSync.png" alt="BrowSync app icon"><span>BrowSync</span></a>
-      <div class="links">
-        <a href="#features">Features</a>
-        <a href="#browsers">Browsers</a>
-        <a href="#download">Download</a>
-        <a class="language" href="/" hreflang="zh-CN" lang="zh-CN"
+    <div class="nav-container">
+      <a href="/en/" class="brand">
+        <img src="assets/BrowSync.png" alt="Logo">
+        <span data-i18n="brand">BrowSync</span>
+      </a>
+      <div class="nav-links">
+        <a href="/en/#features" data-i18n="nav.features">Features</a>
+        <a href="/en/#browsers" data-i18n="nav.browsers">Browsers</a>
+        <a href="/en/#plans" data-i18n="nav.plans">Compare</a>
+        <a href="/en/#download" data-i18n="nav.download">Download</a>
+      </div>
+      <div class="controls">
+        <a class="toggle-btn" id="lang-toggle" href="/" hreflang="zh-CN" lang="zh-CN"
           onclick="try { localStorage.setItem('browsync-lang', 'zh'); } catch (error) {}">中文</a>
       </div>
-    </nav>
+    </div>
   </header>
+
   <main>
     <section class="hero">
-      <div>
-        <span class="eyebrow">Native macOS App</span>
-        <h1>Cross-Browser Sync &amp; Link Routing for Mac</h1>
-        <p class="lead">BrowSync makes Safari, Chrome, Edge, Firefox, and other Chromium browsers work together. Sync bookmarks, sessions, cookies, and tabs in real time, and route every link to the right browser—all locally on your Mac.</p>
-        <div class="actions">
-          <a class="store" href="https://apps.apple.com/app/id6784604835?mt=12" target="_blank" rel="noopener"><img src="../BrowSync/Resources/Marketing/download-on-app-store-en.svg" alt="Download BrowSync for Mac on the App Store"></a>
-          <a class="secondary" href="https://github.com/chentao1006/browsync">View on GitHub</a>
+      <div class="hero-content">
+        <div class="eyebrow" data-i18n="hero.eyebrow">Native macOS App</div>
+        <h1 data-i18n="hero.title">Cross-Browser Sync &amp; Link Routing for Mac</h1>
+        <p data-i18n="hero.lead">Make Safari, Chrome, Edge, Firefox, and more Chromium browsers work together. Route links by rule and sync bookmarks, signed-in sessions, and tabs in real time; all data stays on your Mac.</p>
+        <div class="cta-container">
+          <div class="cta-group">
+            <div class="main-downloads" style="display: flex; gap: 16px; align-items: center; justify-content: center; flex-wrap: wrap;">
+              <!-- <a href="https://github.com/chentao1006/browsync/releases/latest" target="_blank" rel="noopener"
+                class="btn-primary">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span data-i18n="hero.cta">Download</span>
+              </a> -->
+              <a href="https://apps.apple.com/app/id6784604835?mt=12" target="_blank" rel="noopener"
+                class="store-badge app-store-badge">
+                <img data-app-store-badge src="BrowSync/Resources/Marketing/download-on-app-store-en.svg"
+                  alt="Download BrowSync for Mac on the App Store">
+              </a>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0;">
+              <span style="color: var(--muted); font-size: 0.95rem; margin-left: 8px;"
+                data-i18n="install.extensions">Extensions:</span>
+              <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh" target="_blank"
+                class="btn-icon" title="Chrome Web Store">
+                <img src="assets/chrome.svg" alt="Chrome">
+              </a>
+              <a href="https://addons.mozilla.org/en-US/firefox/addon/brow-sync/" target="_blank" class="btn-icon"
+                title="Firefox Add-on">
+                <img src="ChromiumExtension/icons/firefox.png" alt="Firefox">
+              </a>
+            </div>
+          </div>
+
+          <!-- <div style="display: flex; align-items: center; gap: 8px; margin-top: 16px; flex-wrap: wrap;">
+            <span style="color: var(--muted); font-size: 0.95rem;" data-i18n="install.desc">或者使用 Homebrew 安装：</span>
+            <div
+              style="display: flex; align-items: stretch; background: var(--bg); border-radius: 8px; border: 1px solid var(--border); overflow: hidden;">
+              <code
+                style="padding: 10px 16px; font-family: 'SFMono-Regular', Consolas, monospace; color: var(--muted); font-size: 0.95rem; display: flex; align-items: center;">brew install --cask chentao1006/tap/browsync</code>
+              <button
+                onclick="navigator.clipboard.writeText('brew install --cask chentao1006/tap/browsync'); const btn=this; const old=btn.innerText; btn.innerText='Copied!'; setTimeout(()=>btn.innerText=old, 2000);"
+                style="appearance: none; border: none; border-left: 1px solid var(--border); background: var(--card-bg); color: var(--text); padding: 0 14px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: background 0.2s;"
+                onmouseover="this.style.background='var(--border)'"
+                onmouseout="this.style.background='var(--card-bg)'">Copy</button>
+            </div>
+          </div> -->
+
         </div>
       </div>
-      <div class="hero-art">
-        <div class="browser-row">
-          <img src="../assets/safari.svg" alt="Safari"><span>↔</span>
-          <img src="../assets/chrome.svg" alt="Google Chrome"><span>↔</span>
-          <img src="../ChromiumExtension/icons/firefox.png" alt="Firefox">
+
+      <div class="hero-visuals">
+        <div class="browser-correlation">
+          <img src="assets/safari.svg" alt="Safari" title="Safari">
+          <svg class="sync-arrows" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 1l4 4-4 4"></path>
+            <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+            <path d="M7 23l-4-4 4-4"></path>
+            <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+          </svg>
+          <img src="assets/chrome.svg" alt="Chrome" title="Chromium / Chrome / Edge">
+          <svg class="sync-arrows" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 1l4 4-4 4"></path>
+            <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+            <path d="M7 23l-4-4 4-4"></path>
+            <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+          </svg>
+          <img src="ChromiumExtension/icons/firefox.png" alt="Firefox" title="Firefox">
         </div>
-        <img src="../screenshots/en/000001.jpg" alt="BrowSync cross-browser bookmark sync interface for Mac">
+        <div class="promo-img">
+          <button class="carousel-btn prev" aria-label="Previous">‹</button>
+          <button class="carousel-btn next" aria-label="Next">›</button>
+          <div class="carousel-slides" id="carousel">
+            <div class="carousel-slide"><img src="screenshots/en/000001.jpg" alt="BrowSync bookmark sync interface on Mac"></div>
+            <div class="carousel-slide"><img src="screenshots/en/000002.jpg" alt="BrowSync bookmark sync settings for Safari and Chrome"></div>
+            <div class="carousel-slide"><img src="screenshots/en/000003.jpg" alt="BrowSync browser link routing rules on macOS"></div>
+            <div class="carousel-slide"><img src="screenshots/en/000004.jpg" alt="BrowSync browser session sync settings"></div>
+            <div class="carousel-slide"><img src="screenshots/en/000005.jpg" alt="BrowSync cross-browser tab sharing"></div>
+            <div class="carousel-slide"><img src="screenshots/en/000006.jpg" alt="Browsers supported by BrowSync on Mac"></div>
+            <div class="carousel-slide"><img src="screenshots/en/000007.jpg" alt="BrowSync browser sync preferences"></div>
+            <div class="carousel-slide"><img src="screenshots/en/000008.jpg" alt="BrowSync native Mac app interface"></div>
+          </div>
+          <div class="carousel-dots" id="carousel-dots"></div>
+        </div>
       </div>
     </section>
 
-    <section id="features" class="features">
-      <h2>Cross-Browser Sync &amp; Link Routing Features</h2>
-      <div class="grid">
-        <article class="card"><h3>macOS Default Browser &amp; Link Routing</h3><p>Use BrowSync as your Mac default browser to automatically open links in Safari, Chrome, Edge, Firefox, or another browser based on website, URL, and custom routing rules.</p></article>
-        <article class="card"><h3>Cross-Browser Bookmark Sync</h3><p>Sync bookmarks in real time across browsers on Mac. Choose a dedicated bookmark sync folder for each browser without changing its other bookmarks.</p></article>
-        <article class="card"><h3>Cross-Browser Session &amp; Cookie Sync</h3><p>Sync cookies, website data, and caches across supported browsers to keep website login sessions consistent.</p></article>
-        <article class="card"><h3>Private, Local Browser Data Sync</h3><p>Bookmark and session sync plus link-rule matching run locally. Your browser data stays on your Mac and is not uploaded to BrowSync servers.</p></article>
-        <article class="card"><h3>Native Mac Browser Sync App</h3><p>Built natively with SwiftUI for macOS, BrowSync supports Dark Mode, menu bar access, and a low memory footprint.</p></article>
-        <article class="card"><h3>iCloud Sync Across Multiple Macs</h3><p>Sync BrowSync settings, browser routing rules, and tabs across multiple Macs for a continuous cross-device workflow.</p></article>
-        <article class="card wide"><h3>Cross-Browser Tab Sharing</h3><p>Share the current tab or all open tabs across Safari, Chrome, Edge, Firefox, and other browsers without copying links one by one.</p></article>
+    <section id="features" class="bento-section">
+      <h2 class="section-title" data-i18n="features.title">Cross-Browser Sync &amp; Link Routing for Mac</h2>
+
+      <div class="bento-grid">
+        <!-- Feature 1 -->
+        <div class="bento-card card-medium">
+          <h3 data-i18n="feat1.title">🔗 macOS Default Browser &amp; Link Routing</h3>
+          <p data-i18n="feat1.desc">Use BrowSync as your Mac default browser to automatically choose Safari, Chrome, Edge, Firefox, or another browser based on website, URL, and custom routing rules.</p>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="bento-card card-large">
+          <h3 data-i18n="feat2.title">🔖 Cross-Browser Bookmark Sync</h3>
+          <p data-i18n="feat2.desc">Sync bookmarks in real time across Safari, Chrome, Edge, Firefox, and other Chromium browsers on Mac. Choose a dedicated bookmark sync folder for each browser without changing other bookmarks.</p>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="bento-card card-large">
+          <h3 data-i18n="feat3.title">🔄 Cross-Browser Session &amp; Cookie Sync</h3>
+          <p data-i18n="feat3.desc">Sync cookies, website data, and caches across Safari, Chrome, Edge, and Firefox to keep website login sessions consistent between browsers.</p>
+        </div>
+
+        <!-- Feature 7 -->
+        <div class="bento-card card-medium">
+          <div>
+            <h3 data-i18n="feat7.title">📑 Cross-Browser Tab Sharing</h3>
+            <p data-i18n="feat7.desc">Share the current tab or all open tabs across Safari, Chrome, Edge, Firefox, and other browsers without copying links one by one.</p>
+          </div>
+        </div>
+
+        <!-- Feature 4 -->
+        <div class="bento-card card-half">
+          <h3 data-i18n="feat4.title">🔒 Private, Local Browser Data Sync</h3>
+          <p data-i18n="feat4.desc">Bookmark and session sync plus link-rule matching run locally on your Mac. Your browser data stays on your device and is not uploaded to BrowSync servers.</p>
+        </div>
+
+        <!-- Feature 6 -->
+        <div class="bento-card card-half">
+          <h3 data-i18n="feat6.title">☁️ iCloud Sync Across Multiple Macs</h3>
+          <p data-i18n="feat6.desc">Use iCloud to sync BrowSync settings, browser routing rules, and tabs across multiple Macs for a continuous cross-device browsing workflow.</p>
+        </div>
+
+        <!-- Supported Browsers -->
+        <div id="browsers" class="bento-card card-full"
+          style="flex-direction: column; align-items: flex-start; text-align: left; padding: 40px;">
+          <h3 data-i18n="browsers.title" style="font-size: 2rem; margin-bottom: 16px;">🌐 Supported Browsers</h3>
+          <p data-i18n="browsers.desc" style="margin-bottom: 24px;">BrowSync supports a wide range of popular browsers out of the box, and allows you to manually add almost any Chromium-based browser.</p>
+          <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 24px;">
+            <span
+              style="display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); font-weight: 500;">
+              <img src="https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/safari/safari_128x128.png"
+                alt="Safari" width="20" height="20"> Safari
+            </span>
+            <span
+              style="display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); font-weight: 500;">
+              <img src="https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/chrome/chrome_128x128.png"
+                alt="Chrome" width="20" height="20"> Google Chrome
+            </span>
+            <span
+              style="display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); font-weight: 500;">
+              <img src="https://www.google.com/s2/favicons?domain=arc.net&sz=64" alt="Arc" width="20" height="20"
+                style="border-radius: 4px;"> Arc
+            </span>
+            <span
+              style="display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); font-weight: 500;">
+              <img src="https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/edge/edge_128x128.png" alt="Edge"
+                width="20" height="20"> Microsoft Edge
+            </span>
+            <span
+              style="display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); font-weight: 500;">
+              <img src="https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/brave/brave_128x128.png" alt="Brave"
+                width="20" height="20"> Brave
+            </span>
+            <span
+              style="display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); font-weight: 500;">
+              <img src="https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/firefox/firefox_128x128.png"
+                alt="Firefox" width="20" height="20"> Firefox
+            </span>
+            <span
+              style="display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); font-weight: 500;">
+              <img src="https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/vivaldi/vivaldi_128x128.png"
+                alt="Vivaldi" width="20" height="20"> Vivaldi
+            </span>
+            <span
+              style="display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); font-weight: 500;">
+              <img src="https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/opera/opera_128x128.png" alt="Opera"
+                width="20" height="20"> Opera
+            </span>
+            <span
+              style="display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); font-weight: 500;">
+              <img src="https://cdnjs.cloudflare.com/ajax/libs/browser-logos/74.0.0/yandex/yandex_128x128.png"
+                alt="Yandex" width="20" height="20"> Yandex
+            </span>
+            <span
+              style="display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); font-weight: 500;">
+              <img src="https://www.google.com/s2/favicons?domain=browser.kagi.com&sz=64" alt="Orion" width="20"
+                height="20"> Orion
+            </span>
+            <span
+              style="display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); font-weight: 500;">
+              <img src="https://www.google.com/s2/favicons?domain=helium.computer&sz=64" alt="Helium" width="20"
+                height="20" style="border-radius: 4px;"> Helium
+            </span>
+            <span
+              style="display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); font-weight: 500;">
+              <img src="https://www.google.com/s2/favicons?domain=browseros.app&sz=64" alt="BrowserOS" width="20"
+                height="20"> BrowserOS
+            </span>
+          </div>
+          <h4 data-i18n="browsers.customTitle" style="font-size: 1.2rem; margin-bottom: 8px;">Custom Browsers</h4>
+          <p data-i18n="browsers.customDesc">If your favorite Chromium browser is not listed, simply go to the 'Browsers' tab in the app, click the 'Add Custom Browser...' button at the bottom, and select your browser's .app file to easily add it!</p>
+        </div>
+
+        <div id="plans" class="bento-card card-full" style="flex-direction: column; align-items: stretch; text-align: left;">
+          <div class="plan-compare">
+            <div class="plan-compare-head">
+              <h3 data-i18n="plans.title" style="font-size: 2rem; margin-bottom: 12px;">Free vs Pro</h3>
+              <p data-i18n="plans.desc">Both tiers support BrowSync's core routing and sync workflow. The main differences are sync mode, usage limits, and cross-device capabilities.</p>
+            </div>
+            <div class="plan-table">
+              <div class="plan-head-spacer">
+                <strong data-i18n="plans.axis.title">Comparison Dimensions</strong>
+                <p data-i18n="plans.axis.desc">Compare the tiers side by side across feature scope, sync behavior, and cross-device capabilities so it's obvious which one fits your workflow.</p>
+              </div>
+              <div class="plan-tier-head plan-free-head">
+                <div class="plan-kicker" data-i18n="plans.free.kicker">Free</div>
+                <h3 data-i18n="plans.free.title">Best for lighter use and full-flow evaluation</h3>
+                <p class="plan-summary" data-i18n="plans.free.summary">Bookmarks and browser state can still sync, but the experience is primarily manual and subject to free-tier limits.</p>
+              </div>
+              <div class="plan-tier-head plan-pro-head">
+                <div class="plan-recommend" data-i18n="plans.pro.badge">Recommended</div>
+                <div class="plan-kicker" data-i18n="plans.pro.kicker">Pro</div>
+                <h3 data-i18n="plans.pro.title">Best for long-running multi-browser, multi-device workflows</h3>
+                <p class="plan-summary" data-i18n="plans.pro.summary">Unlock unlimited sync configuration plus real-time automatic sync and iCloud continuity across Macs.</p>
+              </div>
+
+              <div class="plan-row-label">
+                <div>
+                  <strong data-i18n="plans.row1.title">Routing Rules</strong>
+                  <span data-i18n="plans.row1.desc">How many browser routing rules you can keep active.</span>
+                </div>
+              </div>
+              <div class="plan-cell plan-free-cell"><span class="plan-mark">•</span><span data-i18n="plans.free.f1">Up to 3 routing rules</span></div>
+              <div class="plan-cell plan-pro-cell"><span class="plan-mark">✓</span><span data-i18n="plans.pro.f1">Unlimited routing rules</span></div>
+
+              <div class="plan-row-label">
+                <div>
+                  <strong data-i18n="plans.row2.title">Sync Browsers</strong>
+                  <span data-i18n="plans.row2.desc">How many browsers can participate in bookmark and state sync.</span>
+                </div>
+              </div>
+              <div class="plan-cell plan-free-cell"><span class="plan-mark">•</span><span data-i18n="plans.free.f2">Up to 2 sync browsers</span></div>
+              <div class="plan-cell plan-pro-cell"><span class="plan-mark">✓</span><span data-i18n="plans.pro.f2">Unlimited sync browsers</span></div>
+
+              <div class="plan-row-label">
+                <div>
+                  <strong data-i18n="plans.row3.title">Website Sync Rules</strong>
+                  <span data-i18n="plans.row3.desc">How many per-site sync policies you can configure.</span>
+                </div>
+              </div>
+              <div class="plan-cell plan-free-cell"><span class="plan-mark">•</span><span data-i18n="plans.free.f3">Up to 3 website sync rules</span></div>
+              <div class="plan-cell plan-pro-cell"><span class="plan-mark">✓</span><span data-i18n="plans.pro.f3">Unlimited website sync rules</span></div>
+
+              <div class="plan-row-label">
+                <div>
+                  <strong data-i18n="plans.row4.title">Bookmark and State Sync</strong>
+                  <span data-i18n="plans.row4.desc">Whether sync is manual or kept up to date automatically.</span>
+                </div>
+              </div>
+              <div class="plan-cell plan-free-cell"><span class="plan-mark">•</span><span data-i18n="plans.free.f4">Manual sync for bookmarks and browser state</span></div>
+              <div class="plan-cell plan-pro-cell"><span class="plan-mark">✓</span><span data-i18n="plans.pro.f4">Real-time automatic sync for bookmarks and browser state</span></div>
+
+              <div class="plan-row-label">
+                <div>
+                  <strong data-i18n="plans.row5.title">Tab Sharing</strong>
+                  <span data-i18n="plans.row5.desc">Share only the current tab or all currently open tabs.</span>
+                </div>
+              </div>
+              <div class="plan-cell plan-free-cell"><span class="plan-mark">•</span><span data-i18n="plans.free.f5">Tab sharing syncs only the current active tab</span></div>
+              <div class="plan-cell plan-pro-cell"><span class="plan-mark">✓</span><span data-i18n="plans.pro.f5">Tab sharing can sync all open tabs</span></div>
+
+              <div class="plan-row-label">
+                <div>
+                  <strong data-i18n="plans.row6.title">iCloud Across Devices</strong>
+                  <span data-i18n="plans.row6.desc">Sync settings, rules, and tabs across multiple Macs.</span>
+                </div>
+              </div>
+              <div class="plan-cell plan-free-cell"><span class="plan-mark">•</span><span data-i18n="plans.free.f6">No iCloud sync</span></div>
+              <div class="plan-cell plan-pro-cell"><span class="plan-mark">✓</span><span data-i18n="plans.pro.f6">iCloud sync for settings, rules, and open tabs</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Install Full Card -->
+        <div id="download" class="bento-card card-full"
+          style="flex-direction: column; align-items: center; text-align: center; background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(139, 92, 246, 0.05)); border-color: rgba(59, 130, 246, 0.15); padding: 56px 24px;">
+          <h3 data-i18n="install.title" style="justify-content: center; font-size: 2rem; margin-bottom: 24px;">Install BrowSync</h3>
+          <div class="cta-group" style="margin-bottom: 32px;">
+            <!-- <a href="https://github.com/chentao1006/browsync/releases/latest" target="_blank" rel="noopener"
+              class="btn-primary">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span data-i18n="hero.cta">Download</span>
+            </a> -->
+            <a href="https://apps.apple.com/app/id6784604835?mt=12" target="_blank" rel="noopener"
+              class="store-badge app-store-badge">
+              <img data-app-store-badge src="BrowSync/Resources/Marketing/download-on-app-store-en.svg"
+                alt="Download BrowSync on the App Store">
+            </a>
+            <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0;">
+              <span style="color: var(--muted); font-size: 0.95rem; margin-left: 8px;"
+                data-i18n="install.extensions">Extensions:</span>
+              <a href="https://chrome.google.com/webstore/detail/nahmlhblgjnkkcmaiicngaepeepofpkh" target="_blank"
+                class="btn-icon" title="Chrome Web Store">
+                <img src="assets/chrome.svg" alt="Chrome">
+              </a>
+              <a href="https://addons.mozilla.org/en-US/firefox/addon/brow-sync/" target="_blank" class="btn-icon"
+                title="Firefox Add-on">
+                <img src="ChromiumExtension/icons/firefox.png" alt="Firefox">
+              </a>
+            </div>
+          </div>
+
+          <!-- <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+            <span style="color: var(--muted); font-size: 0.95rem;" data-i18n="install.desc">或者使用 Homebrew 安装：</span>
+            <div
+              style="display: flex; align-items: stretch; background: var(--bg); border-radius: 8px; border: 1px solid var(--border); overflow: hidden;">
+              <code
+                style="padding: 10px 16px; font-family: 'SFMono-Regular', Consolas, monospace; color: var(--muted); font-size: 0.95rem; display: flex; align-items: center;">brew install --cask chentao1006/tap/browsync</code>
+              <button
+                onclick="navigator.clipboard.writeText('brew install --cask chentao1006/tap/browsync'); const btn=this; const old=btn.innerText; btn.innerText='Copied!'; setTimeout(()=>btn.innerText=old, 2000);"
+                style="appearance: none; border: none; border-left: 1px solid var(--border); background: var(--card-bg); color: var(--text); padding: 0 14px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: background 0.2s;"
+                onmouseover="this.style.background='var(--border)'"
+                onmouseout="this.style.background='var(--card-bg)'">Copy</button>
+            </div>
+          </div> -->
+        </div>
       </div>
     </section>
-
-    <section id="browsers" class="supported">
-      <h2>Supported Mac Browsers</h2>
-      <div class="browser-list" aria-label="Supported browsers">
-        <span>Safari</span><span>Google Chrome</span><span>Microsoft Edge</span><span>Firefox</span><span>Arc</span><span>Brave</span><span>Vivaldi</span><span>Opera</span><span>Orion</span><span>Other Chromium Browsers</span>
-      </div>
-    </section>
-
-    <section id="download" class="download">
-      <h2>Download BrowSync for Mac</h2>
-      <p>Connect your browsers and keep bookmarks, sessions, and tabs in sync.</p>
-      <div class="actions"><a class="store" href="https://apps.apple.com/app/id6784604835?mt=12" target="_blank" rel="noopener"><img src="../BrowSync/Resources/Marketing/download-on-app-store-en.svg" alt="Download BrowSync on the Mac App Store"></a></div>
-    </section>
+    <dialog id="lightbox" class="lightbox">
+      <button class="lightbox-close" aria-label="Close" onclick="this.closest('dialog').close()">&times;</button>
+      <img id="lightbox-img" src="" alt="Large Screenshot">
+    </dialog>
   </main>
+
   <footer>
-    <span>© 2026 BrowSync. Privacy-first browser sync for Mac.</span>
-    <div><a href="https://github.com/chentao1006/browsync">GitHub</a><a href="../README.md">Documentation</a><a href="../privacy.html">Privacy Policy</a></div>
+    <div data-i18n="footer.copy">© 2026 BrowSync. Privacy-first browser sync tool.</div>
+    <div style="display:flex; gap: 24px; flex-wrap: wrap;">
+      <a href="https://www.producthunt.com/products/browsync?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-browsync" class="featured-badge" target="_blank" rel="noopener noreferrer">
+        <img class="badge-light" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1201038&amp;theme=light&amp;t=1784520656723" alt="BrowSync - Cross-Browser Routing &amp; Sync Hub | Product Hunt" width="250" height="54">
+        <img class="badge-dark" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1201038&amp;theme=dark&amp;t=1784520674509" alt="BrowSync - Cross-Browser Routing &amp; Sync Hub | Product Hunt" width="250" height="54">
+      </a>
+      <a href="https://hicyou.com" class="featured-badge" target="_blank" rel="ugc">
+        <img class="badge-light" src="https://hicyou.com/badge/featured-light.svg" alt="Featured on HiCyou">
+        <img class="badge-dark" src="https://hicyou.com/badge/featured-dark.svg" alt="Featured on HiCyou">
+      </a>
+      <a href="https://github.com/chentao1006/browsync" data-i18n="footer.github">View GitHub</a>
+      <a id="footer-readme-link" href="README.md" data-i18n="footer.readme">Documentation</a>
+      <a href="privacy.html" data-i18n="footer.privacy">Privacy Policy</a>
+    </div>
   </footer>
+
   <script>
-    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function (event) {
+    var copy = {
+      zh: {
+        "brand": "同览 BrowSync",
+        "nav.features": "功能体验",
+        "nav.browsers": "支持浏览器",
+        "nav.plans": "版本对比",
+        "nav.download": "立即下载",
+        "hero.eyebrow": "macOS 原生应用",
+        "hero.title": "Mac 浏览器书签同步与链接分流",
+        "hero.lead": "BrowSync 让 Safari、Chrome、Edge、Firefox 与更多 Chromium 浏览器在 Mac 上协同工作：实时同步书签，按规则分流链接，并同步登录状态和标签页；所有数据只在本机处理。",
+        "hero.cta": "下载安装包",
+        "appStore.badge": "BrowSync/Resources/Marketing/download-on-app-store-zh.svg",
+        "appStore.alt": "从 Mac App Store 下载 BrowSync 浏览器书签同步工具",
+        "features.title": "Mac 跨浏览器同步与链接分流功能",
+        "feat1.title": "🔗 Mac 默认浏览器与链接分流",
+        "feat1.desc": "将 BrowSync 设为 Mac 默认浏览器后，可按网站、URL 与自定义规则自动选择浏览器，让链接在 Safari、Chrome、Edge、Firefox 等指定浏览器中打开。",
+        "feat2.title": "🔖 跨浏览器书签同步",
+        "feat2.desc": "在 Mac 上实时同步 Safari、Chrome、Edge、Firefox 与其他 Chromium 浏览器的书签。可为每个浏览器单独选择书签同步文件夹，不影响其他书签。",
+        "feat3.title": "🔄 跨浏览器登录状态与 Cookie 同步",
+        "feat3.desc": "在 Safari、Chrome、Edge 和 Firefox 之间实时同步 Cookie、网站数据与缓存，让同一网站的浏览器登录状态保持一致。",
+        "feat4.title": "🔒 本地浏览器数据同步与隐私保护",
+        "feat4.desc": "书签、登录状态等浏览器数据的同步与链接规则匹配均在 Mac 本地完成，数据保存在本机，不上传到 BrowSync 服务器。",
+        "feat6.title": "☁️ iCloud 多台 Mac 同步",
+        "feat6.desc": "通过 iCloud 在多台 Mac 之间同步 BrowSync 设置、浏览器分流规则和标签页，延续跨设备浏览工作流。",
+        "feat7.title": "📑 跨浏览器标签页共享",
+        "feat7.desc": "在 Safari、Chrome、Edge、Firefox 等浏览器之间共享当前标签页或全部已打开的标签页，无需逐个复制链接。",
+        "plans.title": "免费版 vs 专业版",
+        "plans.desc": "两档都支持 BrowSync 的核心分流与同步能力，区别主要在同步方式、数量限制，以及跨设备能力。",
+        "plans.axis.title": "对比维度",
+        "plans.axis.desc": "按功能范围、同步方式和跨设备能力逐项对照，方便快速判断哪一档更适合你的使用场景。",
+        "plans.row1.title": "分流规则",
+        "plans.row1.desc": "管理可自动分流到不同浏览器的规则数量。",
+        "plans.row2.title": "同步浏览器",
+        "plans.row2.desc": "参与书签和状态同步的浏览器数量上限。",
+        "plans.row3.title": "站点同步策略",
+        "plans.row3.desc": "按网站单独配置同步策略的数量。",
+        "plans.row4.title": "书签与状态同步",
+        "plans.row4.desc": "决定是手动触发，还是实时自动保持同步。",
+        "plans.row5.title": "标签共享",
+        "plans.row5.desc": "可共享当前标签页，或全部已打开标签页。",
+        "plans.row6.title": "iCloud 跨设备",
+        "plans.row6.desc": "在多台 Mac 间同步设置、规则和标签页。",
+        "plans.free.kicker": "免费版",
+        "plans.free.title": "适合轻量使用和先体验完整流程",
+        "plans.free.summary": "可以进行书签和状态同步，但以手动同步为主，并带有免费额度限制。",
+        "plans.free.f1": "最多 3 条分流规则",
+        "plans.free.f2": "最多 2 个同步浏览器",
+        "plans.free.f3": "最多 3 个站点同步策略",
+        "plans.free.f4": "书签与状态支持手动同步",
+        "plans.free.f5": "标签共享仅同步当前活动标签页",
+        "plans.free.f6": "不含 iCloud 同步",
+        "plans.pro.badge": "推荐",
+        "plans.pro.kicker": "专业版",
+        "plans.pro.title": "适合长期、多浏览器、多设备工作流",
+        "plans.pro.summary": "解锁无限制同步配置，以及实时自动同步和 iCloud 跨 Mac 能力。",
+        "plans.pro.f1": "不限分流规则",
+        "plans.pro.f2": "不限同步浏览器",
+        "plans.pro.f3": "不限站点同步策略",
+        "plans.pro.f4": "书签与状态支持实时自动同步",
+        "plans.pro.f5": "标签共享可同步全部打开的标签页",
+        "plans.pro.f6": "支持 iCloud 同步设置、规则和标签页",
+        "install.title": "安装 BrowSync",
+        "install.extensions": "浏览器扩展：",
+        "footer.copy": "© 2026 BrowSync. 纯本地浏览器协同工具。",
+        "footer.github": "GitHub 源码",
+        "footer.readme": "文档说明",
+        "footer.privacy": "隐私政策",
+        "browsers.title": "🌐 支持的浏览器",
+        "browsers.desc": "同览 (BrowSync) 开箱即支持多种主流浏览器，并允许您手动添加几乎任何基于 Chromium 内核的浏览器。",
+        "browsers.customTitle": "自定义浏览器",
+        "browsers.customDesc": "如果您最喜欢的 Chromium 浏览器不在列表中，只需进入应用中的“浏览器”选项卡，点击底部 “添加自定义浏览器...” 按钮，选择您的浏览器 .app 文件即可轻松添加！"
+      },
+      en: {
+        "brand": "BrowSync",
+        "nav.features": "Features",
+        "nav.browsers": "Browsers",
+        "nav.plans": "Compare",
+        "nav.download": "Download",
+        "hero.eyebrow": "Native macOS App",
+        "hero.title": "Cross-Browser Sync & Link Routing for Mac",
+        "hero.lead": "Make Safari, Chrome, Edge, Firefox, and more Chromium browsers work together. Route links by rule and sync bookmarks, signed-in sessions, and tabs in real time; all data stays on your Mac.",
+        "hero.cta": "Download",
+        "appStore.badge": "BrowSync/Resources/Marketing/download-on-app-store-en.svg",
+        "appStore.alt": "Download BrowSync for Mac browser bookmark sync on the App Store",
+        "features.title": "Cross-Browser Sync & Link Routing for Mac",
+        "feat1.title": "🔗 macOS Default Browser & Link Routing",
+        "feat1.desc": "Use BrowSync as your Mac default browser to automatically choose Safari, Chrome, Edge, Firefox, or another browser based on website, URL, and custom routing rules.",
+        "feat2.title": "🔖 Cross-Browser Bookmark Sync",
+        "feat2.desc": "Sync bookmarks in real time across Safari, Chrome, Edge, Firefox, and other Chromium browsers on Mac. Choose a dedicated bookmark sync folder for each browser without changing other bookmarks.",
+        "feat3.title": "🔄 Cross-Browser Session & Cookie Sync",
+        "feat3.desc": "Sync cookies, website data, and caches across Safari, Chrome, Edge, and Firefox to keep website login sessions consistent between browsers.",
+        "feat4.title": "🔒 Private, Local Browser Data Sync",
+        "feat4.desc": "Bookmark and session sync plus link-rule matching run locally on your Mac. Your browser data stays on your device and is not uploaded to BrowSync servers.",
+        "feat6.title": "☁️ iCloud Sync Across Multiple Macs",
+        "feat6.desc": "Use iCloud to sync BrowSync settings, browser routing rules, and tabs across multiple Macs for a continuous cross-device browsing workflow.",
+        "feat7.title": "📑 Cross-Browser Tab Sharing",
+        "feat7.desc": "Share the current tab or all open tabs across Safari, Chrome, Edge, Firefox, and other browsers without copying links one by one.",
+        "plans.title": "Free vs Pro",
+        "plans.desc": "Both tiers support BrowSync's core routing and sync workflow. The main differences are sync mode, usage limits, and cross-device capabilities.",
+        "plans.axis.title": "Comparison Dimensions",
+        "plans.axis.desc": "Compare the tiers side by side across feature scope, sync behavior, and cross-device capabilities so it's obvious which one fits your workflow.",
+        "plans.row1.title": "Routing Rules",
+        "plans.row1.desc": "How many browser routing rules you can keep active.",
+        "plans.row2.title": "Sync Browsers",
+        "plans.row2.desc": "How many browsers can participate in bookmark and state sync.",
+        "plans.row3.title": "Website Sync Rules",
+        "plans.row3.desc": "How many per-site sync policies you can configure.",
+        "plans.row4.title": "Bookmark and State Sync",
+        "plans.row4.desc": "Whether sync is manual or kept up to date automatically.",
+        "plans.row5.title": "Tab Sharing",
+        "plans.row5.desc": "Share only the current tab or all currently open tabs.",
+        "plans.row6.title": "iCloud Across Devices",
+        "plans.row6.desc": "Sync settings, rules, and tabs across multiple Macs.",
+        "plans.free.kicker": "Free",
+        "plans.free.title": "Best for lighter use and full-flow evaluation",
+        "plans.free.summary": "Bookmarks and browser state can still sync, but the experience is primarily manual and subject to free-tier limits.",
+        "plans.free.f1": "Up to 3 routing rules",
+        "plans.free.f2": "Up to 2 sync browsers",
+        "plans.free.f3": "Up to 3 website sync rules",
+        "plans.free.f4": "Manual sync for bookmarks and browser state",
+        "plans.free.f5": "Tab sharing syncs only the current active tab",
+        "plans.free.f6": "No iCloud sync",
+        "plans.pro.badge": "Recommended",
+        "plans.pro.kicker": "Pro",
+        "plans.pro.title": "Best for long-running multi-browser, multi-device workflows",
+        "plans.pro.summary": "Unlock unlimited sync configuration plus real-time automatic sync and iCloud continuity across Macs.",
+        "plans.pro.f1": "Unlimited routing rules",
+        "plans.pro.f2": "Unlimited sync browsers",
+        "plans.pro.f3": "Unlimited website sync rules",
+        "plans.pro.f4": "Real-time automatic sync for bookmarks and browser state",
+        "plans.pro.f5": "Tab sharing can sync all open tabs",
+        "plans.pro.f6": "iCloud sync for settings, rules, and open tabs",
+        "install.title": "Install BrowSync",
+        "install.extensions": "Extensions:",
+        "footer.copy": "© 2026 BrowSync. Privacy-first browser sync tool.",
+        "footer.github": "View GitHub",
+        "footer.readme": "Documentation",
+        "footer.privacy": "Privacy Policy",
+        "browsers.title": "🌐 Supported Browsers",
+        "browsers.desc": "BrowSync supports a wide range of popular browsers out of the box, and allows you to manually add almost any Chromium-based browser.",
+        "browsers.customTitle": "Custom Browsers",
+        "browsers.customDesc": "If your favorite Chromium browser is not listed, simply go to the 'Browsers' tab in the app, click the 'Add Custom Browser...' button at the bottom, and select your browser's .app file to easily add it!"
+      }
+    };
+
+    function applyLang(lang) {
+      document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+      document.getElementById('lang-toggle').innerText = lang === "zh" ? "EN" : "中";
+      document.querySelectorAll("[data-i18n]").forEach(el => {
+        if (copy[lang][el.dataset.i18n]) el.innerText = copy[lang][el.dataset.i18n];
+      });
+      const readmeLink = document.getElementById('footer-readme-link');
+      if (readmeLink) {
+        readmeLink.href = lang === "zh" ? "README_zh.md" : "README.md";
+      }
+      document.querySelectorAll("[data-app-store-badge]").forEach(img => {
+        img.src = copy[lang]["appStore.badge"];
+        img.alt = copy[lang]["appStore.alt"];
+      });
+      document.querySelectorAll('.carousel-slide img').forEach((img, i) => {
+        const index = String(i + 1).padStart(6, '0');
+        img.src = `screenshots/${lang}/${index}.jpg`;
+      });
+      const lightboxImg = document.getElementById('lightbox-img');
+      if (lightboxImg && lightboxImg.src && lightboxImg.src.includes('screenshots/')) {
+        const match = lightboxImg.src.match(/00000\d/);
+        if (match) {
+          const index = match[0];
+          lightboxImg.src = `screenshots/${lang}/${index}.jpg`;
+        }
+      }
+    }
+
+    // This URL is the fixed English locale.
+    applyLang("en");
+
+    // Auto theme sync
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
       document.documentElement.dataset.theme = event.matches ? "dark" : "light";
+    });
+
+    // Carousel Logic
+    const carousel = document.getElementById('carousel');
+    const slides = carousel.querySelectorAll('.carousel-slide');
+    const dotsContainer = document.getElementById('carousel-dots');
+    const prevBtn = document.querySelector('.carousel-btn.prev');
+    const nextBtn = document.querySelector('.carousel-btn.next');
+
+    let currentSlide = 0;
+    let autoPlayInterval;
+    let isTransitioning = false;
+
+    // Create dots
+    slides.forEach((_, index) => {
+      const dot = document.createElement('button');
+      dot.classList.add('carousel-dot');
+      if (index === 0) dot.classList.add('active');
+      dot.addEventListener('click', () => {
+        if (!isTransitioning) goToSlide(index);
+      });
+      dotsContainer.appendChild(dot);
+    });
+
+    const dots = dotsContainer.querySelectorAll('.carousel-dot');
+
+    function updateDots() {
+      dots.forEach((dot, index) => {
+        dot.classList.toggle('active', index === currentSlide);
+      });
+    }
+
+    function goToSlide(index) {
+      currentSlide = index;
+      isTransitioning = true;
+      carousel.scrollTo({
+        left: slides[0].offsetWidth * currentSlide,
+        behavior: 'smooth'
+      });
+      updateDots();
+      resetAutoPlay();
+      setTimeout(() => isTransitioning = false, 500);
+    }
+
+    function nextSlide() {
+      if (isTransitioning) return;
+      currentSlide = (currentSlide + 1) % slides.length;
+      goToSlide(currentSlide);
+    }
+
+    function prevSlide() {
+      if (isTransitioning) return;
+      currentSlide = (currentSlide - 1 + slides.length) % slides.length;
+      goToSlide(currentSlide);
+    }
+
+    prevBtn.addEventListener('click', prevSlide);
+    nextBtn.addEventListener('click', nextSlide);
+
+    // Update on scroll (manual swipe)
+    carousel.addEventListener('scroll', () => {
+      if (isTransitioning) return;
+      const scrollPosition = carousel.scrollLeft;
+      const slideWidth = slides[0].offsetWidth;
+      const newIndex = Math.round(scrollPosition / slideWidth);
+      if (newIndex !== currentSlide) {
+        currentSlide = newIndex;
+        updateDots();
+        resetAutoPlay();
+      }
+    }, { passive: true });
+
+    function startAutoPlay() {
+      autoPlayInterval = setInterval(nextSlide, 4000);
+    }
+
+    function resetAutoPlay() {
+      clearInterval(autoPlayInterval);
+      startAutoPlay();
+    }
+
+    // Pause on hover
+    document.querySelector('.promo-img').addEventListener('mouseenter', () => clearInterval(autoPlayInterval));
+    document.querySelector('.promo-img').addEventListener('mouseleave', startAutoPlay);
+
+    startAutoPlay();
+
+    // Lightbox Logic
+    const lightbox = document.getElementById('lightbox');
+    const lightboxImg = document.getElementById('lightbox-img');
+
+    document.querySelectorAll('.carousel-slide img').forEach(img => {
+      img.addEventListener('click', () => {
+        lightboxImg.src = img.src;
+        lightbox.showModal();
+      });
+    });
+
+    lightbox.addEventListener('click', (e) => {
+      if (e.target === lightbox) lightbox.close();
     });
   </script>
 </body>
+
 </html>
