@@ -43,21 +43,16 @@
     (function () {
       var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
       document.documentElement.dataset.theme = prefersDark ? "dark" : "light";
+      // Only redirect if the visitor previously chose English explicitly
+      // (via the EN toggle). Never infer language from navigator.language —
+      // that redirected crawlers and browsers with an English locale away
+      // from this Chinese page before they ever saw its content, which kept
+      // it from being indexed for Chinese search queries.
       var savedLanguage = null;
       try {
         savedLanguage = localStorage.getItem("browsync-lang");
       } catch (error) {}
-      var browserLanguages = navigator.languages && navigator.languages.length
-        ? navigator.languages
-        : [navigator.language || ""];
-      var firstSupportedLanguage = browserLanguages.map(function (language) {
-        return language.toLowerCase();
-      }).find(function (language) {
-        return language.indexOf("zh") === 0 || language.indexOf("en") === 0;
-      });
-      var preferredLanguage = savedLanguage ||
-        (firstSupportedLanguage && firstSupportedLanguage.indexOf("zh") === 0 ? "zh" : "en");
-      if (preferredLanguage === "en") {
+      if (savedLanguage === "en") {
         location.replace("/en/" + location.search + location.hash);
       }
     })();
