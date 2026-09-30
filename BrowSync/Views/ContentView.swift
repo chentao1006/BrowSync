@@ -204,6 +204,13 @@ struct AboutTabView: View {
                 }
                 
                 Section(String(localized: "Links", bundle: langBundle.bundle)) {
+                    Link(destination: AppConfig.feedbackIssueURL) {
+                        HStack {
+                            Image(systemName: "bubble.left.and.bubble.right")
+                            Text(String(localized: "Send Feedback", bundle: langBundle.bundle))
+                        }
+                    }
+
                     Link(destination: URL(string: "https://github.com/chentao1006/browsync")!) {
                         HStack {
                             Image(systemName: "link")

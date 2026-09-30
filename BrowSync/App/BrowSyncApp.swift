@@ -3,6 +3,9 @@
 
 import SwiftUI
 import AppKit
+#if APP_STORE
+import StoreKit
+#endif
 #if !APP_STORE
 import Sparkle
 #endif
@@ -84,6 +87,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var shouldShowSettingsWindow = false
     private var pendingURLRequests: [(url: URL, sourceAppBundleId: String?)] = []
     private var lastActiveAppBundleId: String?
+#if APP_STORE
+    private static let localFirstLaunchDateKey = "localFirstLaunchDate"
+    private static let storeReviewRequestedKey = "storeReviewRequested"
+#endif
 
     override init() {
 #if !APP_STORE
@@ -123,7 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         
-        let settingsService = SettingsService()
+        let settingsService = appState.settingsService
         if settingsService.general.hideWindowOnStartup {
             hideDockIcon()
         } else {
@@ -144,11 +151,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsService.general.firstLaunchDate = Date()
             settingsService.save()
         }
+
+#if APP_STORE
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: Self.localFirstLaunchDateKey) == nil {
+            // Start a device-local eligibility period. The legacy launch date
+            // is intentionally not migrated because iCloud may have replaced
+            // it with another Mac's value.
+            defaults.set(Date(), forKey: Self.localFirstLaunchDateKey)
+        }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(syncDidComplete(_:)),
+            name: .browSyncDidComplete,
+            object: nil
+        )
+#endif
     }
     
     private func promptForAnalyticsOptIn() {
         // Double check in case it was toggled
-        let settingsService = SettingsService()
+        let settingsService = appState.settingsService
         guard !settingsService.general.analyticsOptInPrompted else { return }
         
         let alert = NSAlert()
@@ -185,7 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         flushPendingURLRequests()
         updateDockIconForVisibleWindows()
         
-        let settingsService = SettingsService()
+        let settingsService = appState.settingsService
         if !settingsService.general.analyticsOptInPrompted {
             let firstLaunch = settingsService.general.firstLaunchDate ?? Date()
             let timeSinceLaunch = Date().timeIntervalSince(firstLaunch)
@@ -201,7 +224,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // 还没到 2 分钟，等待剩下的时间。如果时间到了窗口还开着，就弹出。
                 let remaining = 120 - timeSinceLaunch
                 DispatchQueue.main.asyncAfter(deadline: .now() + remaining) {
-                    let currentSettings = SettingsService()
+                    let currentSettings = self.appState.settingsService
                     if self.hasVisibleSettingsWindow() && !currentSettings.general.analyticsOptInPrompted {
                         self.promptForAnalyticsOptIn()
                     }
@@ -209,6 +232,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+
+#if APP_STORE
+    @objc private func syncDidComplete(_ notification: Notification) {
+        let defaults = UserDefaults.standard
+        guard NSApp.isActive,
+              !defaults.bool(forKey: Self.storeReviewRequestedKey),
+              let firstLaunchDate = defaults.object(forKey: Self.localFirstLaunchDateKey) as? Date,
+              let eligibleDate = Calendar.autoupdatingCurrent.date(
+                  byAdding: .month,
+                  value: 1,
+                  to: firstLaunchDate
+              ),
+              Date() >= eligibleDate,
+              let window = settingsWindow,
+              window.isVisible,
+              !window.isMiniaturized,
+              window.attachedSheet == nil,
+              let viewController = window.contentViewController
+        else { return }
+
+        // StoreKit decides whether to display the system prompt. Record the
+        // request before calling it so BrowSync asks at most once.
+        defaults.set(true, forKey: Self.storeReviewRequestedKey)
+        AppStore.requestReview(in: viewController)
+    }
+#endif
 
     func prepareToOpenSettingsWindow() {
         shouldShowSettingsWindow = true

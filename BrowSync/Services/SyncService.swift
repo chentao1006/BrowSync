@@ -4,6 +4,10 @@
 import Foundation
 import os.log
 
+extension Notification.Name {
+    static let browSyncDidComplete = Notification.Name("BrowSyncDidComplete")
+}
+
 struct SyncStats {
     var bookmarks: Int = 0
     var bookmarkFolders: Int = 0
@@ -782,6 +786,7 @@ final class SyncService: ObservableObject {
             }
         }
         log("Sync complete (Bookmarks: \(currentManualSyncStats.bookmarks), Cookies: \(currentManualSyncStats.cookies), LocalStorage: \(currentManualSyncStats.localStorage), SessionStorage: \(currentManualSyncStats.sessionStorage))")
+        NotificationCenter.default.post(name: .browSyncDidComplete, object: self)
         return currentManualSyncStats
     }
 
