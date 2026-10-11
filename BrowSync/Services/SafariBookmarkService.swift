@@ -434,8 +434,15 @@ final class SafariBookmarkService {
             })
 
             if let rootMatcher = rootMatcher {
-                guard let idx = children.firstIndex(where: rootMatcher),
-                      var nodeChildren = children[idx]["Children"] as? [[String: Any]] else { return }
+                guard let idx = children.firstIndex(where: rootMatcher) else {
+                    logger.warning("Safari bookmark root was not found while applying bookmarks from \(sourceBrowser).")
+                    return
+                }
+                // A brand-new or completely empty Safari profile can omit the
+                // Children key from its BookmarksBar node. Treat that exactly
+                // like an empty array; otherwise a one-way sync silently skips
+                // every bookmark in the source browser's bookmarks bar.
+                var nodeChildren = children[idx]["Children"] as? [[String: Any]] ?? []
 
                 if isFullMirror {
                     nodeChildren = topLevelBookmarks.compactMap { buildNode(from: $0, allBookmarks: validBookmarks) }

@@ -546,15 +546,69 @@ struct BookmarkTreeMerger {
         return ids
     }
 
-    static func extractExistingSubtreeAsRoot(sourceTree: [Bookmark], folderPath: String?) -> [Bookmark]? {
+    static func extractExistingSubtreeAsRoot(
+        sourceTree: [Bookmark],
+        folderPath: String?,
+        portableParentId: String = "1"
+    ) -> [Bookmark]? {
         guard let folderPath, !folderPath.isEmpty else { return sourceTree }
         let components = folderPath.components(separatedBy: "/").filter { !$0.isEmpty }
         guard let folderId = findFolderId(pathComponents: components, in: sourceTree) else { return nil }
         var descendants = extractDescendants(of: folderId, in: sourceTree)
         for index in descendants.indices where descendants[index].parentId == folderId {
-            descendants[index].parentId = "1"
+            descendants[index].parentId = portableParentId
         }
         return descendants
+    }
+
+    /// Converts native system roots into ordinary folders for the one case in
+    /// which identity mapping is impossible: syncing a browser root into a
+    /// user-selected non-root destination. Root-to-root callers must not use
+    /// this transformation; they retain parent IDs 1/2/3 for native mapping.
+    static func wrappingSystemRootsForNonRootTarget(
+        sourceTree: [Bookmark],
+        sourceBrowser: Browser
+    ) -> [Bookmark] {
+        let barPortableId = sourceBrowser == .safari ? BookmarkFolderPath.rootFavorites : BookmarkFolderPath.rootBar
+        let barTitle = sourceBrowser == .safari ? String(localized: "Favorites") : String(localized: "Bookmarks Bar")
+        let roots: [(nativeId: String, portableId: String, title: String, inBookmarksBar: Bool, sortIndex: Int)] = [
+            ("1", barPortableId, barTitle, true, 0),
+            ("2", BookmarkFolderPath.rootOther, String(localized: "Other Bookmarks"), false, 1),
+            ("3", BookmarkFolderPath.rootMobile, String(localized: "Mobile Bookmarks"), false, 2)
+        ]
+        let parentIDs = Set(sourceTree.compactMap(\.parentId))
+        let existingIDs = Set(sourceTree.map(\.id))
+        let nativeRootIDs = Set(roots.map(\.nativeId))
+        let existingRoots = sourceTree.reduce(into: [String: Bookmark]()) { rootsById, bookmark in
+            if nativeRootIDs.contains(bookmark.id), rootsById[bookmark.id] == nil {
+                rootsById[bookmark.id] = bookmark
+            }
+        }
+        var result = sourceTree.filter { !nativeRootIDs.contains($0.id) }
+        let originalIndices = result.indices
+
+        for root in roots where parentIDs.contains(root.nativeId) || existingRoots[root.nativeId] != nil {
+            let portableId = existingIDs.contains(root.portableId)
+                ? "\(root.portableId)-\(sourceBrowser.rawValue)"
+                : root.portableId
+            for index in originalIndices where result[index].parentId == root.nativeId {
+                result[index].parentId = portableId
+            }
+            result.append(
+                Bookmark(
+                    id: portableId,
+                    title: existingRoots[root.nativeId]?.title ?? root.title,
+                    url: nil,
+                    parentId: "2",
+                    isFolder: true,
+                    sortIndex: root.sortIndex,
+                    inBookmarksBar: root.inBookmarksBar,
+                    dateAdded: Date(),
+                    sourceBrowser: sourceBrowser
+                )
+            )
+        }
+        return result
     }
 
     /// Extracts a selected folder together with its descendants for archival.

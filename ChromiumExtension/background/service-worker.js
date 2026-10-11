@@ -987,6 +987,7 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmark
   const byParent = new Map();
   const rootsBar = [];
   const rootsOther = [];
+  const rootsMobile = [];
 
   const ignoreIds = new Set(['0', '1', '2', '3', localBarId, localOtherId, localMobileId]);
 
@@ -994,12 +995,14 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmark
     if (ignoreIds.has(bm.id)) continue; // Defensively ignore system folders
     
     let effectiveParent = bm.parentId;
-    if (targetRootId && (!effectiveParent || effectiveParent === '1' || effectiveParent === '0' || effectiveParent === '2' || effectiveParent === localBarId || effectiveParent === localOtherId)) {
+    if (targetRootId && (!effectiveParent || effectiveParent === '1' || effectiveParent === '0' || effectiveParent === '2' || effectiveParent === '3' || effectiveParent === localBarId || effectiveParent === localOtherId || effectiveParent === localMobileId)) {
       rootsBar.push(bm);
     } else if (!effectiveParent || effectiveParent === '1' || effectiveParent === '0' || effectiveParent === localBarId) {
       rootsBar.push(bm);
     } else if (effectiveParent === '2' || effectiveParent === localOtherId) {
       rootsOther.push(bm);
+    } else if (effectiveParent === '3' || effectiveParent === localMobileId) {
+      rootsMobile.push(bm);
     } else {
       if (!byParent.has(effectiveParent)) byParent.set(effectiveParent, []);
       byParent.get(effectiveParent).push(bm);
@@ -1083,6 +1086,8 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmark
   await processNodes(rootsBar, targetRootId || localBarId);
   if (!targetRootId) {
     await processNodes(rootsOther, localOtherId);
+    const hasLocalMobileRoot = localRoots.some(node => node.id === localMobileId);
+    await processNodes(rootsMobile, hasLocalMobileRoot ? localMobileId : localOtherId);
   }
   
   // Persist mapping to prevent duplicates/deletions on restart or subsequent syncs

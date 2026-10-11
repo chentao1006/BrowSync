@@ -167,14 +167,41 @@ final class SyncService: ObservableObject {
         missingBookmarkFolders.removeValue(forKey: browser.rawValue)
     }
 
-    private func folderAdjustedBookmarksForSource(_ bookmarks: [Bookmark], browser: Browser) -> [Bookmark]? {
+    func folderAdjustedBookmarksForSource(_ bookmarks: [Bookmark], browser: Browser) -> [Bookmark]? {
         let folder = settings.bookmarkFolder(for: browser)
+        if folder == nil || folder?.isEmpty == true {
+            clearMissingBookmarkFolder(browser)
+            // Keep canonical system-root parent IDs intact. A root-to-root sync
+            // maps these roots by role (bar/other/mobile), never by title.
+            return bookmarks
+        }
         if let folder, !folder.isEmpty, !BookmarkTreeMerger.folderExists(tree: bookmarks, folderPath: folder) {
             markMissingBookmarkFolder(browser, folder: folder)
             return nil
         }
         clearMissingBookmarkFolder(browser)
-        return BookmarkTreeMerger.extractExistingSubtreeAsRoot(sourceTree: bookmarks, folderPath: folder)
+        // The chosen source folder is flattened into the receiver's selected
+        // target. Parent 2 represents that portable target-root boundary;
+        // parent 1 specifically means the receiver's native bookmarks bar.
+        return BookmarkTreeMerger.extractExistingSubtreeAsRoot(
+            sourceTree: bookmarks,
+            folderPath: folder,
+            portableParentId: "2"
+        )
+    }
+
+    /// A system root can only become an ordinary named folder when the receiver
+    /// is a user-selected non-root folder. Root receivers must retain the
+    /// canonical parent IDs so their native system roots are mapped by role.
+    func bookmarksPreparedForTarget(_ bookmarks: [Bookmark], sourceBrowser: Browser, targetBrowser: Browser) -> [Bookmark] {
+        guard settings.bookmarkFolder(for: sourceBrowser)?.isEmpty != false,
+              settings.bookmarkFolder(for: targetBrowser)?.isEmpty == false else {
+            return bookmarks
+        }
+        return BookmarkTreeMerger.wrappingSystemRootsForNonRootTarget(
+            sourceTree: bookmarks,
+            sourceBrowser: sourceBrowser
+        )
     }
 
     /// Backups deliberately retain the selected folder itself. Sync payloads
@@ -387,6 +414,13 @@ final class SyncService: ObservableObject {
         guard let daemon else { return }
         for client in daemon.connectedClients where client.browser == browser && client.id != excludedId {
             var targeted = message
+            if case .bookmarks(let bookmarks) = targeted.payload,
+               let sourceId = targeted.browser,
+               let sourceBrowser = Browser(rawValue: sourceId) {
+                targeted.payload = .bookmarks(
+                    bookmarksPreparedForTarget(bookmarks, sourceBrowser: sourceBrowser, targetBrowser: browser)
+                )
+            }
             targeted.targetBookmarkFolder = settings.bookmarkFolder(for: browser)
             daemon.sendWSMessage(targeted, to: client)
         }
@@ -467,6 +501,7 @@ final class SyncService: ObservableObject {
 
         var message = WSMessage(
             type: .sync,
+            browser: Browser.safari.rawValue,
             site: "*",
             category: SyncCategory.bookmarks.rawValue,
             payload: .bookmarks(adjustedBookmarks),
@@ -994,6 +1029,7 @@ final class SyncService: ObservableObject {
                         
                         var pushMsg = WSMessage(
                             type: .sync,
+                            browser: Browser.safari.rawValue,
                             site: "*",
                             category: category.rawValue,
                             payload: .bookmarks(bookmarks),
@@ -2029,13 +2065,18 @@ final class SyncService: ObservableObject {
                         var finalSyncBookmarks: [SyncBookmark] = []
                         var finalIsFullMirror = isFullMirror
                         
+                        let sourceBrowserId = clientId.components(separatedBy: "-").first ?? clientId
+                        let targetPreparedBookmarks = Browser(rawValue: sourceBrowserId).map {
+                            bookmarksPreparedForTarget(bookmarks, sourceBrowser: $0, targetBrowser: .safari)
+                        } ?? bookmarks
+
                         if let targetFolder = settings.bookmarkFolder(for: .safari) {
                             let safariTargetBms = safariBookmarks.readBookmarks().map { b in
                                 Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
                             }
                             let mergedBookmarks = strategy == .oneWay
-                                ? BookmarkTreeMerger.replaceExistingFolderContents(sourceTree: bookmarks, targetTree: safariTargetBms, targetFolderPath: targetFolder)
-                                : BookmarkTreeMerger.mergeIntoExistingFolder(sourceTree: bookmarks, targetTree: safariTargetBms, targetFolderPath: targetFolder)
+                                ? BookmarkTreeMerger.replaceExistingFolderContents(sourceTree: targetPreparedBookmarks, targetTree: safariTargetBms, targetFolderPath: targetFolder)
+                                : BookmarkTreeMerger.mergeIntoExistingFolder(sourceTree: targetPreparedBookmarks, targetTree: safariTargetBms, targetFolderPath: targetFolder)
                             guard let finalBookmarksToSend = mergedBookmarks else {
                                 markMissingBookmarkFolder(.safari, folder: targetFolder)
                                 return
@@ -2048,7 +2089,7 @@ final class SyncService: ObservableObject {
                                 return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar ?? false, dateAdded: b.dateAdded)
                             }
                     } else {
-                        finalSyncBookmarks = bookmarks.compactMap { b -> SyncBookmark? in
+                        finalSyncBookmarks = targetPreparedBookmarks.compactMap { b -> SyncBookmark? in
                                 let urlStr: String?
                                 if let urlOpt = b.url { urlStr = urlOpt } else { urlStr = nil }
                                 if !b.isFolder && urlStr == nil { return nil }

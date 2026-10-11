@@ -653,14 +653,8 @@ extension AppState: DaemonServerDelegate {
             var finalBookmarksToSend = bookmarks
             let isFullMirror = (strategy == .oneWay)
             
-            if let syncFolder = self.settingsService.syncSettings.bookmarkFolder(for: sourceBrowser) {
-                guard let sourceRoot = BookmarkTreeMerger.extractExistingSubtreeAsRoot(sourceTree: bookmarks, folderPath: syncFolder) else {
-                    self.syncService.missingBookmarkFolders[sourceBrowser.rawValue] = syncFolder
-                    self.notificationService.notifyBookmarkSyncFailed(browser: sourceBrowser, folder: syncFolder)
-                    return
-                }
-                finalBookmarksToSend = sourceRoot
-            }
+            guard let sourceAdjusted = self.syncService.folderAdjustedBookmarksForSource(bookmarks, browser: sourceBrowser) else { return }
+            finalBookmarksToSend = sourceAdjusted
             
             var msg = WSMessage(
                 type: .sync,
@@ -672,8 +666,15 @@ extension AppState: DaemonServerDelegate {
             )
             msg.isFullMirror = isFullMirror
             if let browser = Browser(rawValue: clientId.components(separatedBy: "-").first ?? clientId) {
+                finalBookmarksToSend = self.syncService.bookmarksPreparedForTarget(
+                    finalBookmarksToSend,
+                    sourceBrowser: sourceBrowser,
+                    targetBrowser: browser
+                )
+                msg.payload = .bookmarks(finalBookmarksToSend)
                 msg.targetBookmarkFolder = self.settingsService.syncSettings.bookmarkFolder(for: browser)
             }
+            msg.browser = sourceBrowser.rawValue
             // Only send to the requesting client
             let sourceName = sourceBrowser == .safari ? "Safari" : "Chrome"
             self.syncService.log("Answering pull request from [\(clientId)]: Pushed \(finalBookmarksToSend.count) \(sourceName) bookmarks (isFullMirror: \(msg.isFullMirror ?? false))")
