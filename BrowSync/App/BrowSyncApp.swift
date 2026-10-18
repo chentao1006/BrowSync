@@ -522,6 +522,23 @@ struct MenuBarView: View {
             }
         }
         
+        // A held bookmark change stays reachable even after its window was
+        // closed or its notification dismissed.
+        if let clientId = appState.pendingBookmarkReviewClientIds.first {
+            Button(String(localized: "Review Blocked Bookmark Changes", bundle: langBundle.bundle)) {
+                appState.syncService.presentPendingSafariWrite(from: clientId)
+            }
+        }
+        // "Keep Safari As Is" pauses that browser's sync into Safari; this is
+        // the visible way back.
+        ForEach(appState.pausedBookmarkSyncClientIds, id: \.self) { clientId in
+            Button(clientId.hasPrefix("to:")
+                   ? String(format: String(localized: "Resume Bookmark Sync to %@", bundle: langBundle.bundle), SyncService.displayName(forClient: String(clientId.dropFirst(3))))
+                   : String(format: String(localized: "Resume Bookmark Sync from %@", bundle: langBundle.bundle), SyncService.displayName(forClient: clientId))) {
+                appState.syncService.resumeBookmarkSync(from: clientId)
+            }
+        }
+
         Divider()
 
         // Installed Browsers Section

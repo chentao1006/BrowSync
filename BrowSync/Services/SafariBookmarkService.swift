@@ -4,6 +4,7 @@
 import Foundation
 import os.log
 import AppKit
+import CryptoKit
 
 /// Manages writing received bookmarks into Safari's native bookmark store.
 /// Safari Web Extensions do NOT support chrome.bookmarks, so the Mac App must do this.
@@ -17,6 +18,39 @@ final class SafariBookmarkService {
     private var isWritingInternally = false
     private let logger = Logger(subsystem: "com.ct106.browsync", category: "SafariBookmarks")
     private static let maxOrphanedFolderPruneCount = 2
+    /// Returned by `applyBookmarks` when a guarded write was held for confirmation.
+    static let blockedLargeChange = -2
+
+    /// How many existing, user-visible Safari items a write would remove or
+    /// relocate. Only an item whose own parent changes counts as moved; the
+    /// contents of a moved folder travel with it.
+    struct WriteImpact: Equatable {
+        let removed: Int
+        let moved: Int
+        /// Existing items whose title or URL would be rewritten in place.
+        let modified: Int
+        let total: Int
+        /// Stable description of the change. Items BrowSync would create get a
+        /// random UUID on every computation, so they are described by content
+        /// instead; recomputing the same change yields the same signature.
+        let signature: String
+        /// The same, ignoring additions: a rejected removal/move/rewrite stays
+        /// rejected even when the source browser later adds something.
+        let destructiveSignature: String
+        var affected: Int { removed + moved + modified }
+        var requiresConfirmation: Bool { affected > max(8, total / 20) }
+    }
+
+    /// A computed write held for review. `resultPlist` is exactly what the
+    /// review window shows and exactly what `commitHeldWrite` writes.
+    struct HeldWrite {
+        let impact: WriteImpact
+        let preview: BookmarkChangePreview
+        fileprivate let originalData: Data
+        fileprivate let resultPlist: [String: Any]
+        fileprivate let added: Int
+    }
+    private(set) var lastBlockedWrite: HeldWrite?
 
     private var bookmarksURL: URL? {
         // Must be called inside withSafariAccess so the security-scoped resource is active.
@@ -31,23 +65,19 @@ final class SafariBookmarkService {
     // MARK: - Apply bookmarks from another browser
 
     /// Returns the number of bookmarks applied or staged.
+    /// - Parameter guardLargeChanges: refuse (returning `blockedLargeChange`
+    ///   and setting `lastBlockedWrite`) a write that would remove or move many
+    ///   existing items. Automatic syncs set this; user-initiated restores and
+    ///   edits do not.
     @discardableResult
-    func applyBookmarks(_ bookmarks: [SyncBookmark], from sourceBrowser: String, isFullMirror: Bool = false) -> Int {
+    func applyBookmarks(_ bookmarks: [SyncBookmark], from sourceBrowser: String, isFullMirror: Bool = false, guardLargeChanges: Bool = false) -> Int {
         return SandboxAccessManager.shared.withSafariAccess {
             guard let url = bookmarksURL else {
                 logger.warning("Safari Bookmarks.plist not found, skipping")
                 return 0
             }
 
-            fileMonitor?.setEventHandler { [weak self] in
-                guard let self = self else { return }
-                if self.isWritingInternally {
-                    self.logger.debug("Ignoring Bookmarks.plist change because it was triggered by a sync write")
-                    return
-                }
-                print("[\(Date().ISO8601Format())] Safari Bookmarks.plist changed! Triggering auto-sync...")
-                NotificationCenter.default.post(name: NSNotification.Name("SafariBookmarksChanged"), object: nil)
-            }
+            installMonitorEventHandler()
             
             do {
                 let data = try Data(contentsOf: url)
@@ -56,28 +86,26 @@ final class SafariBookmarkService {
                     return 0
                 }
 
+                let originalPlist = plist
                 let added = insertBookmarks(bookmarks, into: &plist, sourceBrowser: sourceBrowser, isFullMirror: isFullMirror)
                 if added == 0 && !isFullMirror {
                     logger.info("No new bookmarks to add from \(sourceBrowser)")
                     return 0
                 }
 
-                let writeBlock = {
-                    do {
-                        self.isWritingInternally = true
-                        let newData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
-                        try newData.write(to: url, options: .atomic)
-                        self.logger.info("Wrote \(added) bookmarks to Safari Bookmarks.plist from \(sourceBrowser)")
-                        
-                        // Reset the flag after a delay to allow file system events to clear
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                            self.isWritingInternally = false
-                        }
-                    } catch {
-                        self.logger.error("Failed to write Safari bookmarks: \(error)")
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                            self.isWritingInternally = false
-                        }
+                lastBlockedWrite = nil
+                if guardLargeChanges {
+                    let impact = Self.writeImpact(before: originalPlist, after: plist)
+                    if impact.requiresConfirmation {
+                        logger.warning("Holding Safari write from \(sourceBrowser): \(impact.removed) removed, \(impact.moved) moved of \(impact.total).")
+                        lastBlockedWrite = HeldWrite(
+                            impact: impact,
+                            preview: Self.changePreview(before: originalPlist, after: plist),
+                            originalData: data,
+                            resultPlist: plist,
+                            added: added
+                        )
+                        return Self.blockedLargeChange
                     }
                 }
 
@@ -87,13 +115,198 @@ final class SafariBookmarkService {
                 }
                 
                 // macOS automatically reloads Bookmarks.plist even when Safari is running
-                writeBlock()
+                writePlist(plist, to: url, added: added, sourceBrowser: sourceBrowser)
                 return added
             } catch {
                 logger.error("Failed to process Safari bookmarks: \(error)")
                 return 0
             }
         }
+    }
+
+    /// Writes a held result exactly as it was reviewed, provided Bookmarks.plist
+    /// is byte-for-byte what it was when the result was computed. Returns nil
+    /// when Safari's bookmarks changed in the meantime; the caller must then
+    /// recompute and ask again rather than write something nobody reviewed.
+    func commitHeldWrite(_ held: HeldWrite, from sourceBrowser: String) -> Int? {
+        SandboxAccessManager.shared.withSafariAccess {
+            guard let url = bookmarksURL,
+                  let current = try? Data(contentsOf: url),
+                  current == held.originalData else { return nil }
+            installMonitorEventHandler()
+            writePlist(held.resultPlist, to: url, added: held.added, sourceBrowser: sourceBrowser)
+            return held.added
+        }
+    }
+
+    private func installMonitorEventHandler() {
+        fileMonitor?.setEventHandler { [weak self] in
+            guard let self = self else { return }
+            if self.isWritingInternally {
+                self.logger.debug("Ignoring Bookmarks.plist change because it was triggered by a sync write")
+                return
+            }
+            print("[\(Date().ISO8601Format())] Safari Bookmarks.plist changed! Triggering auto-sync...")
+            NotificationCenter.default.post(name: NSNotification.Name("SafariBookmarksChanged"), object: nil)
+        }
+    }
+
+    private func writePlist(_ plist: [String: Any], to url: URL, added: Int, sourceBrowser: String) {
+        do {
+            isWritingInternally = true
+            let newData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+            try newData.write(to: url, options: .atomic)
+            logger.info("Wrote \(added) bookmarks to Safari Bookmarks.plist from \(sourceBrowser)")
+        } catch {
+            logger.error("Failed to write Safari bookmarks: \(error)")
+        }
+        // Reset the flag after a delay to allow file system events to clear
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            self.isWritingInternally = false
+        }
+    }
+
+    /// History, Reading List and other special nodes are not shown in the
+    /// review, so they are not counted either.
+    private static func isHiddenSystemNode(_ node: [String: Any]) -> Bool {
+        let identifier = node["WebBookmarkIdentifier"] as? String
+        let title = node["Title"] as? String
+        if identifier == "BookmarksBar" || identifier == "BookmarksMenu" || title == "BookmarksBar" || title == "BookmarksMenu" { return false }
+        if identifier == "History" || title == "History" || title == "com.apple.ReadingList" { return true }
+        if (node["ReadingListNonSync"] as? Bool) == true { return true }
+        let type = node["WebBookmarkType"] as? String
+        return type != "WebBookmarkTypeList" && type != "WebBookmarkTypeLeaf"
+    }
+
+    /// Visible nodes as UUID -> (parent UUID, content description, title).
+    private static func visibleNodes(_ plist: [String: Any]) -> [String: (parent: String, content: String, title: String)] {
+        var result = [String: (parent: String, content: String, title: String)]()
+        func walk(_ nodes: [[String: Any]], parent: String) {
+            for node in nodes where !isHiddenSystemNode(node) {
+                guard let uuid = node["WebBookmarkUUID"] as? String else { continue }
+                let content = (node["URLString"] as? String).map { "u:" + $0 }
+                    ?? "f:" + ((node["WebBookmarkIdentifier"] as? String) ?? (node["Title"] as? String) ?? "")
+                let title = (node["URIDictionary"] as? [String: Any])?["title"] as? String ?? (node["Title"] as? String) ?? ""
+                result[uuid] = (parent, content, title)
+                walk(node["Children"] as? [[String: Any]] ?? [], parent: uuid)
+            }
+        }
+        walk(plist["Children"] as? [[String: Any]] ?? [], parent: "")
+        return result
+    }
+
+    private static func writeImpact(before: [String: Any], after: [String: Any]) -> WriteImpact {
+        let old = visibleNodes(before)
+        let new = visibleNodes(after)
+        // Existing nodes keep their UUID; new ones are identified by content
+        // path, because their UUID is regenerated on every computation.
+        var stableIds = [String: String]()
+        func stableId(_ uuid: String) -> String {
+            if old[uuid] != nil { return uuid }
+            if let cached = stableIds[uuid] { return cached }
+            guard let node = new[uuid] else { return "" }
+            let id = (node.parent.isEmpty ? "" : stableId(node.parent)) + "/" + node.content + "|" + node.title
+            stableIds[uuid] = id
+            return id
+        }
+        var removed = 0
+        var moved = 0
+        var modified = 0
+        var changes = [String]()
+        for (uuid, node) in old {
+            guard let newNode = new[uuid] else {
+                removed += 1
+                changes.append("-" + uuid)
+                continue
+            }
+            if newNode.parent != node.parent {
+                moved += 1
+                changes.append(">" + uuid + "@" + stableId(newNode.parent))
+            }
+            if newNode.content != node.content || newNode.title != node.title {
+                modified += 1
+                changes.append("~" + uuid + "=" + newNode.content + "|" + newNode.title)
+            }
+        }
+        let destructive = changes.sorted()
+        let additions = new.keys.filter { old[$0] == nil }.map { "+" + stableId($0) }
+        func digest(_ lines: [String]) -> String {
+            SHA256.hash(data: Data(lines.joined(separator: "\n").utf8)).map { String(format: "%02x", $0) }.joined()
+        }
+        return WriteImpact(
+            removed: removed,
+            moved: moved,
+            modified: modified,
+            total: old.count,
+            signature: digest(destructive + additions.sorted()),
+            destructiveSignature: digest(destructive)
+        )
+    }
+
+    /// Both trees as the user sees them in Safari, each node marked by what
+    /// the write does to it. Only a node whose own parent changes is "moved";
+    /// its contents travel with it and stay unmarked.
+    static func changePreview(before: [String: Any], after: [String: Any]) -> BookmarkChangePreview {
+        func parents(_ plist: [String: Any]) -> [String: String] {
+            var result = [String: String]()
+            func walk(_ nodes: [[String: Any]], parent: String) {
+                for node in nodes {
+                    guard let uuid = node["WebBookmarkUUID"] as? String else { continue }
+                    result[uuid] = parent
+                    walk(node["Children"] as? [[String: Any]] ?? [], parent: uuid)
+                }
+            }
+            walk(plist["Children"] as? [[String: Any]] ?? [], parent: "")
+            return result
+        }
+        let oldParents = parents(before)
+        let newParents = parents(after)
+        let oldContent = visibleNodes(before).mapValues { $0.content + "|" + $0.title }
+        let newContent = visibleNodes(after).mapValues { $0.content + "|" + $0.title }
+
+        let langBundle = LanguageBundle(language: AppState.shared.settingsService.general.language).bundle
+        func displayTitle(_ node: [String: Any]) -> String {
+            let identifier = node["WebBookmarkIdentifier"] as? String
+            let title = node["Title"] as? String
+            if identifier == "BookmarksBar" || title == "BookmarksBar" { return String(localized: "Favorites", bundle: langBundle) }
+            if identifier == "BookmarksMenu" || title == "BookmarksMenu" { return String(localized: "Bookmarks Menu", bundle: langBundle) }
+            return (node["URIDictionary"] as? [String: Any])?["title"] as? String ?? title ?? ""
+        }
+
+        func build(_ nodes: [[String: Any]], isBefore: Bool) -> [BookmarkReviewNode] {
+            nodes.enumerated().compactMap { index, node in
+                guard !isHiddenSystemNode(node) else { return nil }
+                let uuid = node["WebBookmarkUUID"] as? String
+                var change = BookmarkReviewNode.Change.unchanged
+                if let uuid {
+                    let ownSide = isBefore ? oldParents : newParents
+                    let otherSide = isBefore ? newParents : oldParents
+                    if let otherParent = otherSide[uuid] {
+                        if otherParent != ownSide[uuid] {
+                            change = .moved
+                        } else if let a = oldContent[uuid], let b = newContent[uuid], a != b {
+                            change = .modified
+                        }
+                    } else {
+                        change = isBefore ? .removed : .added
+                    }
+                }
+                let url = node["URLString"] as? String
+                return BookmarkReviewNode(
+                    id: uuid ?? "\(isBefore)-\(index)-\(displayTitle(node))",
+                    title: displayTitle(node),
+                    url: url,
+                    isFolder: url == nil,
+                    change: change,
+                    children: build(node["Children"] as? [[String: Any]] ?? [], isBefore: isBefore)
+                )
+            }
+        }
+
+        return BookmarkChangePreview(
+            before: build(before["Children"] as? [[String: Any]] ?? [], isBefore: true),
+            after: build(after["Children"] as? [[String: Any]] ?? [], isBefore: false)
+        )
     }
 
     // MARK: - HTML Export (always works)
@@ -219,6 +432,11 @@ final class SafariBookmarkService {
         var extractedLeavesByID = [String: [String: Any]]()
         var extractedLeavesByURL = [String: [[String: Any]]]()
         var extractedFolders = [String: [[String: Any]]]()
+        // A folder renamed in another browser keeps its Safari UUID as its sync
+        // ID; matching by title alone would rebuild it as a new folder and
+        // count every child as moved.
+        var extractedFoldersByID = [String: [String: Any]]()
+        let incomingFolderIDs = Set(validBookmarks.filter(\.isFolder).map(\.id))
 
         let incomingLeafIDs = Set(validBookmarks.filter { !$0.isFolder }.map(\.id))
         let incomingLeafURLs = Set(validBookmarks.compactMap { bookmark -> String? in
@@ -228,6 +446,9 @@ final class SafariBookmarkService {
 
         func extractExistingNodes(from nodes: inout [[String: Any]]) {
             for i in (0..<nodes.count).reversed() {
+                // Reading List, History and other special nodes are not
+                // bookmarks; a matching URL there must never be pulled out.
+                if Self.isHiddenSystemNode(nodes[i]) { continue }
                 if let url = nodes[i]["URLString"] as? String {
                     let uuid = nodes[i]["WebBookmarkUUID"] as? String
                     if let uuid, incomingLeafIDs.contains(uuid) {
@@ -236,6 +457,21 @@ final class SafariBookmarkService {
                     } else if incomingLeafURLs.contains(url) {
                         let removed = nodes.remove(at: i)
                         extractedLeavesByURL[url, default: []].append(removed)
+                    }
+                } else if let type = nodes[i]["WebBookmarkType"] as? String, type == "WebBookmarkTypeList",
+                          let uuid = nodes[i]["WebBookmarkUUID"] as? String, incomingFolderIDs.contains(uuid),
+                          !isSafariSystemNode(nodes[i]) {
+                    var removed = nodes.remove(at: i)
+                    if var subChildren = removed["Children"] as? [[String: Any]] {
+                        extractExistingNodes(from: &subChildren)
+                        removed["Children"] = subChildren
+                    }
+                    if extractedFoldersByID[uuid] == nil {
+                        extractedFoldersByID[uuid] = removed
+                    } else {
+                        // Corrupt plist with a duplicate UUID: keep the second
+                        // folder through the title path instead of dropping it.
+                        extractedFolders[(removed["Title"] as? String) ?? "", default: []].append(removed)
                     }
                 } else if let type = nodes[i]["WebBookmarkType"] as? String, type == "WebBookmarkTypeList", let title = nodes[i]["Title"] as? String {
                     if validBookmarks.contains(where: { $0.isFolder && $0.title == title }) {
@@ -261,8 +497,10 @@ final class SafariBookmarkService {
         func buildNode(from bookmark: SyncBookmark, allBookmarks: [SyncBookmark]) -> [String: Any]? {
             var uuid = UUID().uuidString.lowercased()
             if bookmark.isFolder {
-                var nodeBase: [String: Any]? = nil
-                if var existingList = extractedFolders[bookmark.title], !existingList.isEmpty {
+                var nodeBase: [String: Any]? = extractedFoldersByID.removeValue(forKey: bookmark.id)
+                if let byID = nodeBase, let oldUuid = byID["WebBookmarkUUID"] as? String {
+                    uuid = oldUuid
+                } else if var existingList = extractedFolders[bookmark.title], !existingList.isEmpty {
                     nodeBase = existingList.removeLast()
                     extractedFolders[bookmark.title] = existingList
                     if let oldUuid = nodeBase?["WebBookmarkUUID"] as? String {
@@ -343,8 +581,10 @@ final class SafariBookmarkService {
             
             for bookmark in orderedSiblings(chromeNodes) {
                 if bookmark.isFolder {
-                    if let idx = safariNodes.firstIndex(where: { ($0["WebBookmarkType"] as? String) == "WebBookmarkTypeList" && ($0["Title"] as? String) == bookmark.title }) {
+                    if let idx = safariNodes.firstIndex(where: { ($0["WebBookmarkType"] as? String) == "WebBookmarkTypeList" && ($0["WebBookmarkUUID"] as? String) == bookmark.id })
+                    ?? safariNodes.firstIndex(where: { ($0["WebBookmarkType"] as? String) == "WebBookmarkTypeList" && ($0["Title"] as? String) == bookmark.title }) {
                         var existingFolder = safariNodes.remove(at: idx)
+                        existingFolder["Title"] = bookmark.title
                         var subChildren = existingFolder["Children"] as? [[String: Any]] ?? []
                         let chromeSub = orderedSiblings(validBookmarks.filter { $0.parentId == bookmark.id })
                         mergeLevel(chromeNodes: chromeSub, safariNodes: &subChildren, isRoot: false)
@@ -478,6 +718,9 @@ final class SafariBookmarkService {
         for (_, nodesList) in extractedFolders {
             children.append(contentsOf: nodesList)
         }
+        for (_, node) in extractedFoldersByID {
+            children.append(node)
+        }
 
         plist["Children"] = children
         return addedCount
@@ -582,83 +825,6 @@ final class SafariBookmarkService {
     ///   1. Nodes tagged with BrowSyncSourceRoot="3" — written by the new metadata-aware code.
     ///   2. Root-level folders whose title exactly matches known mobile bookmark folder names
     ///      from major browsers — this is a one-time migration for pre-metadata contamination only.
-    func cleanupMobileBookmarkContamination() {
-        SandboxAccessManager.shared.withSafariAccess {
-            guard let url = bookmarksURL,
-                  let data = try? Data(contentsOf: url),
-                  var plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-                  var children = plist["Children"] as? [[String: Any]] else { return }
-
-            let knownMobileTitles: Set<String> = [
-                "Mobile Bookmarks",      // Chrome/Edge EN
-                "移动设备上的书签",        // Chrome/Edge zh-CN (most common)
-                "移动设备书签",            // Chrome/Edge zh-CN (variant)
-                "移动设备的书签",          // Edge zh-CN (variant)
-                "行動裝置書籤",            // zh-TW
-                "Marcadores del dispositivo móvil", // ES
-                "Mobil yer imleri",       // TR
-                "Mobilní záložky",        // CS
-            ]
-
-            var didChange = false
-
-            func removeContamination(from nodes: inout [[String: Any]], isAtRoot: Bool) {
-                nodes = nodes.filter { node in
-                    // Priority 1: metadata tag (ID-based, language-independent)
-                    if let sourceRoot = node["BrowSyncSourceRoot"] as? String, sourceRoot == "3" {
-                        logger.info("[Cleanup] Removing BrowSync mobile-root node: \(node["Title"] as? String ?? "(unknown)")")
-                        didChange = true
-                        return false
-                    }
-                    // Priority 2: one-time name-based migration for pre-metadata contamination
-                    // Only at root level to avoid false positives (user could have a similarly-named folder inside another folder)
-                    if isAtRoot,
-                       let title = node["Title"] as? String,
-                       knownMobileTitles.contains(title) {
-                        logger.info("[Cleanup] Removing pre-metadata mobile bookmark contamination: \"\(title)\"")
-                        didChange = true
-                        return false
-                    }
-                    return true
-                }
-            }
-
-            // Check Safari root level items (not system folders)
-            let systemTitles = Set(["BookmarksBar", "BookmarksMenu", "History", "com.apple.ReadingList"])
-            var rootUserItems = children.filter {
-                guard let t = $0["Title"] as? String else { return true }
-                return !systemTitles.contains(t)
-            }
-            removeContamination(from: &rootUserItems, isAtRoot: true)
-
-            // Rebuild children with cleaned root items
-            var cleanedChildren = children.filter {
-                if let t = $0["Title"] as? String, systemTitles.contains(t) { return true }
-                return false
-            }
-            cleanedChildren.append(contentsOf: rootUserItems)
-
-            // Also clean inside BookmarksBar and BookmarksMenu (non-root, metadata-only)
-            for i in 0..<cleanedChildren.count {
-                if var subChildren = cleanedChildren[i]["Children"] as? [[String: Any]] {
-                    removeContamination(from: &subChildren, isAtRoot: false)
-                    cleanedChildren[i]["Children"] = subChildren
-                }
-            }
-
-            guard didChange else { return }
-
-            plist["Children"] = cleanedChildren
-            isWritingInternally = true
-            if let newData = try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0) {
-                try? newData.write(to: url, options: .atomic)
-                logger.info("[Cleanup] Safari plist cleaned of mobile bookmark contamination.")
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                self.isWritingInternally = false
-            }
-        }
-    }
 
     // MARK: - Ensure Folder Exists
 
@@ -688,45 +854,12 @@ final class SafariBookmarkService {
             guard let urlPath = bookmarksURL else { return false }
             do {
                 let data = try Data(contentsOf: urlPath)
-                guard var plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-                      var children = plist["Children"] as? [[String: Any]] else {
+                guard let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
                     return false
                 }
-
-                var didRemove = false
-                func traverseAndRemove(nodes: inout [[String: Any]]) {
-                    nodes.removeAll { node in
-                        if let uuid = node["WebBookmarkUUID"] as? String, uuid == id {
-                            didRemove = true
-                            return true
-                        }
-                        if let t = title, let u = url, let nodeU = node["URLString"] as? String {
-                            let nodeT = (node["URIDictionary"] as? [String: Any])?["title"] as? String ?? node["Title"] as? String
-                            if nodeU == u && nodeT == t {
-                                didRemove = true
-                                return true
-                            }
-                        } else if let t = title, url == nil, (node["WebBookmarkType"] as? String) == "WebBookmarkTypeList" {
-                            if let nodeT = node["Title"] as? String, nodeT == t {
-                                didRemove = true
-                                return true
-                            }
-                        }
-                        return false
-                    }
-                    for i in 0..<nodes.count {
-                        if var subChildren = nodes[i]["Children"] as? [[String: Any]] {
-                            traverseAndRemove(nodes: &subChildren)
-                            nodes[i]["Children"] = subChildren
-                        }
-                    }
-                }
-
-                traverseAndRemove(nodes: &children)
-
+                let (result, didRemove) = Self.removing([(id, title, url)], from: plist)
                 if didRemove {
-                    plist["Children"] = children
-                    let newData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+                    let newData = try PropertyListSerialization.data(fromPropertyList: result, format: .xml, options: 0)
                     try newData.write(to: urlPath, options: .atomic)
                     logger.info("Removed Safari bookmark with ID: \(id) or title: \(title ?? "")")
                     return true
@@ -736,6 +869,170 @@ final class SafariBookmarkService {
                 logger.error("Failed to remove Safari bookmark: \(error)")
                 return false
             }
+        }
+    }
+
+    /// The removal matching used by `removeBookmark`, applied to a plist in
+    /// memory: by UUID, else by URL and title, else (folders) by title.
+    private static func removing(_ removals: [(id: String, title: String?, url: String?)], from plist: [String: Any]) -> ([String: Any], Bool) {
+        var plist = plist
+        guard var children = plist["Children"] as? [[String: Any]] else { return (plist, false) }
+        var didRemove = false
+        // A folder is matched by title only if exactly one folder has it;
+        // otherwise an unrelated folder of the same name would be deleted.
+        func folderTitleCount(_ title: String, in nodes: [[String: Any]]) -> Int {
+            nodes.reduce(0) { count, node in
+                let own = (node["WebBookmarkType"] as? String) == "WebBookmarkTypeList" && (node["Title"] as? String) == title ? 1 : 0
+                return count + own + folderTitleCount(title, in: node["Children"] as? [[String: Any]] ?? [])
+            }
+        }
+        for removal in removals {
+            let folderTitleIsUnique = removal.url == nil && removal.title.map { folderTitleCount($0, in: children) == 1 } == true
+            func traverseAndRemove(nodes: inout [[String: Any]]) {
+                nodes.removeAll { node in
+                    if let uuid = node["WebBookmarkUUID"] as? String, uuid == removal.id {
+                        didRemove = true
+                        return true
+                    }
+                    if let t = removal.title, let u = removal.url, let nodeU = node["URLString"] as? String {
+                        let nodeT = (node["URIDictionary"] as? [String: Any])?["title"] as? String ?? node["Title"] as? String
+                        if nodeU == u && nodeT == t {
+                            didRemove = true
+                            return true
+                        }
+                    } else if let t = removal.title, removal.url == nil, folderTitleIsUnique, (node["WebBookmarkType"] as? String) == "WebBookmarkTypeList" {
+                        if let nodeT = node["Title"] as? String, nodeT == t {
+                            didRemove = true
+                            return true
+                        }
+                    }
+                    return false
+                }
+                for i in 0..<nodes.count {
+                    if var subChildren = nodes[i]["Children"] as? [[String: Any]] {
+                        traverseAndRemove(nodes: &subChildren)
+                        nodes[i]["Children"] = subChildren
+                    }
+                }
+            }
+            traverseAndRemove(nodes: &children)
+        }
+        plist["Children"] = children
+        return (plist, didRemove)
+    }
+
+    /// A write computed from Safari's current file by `transform` (applied to
+    /// its top-level children), returned for review instead of written.
+    private func previewTransform(_ transform: (inout [[String: Any]]) -> Bool) -> HeldWrite? {
+        SandboxAccessManager.shared.withSafariAccess {
+            guard let url = bookmarksURL,
+                  let data = try? Data(contentsOf: url),
+                  let plist = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any],
+                  var children = plist["Children"] as? [[String: Any]] else { return nil }
+            guard transform(&children) else { return nil }
+            var result = plist
+            result["Children"] = children
+            return HeldWrite(
+                impact: Self.writeImpact(before: plist, after: result),
+                preview: Self.changePreview(before: plist, after: result),
+                originalData: data,
+                resultPlist: result,
+                added: 0
+            )
+        }
+    }
+
+    /// Dissolves folders that BrowSync itself once created from another
+    /// browser's root (e.g. a "书签栏" folder inside Favorites), moving their
+    /// contents up. Only nodes BrowSync tagged when writing them are touched,
+    /// never a user's own folder that happens to have such a name.
+    func previewLeakedRootFolderCleanup() -> HeldWrite? {
+        let leakedNames: Set<String> = ["bookmarks bar", "书签栏", "favorites", "收藏夹栏", "other bookmarks", "其他书签", "其他收藏夹"]
+        return previewTransform { children in
+            var modified = false
+            func clean(_ nodes: inout [[String: Any]]) {
+                var result = [[String: Any]]()
+                for node in nodes {
+                    if (node["WebBookmarkType"] as? String) == "WebBookmarkTypeList",
+                       node["BrowSyncSourceRoot"] != nil,
+                       let title = node["Title"] as? String, leakedNames.contains(title.lowercased()) {
+                        result.append(contentsOf: node["Children"] as? [[String: Any]] ?? [])
+                        modified = true
+                    } else {
+                        var copy = node
+                        if var sub = copy["Children"] as? [[String: Any]] {
+                            clean(&sub)
+                            copy["Children"] = sub
+                        }
+                        result.append(copy)
+                    }
+                }
+                nodes = result
+            }
+            for index in children.indices where ["BookmarksBar", "BookmarksMenu"].contains(children[index]["Title"] as? String ?? "") {
+                var sub = children[index]["Children"] as? [[String: Any]] ?? []
+                clean(&sub)
+                children[index]["Children"] = sub
+            }
+            return modified
+        }
+    }
+
+    /// Removes mobile-bookmark folders BrowSync once copied into Safari.
+    func previewMobileContaminationCleanup() -> HeldWrite? {
+        let knownMobileTitles: Set<String> = [
+            "Mobile Bookmarks", "移动设备上的书签", "移动设备书签", "移动设备的书签", "行動裝置書籤",
+            "Marcadores del dispositivo móvil", "Mobil yer imleri", "Mobilní záložky"
+        ]
+        return previewTransform { children in
+            var didChange = false
+            func removeContamination(from nodes: inout [[String: Any]], isAtRoot: Bool) {
+                nodes = nodes.filter { node in
+                    // Metadata tag first (language-independent); names only at the
+                    // root, for contamination written before the tag existed.
+                    if let sourceRoot = node["BrowSyncSourceRoot"] as? String, sourceRoot == "3" {
+                        didChange = true
+                        return false
+                    }
+                    if isAtRoot, let title = node["Title"] as? String, knownMobileTitles.contains(title) {
+                        didChange = true
+                        return false
+                    }
+                    return true
+                }
+            }
+            let systemTitles = Set(["BookmarksBar", "BookmarksMenu", "History", "com.apple.ReadingList"])
+            var rootUserItems = children.filter { ($0["Title"] as? String).map { !systemTitles.contains($0) } ?? true }
+            removeContamination(from: &rootUserItems, isAtRoot: true)
+            var cleaned = children.filter { ($0["Title"] as? String).map { systemTitles.contains($0) } ?? false }
+            cleaned.append(contentsOf: rootUserItems)
+            for index in cleaned.indices {
+                if var sub = cleaned[index]["Children"] as? [[String: Any]] {
+                    removeContamination(from: &sub, isAtRoot: false)
+                    cleaned[index]["Children"] = sub
+                }
+            }
+            children = cleaned
+            return didChange
+        }
+    }
+
+    /// Dry run of a batch of removal events against Safari's current file:
+    /// what they would remove (whole subtrees count) and both trees for review.
+    /// The result can be committed with `commitHeldWrite`.
+    func previewRemovals(_ removals: [(id: String, title: String?, url: String?)]) -> HeldWrite? {
+        SandboxAccessManager.shared.withSafariAccess {
+            guard let url = bookmarksURL,
+                  let data = try? Data(contentsOf: url),
+                  let plist = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any] else { return nil }
+            let (result, _) = Self.removing(removals, from: plist)
+            return HeldWrite(
+                impact: Self.writeImpact(before: plist, after: result),
+                preview: Self.changePreview(before: plist, after: result),
+                originalData: data,
+                resultPlist: result,
+                added: 0
+            )
         }
     }
 }
@@ -751,71 +1048,4 @@ struct SyncBookmark {
     var inBookmarksBar: Bool = false
     var dateAdded: Date? = nil
 }
-import Foundation
-import os.log
 
-@MainActor
-final class SafariCleanup {
-    static func cleanDirtyBookmarks() {
-        let logger = Logger(subsystem: "com.ct106.browsync", category: "SafariCleanup")
-        // SafariCleanup must also go through withSafariAccess
-        // to get a security-scoped resource for the real ~/Library/Safari path.
-        SandboxAccessManager.shared.withSafariAccess {
-            let bookmarksPlistURL = SandboxAccessManager.shared.safariBookmarksPlistURL
-            guard let url = bookmarksPlistURL,
-                  let data = try? Data(contentsOf: url),
-                  var plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-                  var children = plist["Children"] as? [[String: Any]] else {
-                return
-            }
-
-            let dirtyNames: Set<String> = ["bookmarks bar", "书签栏", "favorites", "收藏夹栏", "other bookmarks", "其他书签", "其他收藏夹"]
-            var modified = false
-
-            func cleanNode(_ nodeChildren: inout [[String: Any]]) {
-                var newChildren = [[String: Any]]()
-                for child in nodeChildren {
-                    if let type = child["WebBookmarkType"] as? String, type == "WebBookmarkTypeList",
-                       let title = child["Title"] as? String, dirtyNames.contains(title.lowercased()) {
-                        logger.info("Found dirty folder: \(title), extracting its contents...")
-                        if let subChildren = child["Children"] as? [[String: Any]] {
-                            newChildren.append(contentsOf: subChildren)
-                        }
-                        modified = true
-                    } else {
-                        var cleanChild = child
-                        if var subChildren = cleanChild["Children"] as? [[String: Any]] {
-                            cleanNode(&subChildren)
-                            cleanChild["Children"] = subChildren
-                        }
-                        newChildren.append(cleanChild)
-                    }
-                }
-                nodeChildren = newChildren
-            }
-
-            if let barIdx = children.firstIndex(where: { ($0["Title"] as? String) == "BookmarksBar" }),
-               var barChildren = children[barIdx]["Children"] as? [[String: Any]] {
-                cleanNode(&barChildren)
-                children[barIdx]["Children"] = barChildren
-            }
-
-            if let menuIdx = children.firstIndex(where: { ($0["Title"] as? String) == "BookmarksMenu" }),
-               var menuChildren = children[menuIdx]["Children"] as? [[String: Any]] {
-                cleanNode(&menuChildren)
-                children[menuIdx]["Children"] = menuChildren
-            }
-
-            if modified {
-                plist["Children"] = children
-                do {
-                    let newData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
-                    try newData.write(to: url, options: .atomic)
-                    logger.info("Successfully cleaned up dirty bookmarks!")
-                } catch {
-                    logger.error("Failed to save: \(error)")
-                }
-            }
-        } // end withSafariAccess
-    } // end cleanDirtyBookmarks
-} // end SafariCleanup

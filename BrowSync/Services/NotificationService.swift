@@ -15,6 +15,8 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     private static let applyMassBookmarkDeletionAction = "browsync.apply-mass-bookmark-deletion"
     private static let bookmarkRemovalBurstCategory = "browsync.bookmark-removal-burst"
     private static let applyBookmarkRemovalBurstAction = "browsync.apply-bookmark-removal-burst"
+    private static let largeSafariBookmarkChangeCategory = "browsync.large-safari-bookmark-change"
+    private static let reviewLargeSafariBookmarkChangeAction = "browsync.review-large-safari-bookmark-change"
     private let logger = Logger(subsystem: "com.ct106.browsync", category: "NotificationService")
     /// Some sites continuously rewrite storage for analytics, sessions, or
     /// heartbeats. Showing a completion banner for every one of those writes
@@ -259,7 +261,19 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
             intentIdentifiers: [],
             options: []
         )
-        UNUserNotificationCenter.current().setNotificationCategories([emptySnapshotCategory, massDeletionCategory, removalBurstCategory])
+        // Deliberately no "apply" action: the change must be reviewed first.
+        let reviewLargeChangeAction = UNNotificationAction(
+            identifier: Self.reviewLargeSafariBookmarkChangeAction,
+            title: String(localized: "Review Changes", bundle: langBundle),
+            options: [.foreground]
+        )
+        let largeChangeCategory = UNNotificationCategory(
+            identifier: Self.largeSafariBookmarkChangeCategory,
+            actions: [reviewLargeChangeAction],
+            intentIdentifiers: [],
+            options: []
+        )
+        UNUserNotificationCenter.current().setNotificationCategories([emptySnapshotCategory, massDeletionCategory, removalBurstCategory, largeChangeCategory])
     }
 
     func notifyUnexpectedEmptyBookmarkSnapshot(source: String, previousCount: Int) {
@@ -342,12 +356,83 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// An automatic sync would remove or relocate many existing Safari
+    /// bookmarks. Moving folders is as disruptive as deleting them from where
+    /// the user expects them, so both require confirmation.
+    func notifyLargeSafariBookmarkChangeSuspected(source: String, clientId: String, removed: Int, moved: Int, modified: Int) {
+        Task {
+            registerBookmarkSafetyNotificationCategories()
+            await requestPermission()
+
+            let content = UNMutableNotificationContent()
+            content.title = String(localized: "Large Bookmark Change Blocked", bundle: langBundle)
+            content.body = String(
+                format: String(localized: "Syncing from %@ would remove %d, move %d and modify %d existing Safari bookmarks. Nothing was changed — click to review.", bundle: langBundle),
+                source,
+                removed,
+                moved,
+                modified
+            )
+            content.categoryIdentifier = Self.largeSafariBookmarkChangeCategory
+            content.userInfo = ["clientId": clientId]
+
+            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+            do {
+                try await UNUserNotificationCenter.current().add(request)
+            } catch {
+                self.logger.error("Failed to schedule large bookmark change warning: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func notifyOutdatedBookmarkExtension(browserName: String) {
+        Task {
+            await requestPermission()
+            let content = UNMutableNotificationContent()
+            content.title = String(localized: "Extension Update Needed", bundle: langBundle)
+            content.body = String(
+                format: String(localized: "Update the BrowSync extension in %@ to keep syncing bookmarks. Until then no bookmark changes are sent to it.", bundle: langBundle),
+                browserName
+            )
+            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+            try? await UNUserNotificationCenter.current().add(request)
+        }
+    }
+
+    /// The same review, for a sync into another browser held by its extension.
+    func notifyLargeBrowserBookmarkChangeSuspected(target: String, clientId: String, removed: Int, moved: Int, modified: Int) {
+        Task {
+            registerBookmarkSafetyNotificationCategories()
+            await requestPermission()
+
+            let content = UNMutableNotificationContent()
+            content.title = String(localized: "Large Bookmark Change Blocked", bundle: langBundle)
+            content.body = String(
+                format: String(localized: "Syncing would remove %d, move %d and modify %d existing bookmarks in %@. Nothing was changed — click to review.", bundle: langBundle),
+                removed,
+                moved,
+                modified,
+                target
+            )
+            content.categoryIdentifier = Self.largeSafariBookmarkChangeCategory
+            content.userInfo = ["clientId": clientId]
+
+            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+            do {
+                try await UNUserNotificationCenter.current().add(request)
+            } catch {
+                self.logger.error("Failed to schedule large bookmark change warning: \(error.localizedDescription)")
+            }
+        }
+    }
+
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         return [.banner]
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let actionIdentifier = response.actionIdentifier
+        let categoryIdentifier = response.notification.request.content.categoryIdentifier
         let clientId = response.notification.request.content.userInfo["clientId"] as? String
         let shouldOpenFolderManager = response.notification.request.content.userInfo["browsyncAction"] as? String == "openBookmarkFolderManager"
         await MainActor.run {
@@ -361,6 +446,11 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
             }
             if actionIdentifier == Self.applyBookmarkRemovalBurstAction, let clientId {
                 AppState.shared.syncService.forceApplyPendingBookmarkRemovalBurst(from: clientId)
+                return
+            }
+            if categoryIdentifier == Self.largeSafariBookmarkChangeCategory, let clientId,
+               actionIdentifier == Self.reviewLargeSafariBookmarkChangeAction || actionIdentifier == UNNotificationDefaultActionIdentifier {
+                AppState.shared.syncService.presentPendingSafariWrite(from: clientId)
                 return
             }
             if actionIdentifier == Self.openRecentBackupsAction {

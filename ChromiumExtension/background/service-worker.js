@@ -1,3 +1,5 @@
+import { BookmarkPlan, replayPlan, summarizePlan, requiresConfirmation, canonicalUrl } from './bookmark-plan.js';
+
 // service-worker.js — BrowSync Chromium Extension background service worker
 // Shared for Chrome, Arc, Edge, Brave
 // MV3 — persistent state in chrome.storage, heartbeat via chrome.alarms
@@ -250,7 +252,9 @@ async function connect() {
     isConnecting = false;
     await chrome.storage.local.set({ wsState: 'open' }).catch(() => { });
 
-    send({ type: 'register', browser: DETECTED_BROWSER, instanceId: INSTANCE_ID });
+    // "bookmarkPlan": incoming bookmark syncs and removal batches are dry-run
+    // and large ones held for review; the app sends removal batches only then.
+    send({ type: 'register', browser: DETECTED_BROWSER, instanceId: INSTANCE_ID, capabilities: ['bookmarkPlan'] });
     // Do not request an unscoped snapshot on every connection. It makes every
     // browser stream all cookies back to this worker; state is pulled only for
     // the site being opened or explicitly synced.
@@ -417,6 +421,12 @@ async function applySync(message) {
 
   // Empty payload means it's a pull request from the App
   if (!payload || (payload.kind === 'raw' && Object.keys(payload.raw || {}).length === 0)) {
+    if (category === 'bookmarks' && (isApplyingSync || queuedBookmarkSyncs.length)) {
+      // Answer after the writes before it: a tree read mid-write (or before a
+      // queued removal) would show bookmarks that are about to change.
+      queuedBookmarkSyncs.push(() => handlePullRequest(category));
+      return;
+    }
     await handlePullRequest(category);
     return;
   }
@@ -424,76 +434,16 @@ async function applySync(message) {
   switch (category) {
     case 'bookmarks':
       console.log(`[BrowSync] Applying ${(payload.bookmarks || []).length} bookmarks... isFullMirror: ${message.isFullMirror}`);
-      await applyBookmarkSync(payload.bookmarks || [], message.isFullMirror, message.targetBookmarkFolder || null);
+      await applyBookmarkSync(payload.bookmarks || [], message.isFullMirror, message.targetBookmarkFolder || null, { messageId: message.messageId, approvedPlanSignature: message.approvedPlanSignature || null });
+      break;
+    case 'bookmarks_removed_batch':
+      await applyBookmarkRemovalBatch(payload.bookmarks || [], message.targetBookmarkFolder || null, { messageId: message.messageId, approvedPlanSignature: message.approvedPlanSignature || null });
       break;
     case 'bookmarks_removed':
-      if (chrome.bookmarks && payload.bookmark) {
-        const bm = payload.bookmark;
-        console.log(`[BrowSync] Removing bookmark title ${bm.title}`);
-        
-        const storageData = await chrome.storage.local.get('syncIdMap');
-        const syncIdMap = storageData.syncIdMap || {};
-        const chromeId = syncIdMap[bm.id];
-        let targetId = chromeId || bm.id;
-        const targetFolder = message.targetBookmarkFolder ? await findBookmarkFolderByPath(message.targetBookmarkFolder) : null;
-        if (message.targetBookmarkFolder && !targetFolder) {
-          send({
-            type: 'sync',
-            browser: CURRENT_BROWSER_ID,
-            category: 'bookmark_folder_missing',
-            payload: { kind: 'raw', raw: { folder: message.targetBookmarkFolder } },
-            messageId: crypto.randomUUID(),
-            timestamp: Date.now()
-          });
-          break;
-        }
-
-        async function isInsideRemovalTarget(nodeId) {
-          if (!targetFolder) return true;
-          let currentId = nodeId;
-          const seen = new Set();
-          while (currentId && !seen.has(currentId)) {
-            if (currentId === targetFolder.id) return true;
-            seen.add(currentId);
-            const nodes = await chrome.bookmarks.get(currentId).catch(() => []);
-            const node = nodes && nodes[0];
-            if (!node) return false;
-            currentId = node.parentId;
-          }
-          return false;
-        }
-        
-        await handlePullRequest('bookmark_backup');
-        isApplyingSync = true;
-        try {
-          if (await isInsideRemovalTarget(targetId)) {
-            await chrome.bookmarks.removeTree(targetId);
-          } else {
-            throw new Error('Mapped bookmark is outside selected sync folder');
-          }
-        } catch(e) {
-          if (bm.url) {
-            const results = await chrome.bookmarks.search({ url: bm.url });
-            for (const r of results) {
-               if (r.title === bm.title && await isInsideRemovalTarget(r.id)) {
-                 await chrome.bookmarks.remove(r.id).catch(()=>{});
-                 break;
-               }
-            }
-          } else {
-            const tree = targetFolder ? (await chrome.bookmarks.getSubTree(targetFolder.id).catch(() => []))[0]?.children || [] : await chrome.bookmarks.getTree();
-            let foundFolderId = null;
-            function searchFolder(nodes) {
-              for (const n of nodes) {
-                if (!n.url && n.title === bm.title) foundFolderId = n.id;
-                if (n.children && !foundFolderId) searchFolder(n.children);
-              }
-            }
-            searchFolder(tree);
-            if (foundFolderId) await chrome.bookmarks.removeTree(foundFolderId).catch(()=>{});
-          }
-        }
-        setTimeout(() => { isApplyingSync = false; }, 2000);
+      // Sent one by one by older apps. Planned and reviewed like a batch (and
+      // queued behind other writes), never removed directly.
+      if (payload.bookmark) {
+        await applyBookmarkRemovalBatch([payload.bookmark], message.targetBookmarkFolder || null, { messageId: message.messageId });
       }
       break;
     case 'localStorage':
@@ -668,7 +618,9 @@ async function handlePullRequest(category, site) {
     case 'bookmark_backup':
     case 'bookmarks': {
       if (!chrome.bookmarks) return;
-      const tree = await chrome.bookmarks.getTree();
+      await primaryRootsReady;
+      const tree = await getTreeForRoots();
+      refreshSystemRoots(tree);
       const storageData = await chrome.storage.local.get('syncIdMap');
       const syncIdMap = storageData.syncIdMap || {};
       const chromeToSafariId = new Map();
@@ -705,10 +657,7 @@ async function handlePullRequest(category, site) {
           if (!systemRoots.has(node.id)) { // Skip root and system folders
             let normalizedParentId = node.parentId;
             if (isBackupOnly && backupRootByActualId.has(node.parentId)) normalizedParentId = backupRootByActualId.get(node.parentId).snapshotId;
-            else if (node.parentId === localBarId) normalizedParentId = '1';
-            else if (node.parentId === localOtherId) normalizedParentId = '2';
-            else if (node.parentId === localMobileId) normalizedParentId = '3';
-            else if (node.parentId === '0') normalizedParentId = '1';
+            else if (rootRoleById.get(node.parentId)) normalizedParentId = rootRoleById.get(node.parentId);
 
             let mappedId = isBackupOnly ? node.id : (chromeToSafariId.get(node.id) || node.id);
             let mappedParentId = isBackupOnly ? normalizedParentId : (chromeToSafariId.get(normalizedParentId) || normalizedParentId);
@@ -724,7 +673,9 @@ async function handlePullRequest(category, site) {
               sourceBrowser: CURRENT_BROWSER_ID 
             });
           }
-          if (node.children) traverse(node.children);
+          // Unsynced roots (managed) are skipped together with their contents.
+          const isUnsyncedRoot = rootRoleById.has(node.id) && !rootRoleById.get(node.id);
+          if (node.children && !isUnsyncedRoot) traverse(node.children);
         }
       }
       if (isBackupOnly) {
@@ -805,32 +756,259 @@ let localBarId = '1';
 let localOtherId = '2';
 let localMobileId = '3';
 let systemRoots = new Set(['0', '1', '2', '3']);
+// Every top-level node ID -> portable role: '1' bar, '2' other, '3' mobile,
+// null for roots that are never synced (the enterprise managed folder, or the
+// local-only twin of a root when Chrome also shows account-storage roots).
+let rootRoleById = new Map([['1', '1'], ['2', '2'], ['3', '3']]);
 
-if (chrome.bookmarks) {
-  chrome.bookmarks.getTree().then(tree => {
-    send({
-      type: 'sync',
-      browser: CURRENT_BROWSER_ID,
-      category: 'DEBUG_TREE',
-      payload: tree[0],
-      messageId: 'debug-tree',
-      timestamp: Date.now()
-    });
+// Role -> root ID chosen earlier. It is kept until that root disappears, so a
+// root merely becoming empty or non-empty never flips which root is synced
+// (a flip would duplicate bookmarks into the other root and drop deletions).
+// Loaded before any tree is resolved; see primaryRootsReady.
+let stickyPrimaryRoots = {};
+let primaryRootsLoaded = false;
+// Chrome IDs already paired with Safari bookmarks. On a first choice the root
+// holding most of them wins, so upgrading users keep syncing the root they
+// synced before instead of having everything recreated in the other one.
+let pairedChromeIds = new Set();
+// Root ID -> number of bookmarks and folders (all depths) last seen. Telling "the user moved
+// their bookmarks to the twin root" from "the user deleted the last bookmark"
+// needs the previous state, also across worker restarts.
+let lastRootChildCounts = {};
+const primaryRootsReady = (chrome.storage?.local
+  ? chrome.storage.local.get(['bookmarkPrimaryRoots', 'syncIdMap', 'bookmarkRootChildCounts']).then(stored => {
+      stickyPrimaryRoots = stored.bookmarkPrimaryRoots || {};
+      pairedChromeIds = new Set(Object.values(stored.syncIdMap || {}));
+      lastRootChildCounts = stored.bookmarkRootChildCounts || {};
+    })
+  : Promise.resolve()
+).catch(() => {}).finally(() => { primaryRootsLoaded = true; });
+// False until roots were resolved from a real tree in this worker; the
+// built-in 1/2/3 defaults must not be trusted for removal events before that.
+let systemRootsResolved = false;
+
+// Tree reads used for root resolution are numbered. Concurrent callers can
+// finish out of order; a tree read before a newer, already processed one
+// must not change the remembered primary roots (it would undo a switch).
+let treeReadSeq = 0;
+let lastRootsTreeSeq = 0;
+async function getTreeForRoots() {
+  const seq = ++treeReadSeq;
+  const tree = await chrome.bookmarks.getTree();
+  if (tree) tree.rootsReadSeq = seq;
+  return tree;
+}
+
+// Chrome can replace its permanent folders while this worker is alive (e.g.
+// signing in moves bookmarks into account storage and the bar/other folders
+// get new IDs). Roots must therefore be re-resolved from every fresh tree, by
+// folderType rather than by ID, or the new roots leak out as ordinary folders.
+function refreshSystemRoots(tree) {
+  const topLevel = tree?.[0]?.children || [];
+  const legacyRoles = ['1', '2', '3'];
+  // Position is only a fallback for trees with neither folderType nor the
+  // classic IDs; otherwise an unknown root at index 0 would claim the bar role.
+  const hasLegacyIds = topLevel.some(node => legacyRoles.includes(node.id));
+  const roleOf = (node, index) => {
+    switch (node.folderType) {
+      case 'bookmarks-bar': return '1';
+      case 'other': return '2';
+      case 'mobile': return '3';
+      case 'managed': return null;
+    }
+    if (legacyRoles.includes(node.id)) return node.id;
+    return hasLegacyIds ? null : (legacyRoles[index] || null);
+  };
+  // When local and account roots coexist, exactly one root per role is
+  // synced. Mapping both to one role would move local-only bookmarks into the
+  // account on the next round trip, and full mirrors would prune them.
+  // The previously chosen root stays primary while it exists. It is only
+  // replaced when it disappeared, or when its bookmarks moved to the twin:
+  // it went from non-empty to empty while the twin grew (Chrome moving
+  // everything into account storage, or the user moving it all back). The
+  // primary merely becoming empty, with the twin unchanged, is the user
+  // deleting their last bookmark there; switching then would drop that
+  // deletion and pull the twin's bookmarks into sync. A new choice ranks by,
+  // in order: bookmarks already paired with Safari, holding any bookmarks,
+  // and being the account root.
+  const readSeq = tree?.rootsReadSeq;
+  const isLatestTree = readSeq === undefined || readSeq >= lastRootsTreeSeq;
+  if (readSeq !== undefined && isLatestTree) lastRootsTreeSeq = readSeq;
+  // All descendants, so moving bookmarks into a folder of the twin counts.
+  const childCount = node => {
+    let count = 0;
+    const walk = nodes => { for (const n of nodes || []) { count++; walk(n.children); } };
+    walk(node.children);
+    return count;
+  };
+  const pairedCount = node => {
+    let count = 0;
+    const walk = nodes => { for (const n of nodes || []) { if (pairedChromeIds.has(n.id)) count++; walk(n.children); } };
+    walk(node.children);
+    return count;
+  };
+  const rankKey = node => [pairedCount(node), node.children?.length ? 1 : 0, node.syncing ? 1 : 0];
+  const outranks = (a, b) => {
+    const [x, y] = [rankKey(a), rankKey(b)];
+    for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] > y[i];
+    return false;
+  };
+  const candidates = {};
+  topLevel.forEach((node, index) => {
+    const role = roleOf(node, index);
+    if (role) (candidates[role] ||= []).push(node);
+  });
+  const primary = {};
+  const undecided = [];
+  const emptySticky = [];
+  let movedToStorage = null;
+  for (const [role, nodes] of Object.entries(candidates)) {
+    const sticky = nodes.find(node => node.id === stickyPrimaryRoots[role]);
+    let movedAway = false;
+    if (sticky && childCount(sticky) === 0) {
+      const before = lastRootChildCounts[sticky.id];
+      if (before === undefined) {
+        // Remembered before child counts were recorded: only Chrome's own
+        // migration into account storage can be recognized.
+        movedAway = !sticky.syncing && nodes.some(node => node !== sticky && node.syncing && childCount(node) > 0);
+      } else {
+        // The twin must have gained at least what the primary lost; a
+        // smaller gain (e.g. Chrome sync adding one remote bookmark while the
+        // user deleted everything locally) is not a move.
+        movedAway = before > 0 && nodes.some(node => node !== sticky && childCount(node) - (lastRootChildCounts[node.id] || 0) >= before);
+      }
+    }
+    if (sticky && !movedAway) {
+      primary[role] = sticky;
+      if (childCount(sticky) === 0 && nodes.length > 1) emptySticky.push(role);
+    } else if (nodes.length > 1 && nodes.every(node => childCount(node) === 0)) {
+      undecided.push(role);
+    } else {
+      primary[role] = nodes.reduce((best, node) => (outranks(node, best) ? node : best));
+      if (movedAway) movedToStorage = Boolean(primary[role].syncing);
+    }
+  }
+  // When bookmarks moved to the other storage (e.g. Chrome's migration into
+  // the account), roles whose remembered root is empty follow; otherwise an
+  // empty local "Other Bookmarks" would stay primary while Chrome shows, and
+  // the user fills, the account one.
+  if (movedToStorage !== null) {
+    for (const role of emptySticky) {
+      const twin = candidates[role].find(node => Boolean(node.syncing) === movedToStorage);
+      if (twin) primary[role] = twin;
+    }
+  }
+  // A role whose roots are all empty follows the storage (local or account)
+  // already chosen for the other roles, so a user's bookmarks are not split
+  // between the device and the Google account.
+  const chosenStorage = Object.values(primary).map(node => Boolean(node.syncing));
+  for (const role of undecided) {
+    const nodes = candidates[role];
+    primary[role] = (chosenStorage.length && nodes.find(node => Boolean(node.syncing) === chosenStorage[0]))
+      || nodes.reduce((best, node) => (outranks(node, best) ? node : best));
+  }
+  if (primaryRootsLoaded && topLevel.length && isLatestTree) {
+    const counts = Object.fromEntries(topLevel.map(node => [node.id, childCount(node)]));
+    const countsChanged = Object.keys({ ...counts, ...lastRootChildCounts }).some(id => counts[id] !== lastRootChildCounts[id]);
+    if (countsChanged) {
+      lastRootChildCounts = counts;
+      chrome.storage?.local?.set({ bookmarkRootChildCounts: counts })?.catch(() => {});
+    }
+  }
+  // A stale tree may resolve roles for its caller but never changes the
+  // remembered choice.
+  if (primaryRootsLoaded && topLevel.length && isLatestTree) {
+    const chosen = Object.fromEntries(Object.entries(primary).map(([role, node]) => [role, node.id]));
+    const changed = Object.keys({ ...chosen, ...stickyPrimaryRoots }).some(role => chosen[role] !== stickyPrimaryRoots[role]);
+    if (changed) {
+      stickyPrimaryRoots = chosen;
+      chrome.storage?.local?.set({ bookmarkPrimaryRoots: chosen })?.catch(() => {});
+    }
+  }
+  if (topLevel.length) {
+    const primaryIds = new Map(Object.entries(primary).map(([role, node]) => [node.id, role]));
+    rootRoleById = new Map(topLevel.map(node => [node.id, primaryIds.get(node.id) || null]));
+    systemRootsResolved = true;
+  }
+  localBarId = primary['1']?.id || localBarId || '1';
+  localOtherId = primary['2']?.id || localOtherId || '2';
+  localMobileId = primary['3']?.id || '3';
+  // Users cannot create nodes directly under '0', so every top-level node is a system root.
+  systemRoots = new Set(['0', localBarId, localOtherId, localMobileId, ...topLevel.map(node => node.id)]);
+  reportSystemRootsIfChanged(topLevel);
+  return topLevel;
+}
+
+// Diagnostics for root swaps. Only structural metadata leaves the browser:
+// never titles, URLs or the tree itself, because the app persists it in logs.
+// Reports are serialized: tree reads happen concurrently, and parallel
+// storage round-trips would report the same change twice.
+let rootReportQueue = Promise.resolve();
+let lastReportedRootSignature = null;
+function reportSystemRootsIfChanged(topLevel) {
+  rootReportQueue = rootReportQueue.then(() => reportSystemRootsNow(topLevel)).catch(() => {});
+}
+
+async function reportSystemRootsNow(topLevel) {
+  if (!topLevel.length) return;
+  const roots = topLevel.map(node => ({
+    id: node.id,
+    type: node.folderType || 'unknown',
+    role: rootRoleById.get(node.id) || 'unsynced',
+    syncing: Boolean(node.syncing),
+    children: node.children?.length ?? 0
+  }));
+  // Persisted so MV3 worker restarts do not re-report an unchanged layout.
+  const signature = roots.map(root => `${root.id}:${root.type}:${root.role}:${root.syncing}`).join('|');
+  if (signature === lastReportedRootSignature) return;
+  const stored = await chrome.storage.local.get('bookmarkRootSignature').catch(() => ({}));
+  lastReportedRootSignature = signature;
+  if (stored.bookmarkRootSignature === signature) return;
+  await chrome.storage.local.set({ bookmarkRootSignature: signature }).catch(() => {});
+  send({
+    type: 'sync',
+    browser: CURRENT_BROWSER_ID,
+    category: 'bookmark_roots',
+    payload: { kind: 'raw', raw: { roots, previous: stored.bookmarkRootSignature || null } },
+    messageId: crypto.randomUUID(),
+    timestamp: Date.now()
   });
 }
 
 
 if (chrome.bookmarks) {
-  chrome.bookmarks.getTree().then(tree => {
-    const localRoots = tree[0]?.children || [];
-    localBarId = localRoots.find(node => node.id === '1')?.id || localRoots[0]?.id || '1';
-    localOtherId = localRoots.find(node => node.id === '2')?.id || localRoots[1]?.id || '2';
-    localMobileId = localRoots.find(node => node.id === '3')?.id || localRoots[2]?.id || '3';
-    systemRoots = new Set(['0', localBarId, localOtherId, localMobileId]);
-  }).catch(()=>{});
+  primaryRootsReady.then(() => getTreeForRoots()).then(refreshSystemRoots).catch(()=>{});
 }
 
 let isApplyingSync = false;
+// Overlapping writes (an incoming removal during a long apply) each hold the
+// flag; it clears only after the last one, so neither unmasks the other's
+// self-generated bookmark events.
+let applyingSyncCount = 0;
+function beginApplyingSync() {
+  applyingSyncCount++;
+  isApplyingSync = true;
+}
+function endApplyingSyncLater() {
+  setTimeout(releaseApplyingSyncNow, 2000);
+}
+function releaseApplyingSyncNow() {
+  applyingSyncCount = Math.max(0, applyingSyncCount - 1);
+  isApplyingSync = applyingSyncCount > 0;
+  runQueuedBookmarkSync();
+}
+// Bookmark writes (and bookmark pulls) that arrived while another write was
+// being applied, in arrival order. None is dropped or replaced: a removal
+// batch followed by a full sync must both run, in that order.
+const queuedBookmarkSyncs = [];
+function runQueuedBookmarkSync() {
+  // A write sets the flag synchronously when it starts, which stops the
+  // loop; a pull does not, so the next item can follow it.
+  while (!isApplyingSync && queuedBookmarkSyncs.length) {
+    const next = queuedBookmarkSyncs.shift();
+    next();
+  }
+}
 
 function localizedRootLabels() {
   return {
@@ -845,11 +1023,9 @@ async function findBookmarkFolderByPath(folderPath) {
   if (!folderPath) return null;
   const parts = folderPath.split('/').map(p => p.trim()).filter(Boolean);
   if (!parts.length) return null;
-  const tree = await chrome.bookmarks.getTree();
-  const localRoots = tree[0]?.children || [];
-  localBarId = localRoots.find(node => node.id === '1')?.id || localRoots[0]?.id || localBarId || '1';
-  localOtherId = localRoots.find(node => node.id === '2')?.id || localRoots[1]?.id || localOtherId || '2';
-  localMobileId = localRoots.find(node => node.id === '3')?.id || localRoots[2]?.id || localMobileId || '3';
+  await primaryRootsReady;
+  const tree = await getTreeForRoots();
+  refreshSystemRoots(tree);
   let candidates = tree[0]?.children || [];
   let current = null;
   const labels = localizedRootLabels();
@@ -915,21 +1091,27 @@ async function isBookmarkEventInSelectedFolder(event = {}) {
   return false;
 }
 
-async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmarkFolder = null) {
-  if (isApplyingSync) return;
-  isApplyingSync = true;
+// options.messageId identifies the app's message (echoed in a held report);
+// options.approvedPlanSignature is set when the user approved a reviewed
+// change and the app re-sent it: only exactly that change is then written.
+async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmarkFolder = null, options = {}) {
+  if (isApplyingSync) {
+    // Not dropped: the latest sync waits until the current write settles
+    // (dropping it could lose a re-sent, user-approved change).
+    queuedBookmarkSyncs.push(() => applyBookmarkSync(bookmarks, isFullMirror, targetBookmarkFolder, options));
+    return;
+  }
+  beginApplyingSync();
+  let heldForReview = false;
   try {
   if (!chrome.bookmarks) return;
 
   console.log(`[BrowSync] applyBookmarkSync: ${bookmarks.length} bookmarks, isFullMirror=${isFullMirror}, targetBookmarkFolder=${targetBookmarkFolder || '(root)'}`);
 
   // Ensure system roots are up to date
-  const localTree = await chrome.bookmarks.getTree();
-  const localRoots = localTree[0]?.children || [];
-  localBarId = localRoots.find(node => node.id === '1')?.id || localRoots[0]?.id || '1';
-  localOtherId = localRoots.find(node => node.id === '2')?.id || localRoots[1]?.id || '2';
-  localMobileId = localRoots.find(node => node.id === '3')?.id || localRoots[2]?.id || '3';
-  systemRoots = new Set(['0', localBarId, localOtherId, localMobileId]);
+  await primaryRootsReady;
+  let localTree = await getTreeForRoots();
+  let localRoots = refreshSystemRoots(localTree);
   let targetRootId = null;
   if (targetBookmarkFolder) {
     const targetFolder = await findBookmarkFolderByPath(targetBookmarkFolder);
@@ -955,7 +1137,7 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmark
     while (currentId && !seen.has(currentId)) {
       if (currentId === targetRootId) return true;
       seen.add(currentId);
-      const nodes = await chrome.bookmarks.get(currentId).catch(() => []);
+      const nodes = await api.get(currentId).catch(() => []);
       const node = nodes && nodes[0];
       if (!node) return false;
       currentId = node.parentId;
@@ -963,9 +1145,20 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmark
     return false;
   }
 
-  // Every incoming write, not only full mirrors, must have a restorable
-  // snapshot of this browser's tree before any create, move, or deletion.
-  await handlePullRequest('bookmark_backup');
+  // Resolve roots once more, right before writing, so the root IDs and the
+  // synced-node gate below come from the same tree (the awaits above may
+  // have refreshed the globals from a newer one). Only nodes under synced
+  // roots may be adopted, moved or updated: a stale mapping into an unsynced
+  // root (e.g. the local twin after Chrome switched to account roots) must
+  // not drag local-only bookmarks into the account.
+  localTree = await getTreeForRoots();
+  localRoots = refreshSystemRoots(localTree);
+  const syncedIds = syncedNodeIds(localTree);
+  // Everything below runs against an in-memory copy first (dry run). The
+  // browser is only written by replaying the recorded plan, after the
+  // change was found small or was approved by the user as reviewed.
+  const plan = new BookmarkPlan(localTree);
+  const api = plan;
 
   // Load persistent map of Safari ID -> Chrome ID to handle renames
   const storageData = await chrome.storage.local.get('syncIdMap');
@@ -1020,9 +1213,9 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmark
       // 1. Try to find by persistent ID mapping first (handles renames/moves perfectly)
       if (idMap.has(bm.id)) {
         const mappedId = idMap.get(bm.id);
-        const results = await chrome.bookmarks.get(mappedId).catch(() => []);
+        const results = await api.get(mappedId).catch(() => []);
         if (results && results.length > 0) {
-          if (await isInsideTargetFolder(results[0].id)) {
+          if (syncedIds.has(results[0].id) && await isInsideTargetFolder(results[0].id)) {
             existingNode = results[0];
           } else {
             idMap.delete(bm.id);
@@ -1035,10 +1228,10 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmark
       // 2. Fallback to title/url matching
       if (!existingNode) {
         if (bm.isFolder) {
-          const children = await chrome.bookmarks.getChildren(localParentId).catch(() => []);
+          const children = await api.getChildren(localParentId).catch(() => []);
           existingNode = children.find(c => !c.url && c.title === bm.title);
         } else if (bm.url) {
-          const searchResults = await chrome.bookmarks.search({ url: bm.url });
+          const searchResults = await api.search({ url: bm.url });
           existingNode = searchResults.find(r => r.parentId === localParentId);
           // A URL is not a bookmark identity: the same URL may intentionally
           // exist in several folders. Never adopt an arbitrary global match,
@@ -1050,22 +1243,23 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmark
       let localId;
       if (existingNode) {
         localId = existingNode.id;
-        if (existingNode.title !== bm.title || (!bm.isFolder && existingNode.url !== bm.url)) {
-          await chrome.bookmarks.update(localId, { title: bm.title, url: bm.isFolder ? undefined : bm.url }).catch(()=>{});
+        if (existingNode.title !== bm.title || (!bm.isFolder && canonicalUrl(existingNode.url) !== canonicalUrl(bm.url))) {
+          await api.update(localId, { title: bm.title, url: bm.isFolder ? undefined : bm.url }).catch(()=>{});
         }
         if (existingNode.parentId !== localParentId) {
-          await chrome.bookmarks.move(localId, { parentId: localParentId, index: i }).catch(()=>{});
+          await api.move(localId, { parentId: localParentId, index: i }).catch(()=>{});
         } else if (existingNode.index !== i) {
-          await chrome.bookmarks.move(localId, { index: i }).catch(()=>{});
+          await api.move(localId, { index: i }).catch(()=>{});
         }
       } else {
-        const created = await chrome.bookmarks.create({
+        const created = await api.create({
           parentId: localParentId,
           title: bm.title,
           url: bm.isFolder ? undefined : bm.url,
           index: i
         });
         localId = created.id;
+        syncedIds.add(localId);
       }
 
       // Keep the mapping one-to-one. Safari can regenerate UUIDs after its
@@ -1090,9 +1284,6 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmark
     await processNodes(rootsMobile, hasLocalMobileRoot ? localMobileId : localOtherId);
   }
   
-  // Persist mapping to prevent duplicates/deletions on restart or subsequent syncs
-  await chrome.storage.local.set({ syncIdMap: Object.fromEntries(idMap) });
-
 
   // STEP 2: Prune items not in incoming payload
   if (isFullMirror) {
@@ -1112,16 +1303,16 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmark
 
     console.log(`[BrowSync] Pruning. Mapped local IDs: ${mappedLocalIds.size}`);
 
-    const freshTree = await chrome.bookmarks.getTree();
+    const freshTree = await api.getTree();
 
     async function pruneTree(nodes) {
       for (const node of nodes) {
         if (!mappedLocalIds.has(node.id)) {
           console.log(`[BrowSync] Pruning: deleting "${node.title}" (${node.id})`);
           try {
-            await chrome.bookmarks.removeTree(node.id);
+            await api.removeTree(node.id);
           } catch(e) {
-            try { await chrome.bookmarks.remove(node.id); } catch(_) {}
+            try { await api.remove(node.id); } catch(_) {}
           }
           // Don't recurse into deleted nodes
         } else if (node.children) {
@@ -1131,21 +1322,243 @@ async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmark
     }
 
     if (targetRootId) {
-      const children = await chrome.bookmarks.getChildren(targetRootId).catch(() => []);
+      const children = await api.getChildren(targetRootId).catch(() => []);
       await pruneTree(children);
     } else {
-      // Prune inside all safe system roots
+      // Prune inside synced system roots only; unsynced roots never reach the
+      // sender, so their contents would always look like deletions.
       const rootNodes = freshTree[0]?.children || [];
       for (const rootNode of rootNodes) {
-        if (rootNode?.children) {
+        if (rootRoleById.get(rootNode?.id) && rootNode.children) {
           await pruneTree(rootNode.children);
         }
       }
     }
-    console.log('[BrowSync] Pruning complete');
-  } } finally {
-    setTimeout(() => { isApplyingSync = false; }, 2000);
+    console.log('[BrowSync] Pruning planned');
   }
+
+  // Review gate: a large removal, move or rewrite of existing bookmarks is
+  // not written until the user approved exactly this change.
+  const scopeRootIds = targetRootId
+    ? [targetRootId]
+    : localRoots.filter(root => rootRoleById.get(root.id)).map(root => root.id);
+  const summary = await summarizePlan(localTree, plan, scopeRootIds);
+  if (requiresConfirmation(summary.impact) && options.approvedPlanSignature !== summary.signature) {
+    heldForReview = true;
+    const preview = summary.preview();
+    console.log(`[BrowSync] Holding bookmark sync for review: ${summary.impact.removed} removed, ${summary.impact.moved} moved, ${summary.impact.modified} modified of ${summary.impact.total}`);
+    send({
+      type: 'sync',
+      browser: CURRENT_BROWSER_ID,
+      category: 'bookmark_apply_held',
+      payload: { kind: 'raw', raw: {
+        messageId: options.messageId || null,
+        signature: summary.signature,
+        destructiveSignature: summary.destructiveSignature,
+        ...summary.impact,
+        before: preview.before,
+        after: preview.after
+      } },
+      messageId: crypto.randomUUID(),
+      timestamp: Date.now()
+    });
+    return;
+  }
+
+  // Every incoming write, not only full mirrors, must have a restorable
+  // snapshot of this browser's tree before any create, move, or deletion.
+  await handlePullRequest('bookmark_backup');
+  const realIds = await replayPlan(plan, chrome.bookmarks);
+  for (const [sourceId, localId] of idMap.entries()) {
+    if (BookmarkPlan.isPlannedId(localId)) {
+      if (realIds.has(localId)) idMap.set(sourceId, realIds.get(localId));
+      else idMap.delete(sourceId);
+    }
+  }
+  // Persist mapping to prevent duplicates/deletions on restart or subsequent syncs
+  await chrome.storage.local.set({ syncIdMap: Object.fromEntries(idMap) });
+  pairedChromeIds = new Set(idMap.values());
+  send({
+    type: 'sync',
+    browser: CURRENT_BROWSER_ID,
+    category: 'bookmark_apply_result',
+    payload: { kind: 'raw', raw: { messageId: options.messageId || null, applied: true, writes: plan.ops.length } },
+    messageId: crypto.randomUUID(),
+    timestamp: Date.now()
+  });
+  } finally {
+    // A held dry run wrote nothing, so there are no own events to suppress.
+    if (heldForReview) releaseApplyingSyncNow();
+    else endApplyingSyncLater();
+  }
+}
+
+// A batch of removal events (from Safari or another browser), reviewed like
+// a full sync: every removal (with its subtree) is planned in memory first;
+// a large batch is held for the user's review, and only an approved or small
+// plan is replayed. A removal is resolved through this browser's own ID map;
+// the sender's ID is used directly only when the sender is this browser.
+async function applyBookmarkRemovalBatch(removed, targetBookmarkFolder = null, options = {}) {
+  if (isApplyingSync) {
+    queuedBookmarkSyncs.push(() => applyBookmarkRemovalBatch(removed, targetBookmarkFolder, options));
+    return;
+  }
+  beginApplyingSync();
+  let heldForReview = false;
+  // Every batch is answered, also when nothing could be done, so the app
+  // never keeps waiting on it.
+  const answer = (writes, error) => send({
+    type: 'sync', browser: CURRENT_BROWSER_ID, category: 'bookmark_apply_result',
+    payload: { kind: 'raw', raw: { messageId: options.messageId || null, applied: !error, writes, error: error || null } },
+    messageId: crypto.randomUUID(), timestamp: Date.now()
+  });
+  try {
+    if (!chrome.bookmarks) { answer(0, 'no bookmarks API'); return; }
+    await primaryRootsReady;
+    const tree = await getTreeForRoots();
+    const localRoots = refreshSystemRoots(tree);
+    const syncedIds = syncedNodeIds(tree);
+    const isSyncedNode = id => syncedIds.has(id);
+    let targetRootId = null;
+    if (targetBookmarkFolder) {
+      const targetFolder = await findBookmarkFolderByPath(targetBookmarkFolder);
+      if (!targetFolder) {
+        send({
+          type: 'sync',
+          browser: CURRENT_BROWSER_ID,
+          category: 'bookmark_folder_missing',
+          payload: { kind: 'raw', raw: { folder: targetBookmarkFolder, messageId: options.messageId || null } },
+          messageId: crypto.randomUUID(),
+          timestamp: Date.now()
+        });
+        answer(0, 'sync folder missing');
+        return;
+      }
+      targetRootId = targetFolder.id;
+    }
+    const plan = new BookmarkPlan(tree);
+    const isInside = (id, ancestorId) => {
+      for (let node = plan.nodes.get(id); node; node = plan.nodes.get(node.parentId)) {
+        if (node.parentId === ancestorId) return true;
+      }
+      return false;
+    };
+    const inScope = id => plan.nodes.has(id) && isSyncedNode(id) && (!targetRootId || isInside(id, targetRootId));
+    const { syncIdMap = {} } = await chrome.storage.local.get('syncIdMap');
+    const resolvedIds = {};
+    for (const bm of removed) {
+      const sender = typeof bm.sourceBrowser === 'string' ? bm.sourceBrowser : bm.sourceBrowser?.id;
+      // Mapped to a node that no longer exists: already removed here (e.g.
+      // a re-delivered batch). Searching by URL/title could hit a duplicate.
+      if (syncIdMap[bm.id] && !plan.nodes.has(syncIdMap[bm.id])) continue;
+      let resolvedBySearch = false;
+      let localId = syncIdMap[bm.id] || (sender === CURRENT_BROWSER_ID ? bm.id : null);
+      if (localId && !inScope(localId)) localId = null;
+      if (!localId && bm.url) {
+        // One bookmark per event: the same URL and title, inside the scope.
+        const hit = (await plan.search({ url: bm.url })).find(node => node.title === bm.title && inScope(node.id));
+        localId = hit?.id || null;
+        resolvedBySearch = Boolean(localId);
+      } else if (!localId) {
+        // A folder only by an unambiguous title.
+        const hits = [...plan.nodes.values()].filter(node => node.url === undefined && node.title === bm.title && inScope(node.id));
+        localId = hits.length === 1 ? hits[0].id : null;
+        resolvedBySearch = Boolean(localId);
+      }
+      if (localId && plan.nodes.has(localId)) {
+        // Remember what this removal resolved to: a re-delivery of the same
+        // batch then hits the "already removed" skip above instead of
+        // searching again and removing a same-titled duplicate.
+        if (resolvedBySearch) resolvedIds[bm.id] = localId;
+        await plan.removeTree(localId);
+      }
+    }
+    if (!plan.ops.length) {
+      answer(0);
+      return;
+    }
+    const scopeRootIds = targetRootId ? [targetRootId] : localRoots.filter(root => rootRoleById.get(root.id)).map(root => root.id);
+    const summary = await summarizePlan(tree, plan, scopeRootIds);
+    if (requiresConfirmation(summary.impact) && options.approvedPlanSignature !== summary.signature) {
+      heldForReview = true;
+      const preview = summary.preview();
+      console.log(`[BrowSync] Holding bookmark removals for review: ${summary.impact.removed} removed of ${summary.impact.total}`);
+      send({
+        type: 'sync',
+        browser: CURRENT_BROWSER_ID,
+        category: 'bookmark_apply_held',
+        payload: { kind: 'raw', raw: {
+          messageId: options.messageId || null,
+          signature: summary.signature,
+          destructiveSignature: summary.destructiveSignature,
+          ...summary.impact,
+          before: preview.before,
+          after: preview.after
+        } },
+        messageId: crypto.randomUUID(),
+        timestamp: Date.now()
+      });
+      return;
+    }
+    await handlePullRequest('bookmark_backup');
+    await replayPlan(plan, chrome.bookmarks);
+    if (Object.keys(resolvedIds).length) {
+      const { syncIdMap: latest = {} } = await chrome.storage.local.get('syncIdMap');
+      await chrome.storage.local.set({ syncIdMap: { ...latest, ...resolvedIds } });
+    }
+    answer(plan.ops.length);
+  } finally {
+    if (heldForReview) releaseApplyingSyncNow();
+    else endApplyingSyncLater();
+  }
+}
+
+// True when nodeId lives under a synced root. Bookmarks in unsynced roots
+// must never be reported to the app (which falls back to URL/title matching)
+// nor touched by incoming syncs.
+async function isUnderSyncedRoot(nodeId) {
+  let currentId = nodeId;
+  const seen = new Set();
+  while (currentId && currentId !== '0' && !seen.has(currentId)) {
+    seen.add(currentId);
+    const node = (await chrome.bookmarks.get(currentId).catch(() => []))[0];
+    if (!node) return false;
+    if (node.parentId === '0') {
+      // Judge by the roles in effect when the event happened: removing the
+      // last bookmark of the primary root may make its twin primary on the
+      // next resolution, but that removal still belongs to the synced root.
+      // Resolve only if roles were never resolved or this root is unknown.
+      if (!systemRootsResolved || !rootRoleById.has(node.id)) {
+        await primaryRootsReady;
+        // A worker woken by this very event has no roles yet; the persisted
+        // choice reflects the state before the event (the removal may have
+        // just emptied the primary root).
+        if (!systemRootsResolved && Object.keys(stickyPrimaryRoots).length) {
+          return Object.values(stickyPrimaryRoots).includes(node.id);
+        }
+        // Always a fresh read: a cached tree could persist a stale choice.
+        refreshSystemRoots(await getTreeForRoots());
+      }
+      return Boolean(rootRoleById.get(node.id));
+    }
+    currentId = node.parentId;
+  }
+  return false;
+}
+
+// IDs of every node under a synced root in the given tree.
+function syncedNodeIds(tree) {
+  const ids = new Set();
+  const collect = nodes => {
+    for (const node of nodes || []) {
+      ids.add(node.id);
+      collect(node.children);
+    }
+  };
+  for (const root of tree?.[0]?.children || []) {
+    if (rootRoleById.get(root.id)) collect(root.children);
+  }
+  return ids;
 }
 
 function queueRemovedBookmark(deletedBm) {
@@ -1183,6 +1596,9 @@ if (chrome.bookmarks) {
   chrome.bookmarks.onCreated.addListener((id, node) => handleBookmarkChange('created', { id, parentId: node?.parentId }));
   chrome.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
     if (isApplyingSync) return;
+    // Chrome swapping its permanent folders is not a user deletion.
+    if (systemRoots.has(id) || removeInfo.parentId === '0') return;
+    if (!(await isUnderSyncedRoot(removeInfo.parentId))) return;
     if (!(await isBookmarkEventInSelectedFolder({ id, parentId: removeInfo.parentId || removeInfo.node?.parentId }))) {
       console.log('[BrowSync] Ignored bookmark removal outside selected sync folder');
       return;
@@ -1202,9 +1618,7 @@ if (chrome.bookmarks) {
     // Also map the parentId so Safari can use it for context
     const rawParentId = removeInfo.parentId || removeInfo.node?.parentId;
     let mappedParentId = rawParentId;
-    if (rawParentId === localBarId) mappedParentId = '1';
-    else if (rawParentId === localOtherId) mappedParentId = '2';
-    else if (rawParentId === localMobileId) mappedParentId = '3';
+    if (rootRoleById.get(rawParentId)) mappedParentId = rootRoleById.get(rawParentId);
 
     const deletedBm = {
       id: mappedId,

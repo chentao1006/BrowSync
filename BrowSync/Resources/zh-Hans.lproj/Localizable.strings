@@ -106,7 +106,6 @@
 /* PRO features */
 "Automatic Sync" = "自动同步";
 "Sync automatically whenever changes are detected" = "检测到变化时自动同步";
-"iCloud Sync" = "iCloud 同步";
 "Keep sync data in iCloud across your Macs" = "在多台 Mac 之间通过 iCloud 保持同步数据";
 
 /* General view */
@@ -131,7 +130,6 @@
 "Set as Default" = "设为默认";
 "Notifications" = "通知";
 "Sync Complete" = "同步完成";
-"Browser Connected" = "浏览器已连接";
 "Rule Match" = "规则匹配";
 "Updates" = "更新";
 "Automatically check for updates" = "自动检查更新";
@@ -176,7 +174,6 @@
 /* Nav sidebar */
 "State Sync" = "状态同步";
 "Bookmark Sync" = "书签同步";
-"Link Router" = "链接分流";
 "Select an item" = "请选择一项";
 
 /* Extension compatibility */
@@ -213,7 +210,6 @@
 "Known Unsyncable Domains" = "已知无法同步的域名：";
 "Sync Warning Solution" = "方案：";
 "Sync Warning Solution Detail" = "对于无法通过同步保持登录的网站，建议您在各浏览器中分别手动登录，或将该网站加入下方列表并关闭其状态同步。";
-"Participating Browsers" = "参与同步的浏览器";
 "Website Options" = "网站选项";
 "Default Strategy" = "默认策略";
 "Data Source Browser" = "数据源浏览器";
@@ -599,3 +595,46 @@
 "See App Store" = "查看 App Store";
 "Send Feedback" = "意见建议";
 "day" = "天"; "days" = "天"; "week" = "周"; "weeks" = "周"; "month" = "个月"; "months" = "个月"; "year" = "年"; "years" = "年"; "period" = "订阅期";
+
+"Large Bookmark Change Blocked" = "已拦截大规模书签改动";
+"Review Changes" = "查看更改";
+"Review Bookmark Changes" = "确认书签更改";
+"After Sync" = "同步后";
+"Added" = "新增";
+"Removed" = "删除";
+"Moved" = "移动";
+"Apply Changes" = "应用更改";
+
+"%@ reported %d individual bookmark deletions within a few seconds. Nothing was changed — tap Apply Deletions if this is expected." = "%@ 在几秒内报告了 %d 次书签删除。未做任何更改——如确认无误，请点击“应用删除”。";
+"%d of %d bookmarks in %@ would be removed based on a single read. Nothing was changed — tap Apply Deletions if this is expected." = "根据单次读取结果，%3$@ 的 %2$d 个书签中将有 %1$d 个被删除。未做任何更改——如确认无误，请点击“应用删除”。";
+"Apply Deletions" = "应用删除";
+"Bookmark Deletion Burst Blocked" = "已拦截短时间内的大量书签删除";
+"Cannot Sync Domain" = "无法同步此域名";
+"Confirm deletion" = "确认删除";
+"Large Bookmark Deletion Blocked" = "已拦截大规模书签删除";
+"Real-time auto sync is a Professional feature. Unlock Professional to enable it." = "实时自动同步为专业版功能，解锁专业版即可启用。";
+"Share open tabs between browsers" = "在浏览器之间共享打开的标签页";
+"The domain '%@' cannot be synced because of its security and authentication mechanisms." = "由于域名“%@”的安全和身份验证机制，无法同步此域名。";
+
+"Syncing from %@ would remove %d, move %d and modify %d existing Safari bookmarks. Nothing was changed — click to review." = "来自 %@ 的同步将删除 %d 个、移动 %d 个、修改 %d 个 Safari 现有书签。已暂停，未做任何更改——点击查看。";
+"Syncing from %@ would remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet." = "来自 %@ 的同步将删除 %d 个、移动 %d 个、修改 %d 个书签（Safari 现有 %d 个）。目前尚未写入任何更改。";
+"Modified" = "修改";
+
+"Review Blocked Bookmark Changes" = "查看被拦截的书签更改";
+
+"Keeping Safari as is also brings the other browsers back to Safari's bookmarks." = "选择保持 Safari 不变后，其他浏览器也会恢复为 Safari 的书签。";
+
+"Resume Bookmark Sync from %@" = "恢复来自 %@ 的书签同步";
+"Keeping Safari as is pauses later bookmark changes from this browser until you resume them from the menu bar." = "选择保持 Safari 不变后，来自该浏览器的后续书签更改将暂停同步，直到你在菜单栏中恢复。";
+
+"Syncing would remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet." = "同步将删除 %1$d 个、移动 %2$d 个、修改 %3$d 个书签（%5$@ 现有 %4$d 个）。目前尚未写入任何更改。";
+"Syncing would remove %d, move %d and modify %d existing bookmarks in %@. Nothing was changed — click to review." = "同步将删除 %4$@ 中的 %1$d 个、移动 %2$d 个、修改 %3$d 个现有书签。已暂停，未做任何更改——点击查看。";
+"%@ Now" = "%@ 当前";
+"Keep %@ As Is" = "保持 %@ 不变";
+"Keeping %@ as is pauses later bookmark changes to it until you resume them from the menu bar." = "选择保持 %@ 不变后，同步到该浏览器的后续书签更改将暂停，直到你在菜单栏中恢复。";
+"Resume Bookmark Sync to %@" = "恢复到 %@ 的书签同步";
+
+"Backup" = "备份";
+
+"Extension Update Needed" = "需要更新扩展";
+"Update the BrowSync extension in %@ to keep syncing bookmarks. Until then no bookmark changes are sent to it." = "请更新 %@ 中的 BrowSync 扩展以继续同步书签。在此之前，不会向其发送任何书签更改。";

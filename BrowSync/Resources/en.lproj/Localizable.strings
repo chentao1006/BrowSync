@@ -29,7 +29,6 @@
 "Add rules to automatically route URLs to specific browsers based on domain, URL pattern, or source app." = "Add rules to automatically route URLs to specific browsers based on domain, URL pattern, or source app.";
 "Add First Rule" = "Add First Rule";
 "Unnamed Rule" = "Unnamed Rule";
-"Default" = "Default";
 "All other URLs" = "All other URLs";
 "No conditions set" = "No conditions set";
 "All Others" = "All Others";
@@ -108,7 +107,6 @@
 /* PRO features */
 "Automatic Sync" = "Automatic Sync";
 "Sync automatically whenever changes are detected" = "Sync automatically whenever changes are detected";
-"iCloud Sync" = "iCloud Sync";
 "Keep sync data in iCloud across your Macs" = "Keep sync data in iCloud across your Macs";
 
 /* General view */
@@ -127,14 +125,11 @@
 "Language" = "Language";
 "Language change takes effect after restart." = "Language change takes effect after restart.";
 "English" = "English";
-"Default Browser" = "Default Browser";
 "Set BrowSync as Default Browser" = "Set BrowSync as Default Browser";
 "BrowSync will receive all http/https links and route them using your rules" = "BrowSync will receive all http/https links and route them using your rules";
 "Restore Safari" = "Restore Safari";
 "Set as Default" = "Set as Default";
 "Notifications" = "Notifications";
-"Sync Complete" = "Sync Complete";
-"Browser Connected" = "Browser Connected";
 "Rule Match" = "Rule Match";
 "Updates" = "Updates";
 "Automatically check for updates" = "Automatically check for updates";
@@ -167,7 +162,6 @@
 /* Notifications */
 "Sync Complete" = "Sync Complete";
 "Synced: %@" = "Synced: %@";
-"Browser Connected" = "Browser Connected";
 "%@ is now connected to BrowSync" = "%@ is now connected to BrowSync";
 "Rule Matched" = "Rule Matched";
 "'%@' → %@: %@" = "'%@' → %@: %@";
@@ -181,7 +175,6 @@
 /* Nav sidebar */
 "State Sync" = "State Sync";
 "Bookmark Sync" = "Bookmark Sync";
-"Link Router" = "Link Router";
 "Select an item" = "Select an item";
 
 /* Extension compatibility */
@@ -218,7 +211,6 @@
 "Known Unsyncable Domains" = "Known unsyncable domains:";
 "Sync Warning Solution" = "Solution:";
 "Sync Warning Solution Detail" = "For sites that cannot maintain login through sync, it is recommended to log in manually in each browser, or add the site to the list below and disable its state sync.";
-"Participating Browsers" = "Participating Browsers";
 "Website Options" = "Website Options";
 "Default Strategy" = "Default Strategy";
 "Data Source Browser" = "Data Source Browser";
@@ -573,3 +565,48 @@
 "See App Store" = "See App Store";
 "Send Feedback" = "Send Feedback";
 "day" = "day"; "days" = "days"; "week" = "week"; "weeks" = "weeks"; "month" = "month"; "months" = "months"; "year" = "year"; "years" = "years"; "period" = "period";
+
+"Large Bookmark Change Blocked" = "Large Bookmark Change Blocked";
+"Review Changes" = "Review Changes";
+"Review Bookmark Changes" = "Review Bookmark Changes";
+"After Sync" = "After Sync";
+"Apply Changes" = "Apply Changes";
+"Added" = "Added";
+"Removed" = "Removed";
+"Moved" = "Moved";
+
+"%@ reported %d individual bookmark deletions within a few seconds. Nothing was changed — tap Apply Deletions if this is expected." = "%@ reported %d individual bookmark deletions within a few seconds. Nothing was changed — click Apply Deletions if this is expected.";
+"%d of %d bookmarks in %@ would be removed based on a single read. Nothing was changed — tap Apply Deletions if this is expected." = "%d of %d bookmarks in %@ would be removed based on a single read. Nothing was changed — click Apply Deletions if this is expected.";
+"Apply Deletions" = "Apply Deletions";
+"Bookmark Deletion Burst Blocked" = "Bookmark Deletion Burst Blocked";
+"Cannot Sync Domain" = "Cannot Sync Domain";
+"Confirm deletion" = "Confirm deletion";
+"Large Bookmark Deletion Blocked" = "Large Bookmark Deletion Blocked";
+"No active tabs found." = "No active tabs found.";
+"Real-time auto sync is a Professional feature. Unlock Professional to enable it." = "Real-time auto sync is a Professional feature. Unlock Professional to enable it.";
+"Restore" = "Restore";
+"Share open tabs between browsers" = "Share open tabs between browsers";
+"The domain '%@' cannot be synced because of its security and authentication mechanisms." = "The domain '%@' cannot be synced because of its security and authentication mechanisms.";
+
+"Syncing from %@ would remove %d, move %d and modify %d existing Safari bookmarks. Nothing was changed — click to review." = "Syncing from %@ would remove %d, move %d and modify %d existing Safari bookmarks. Nothing was changed — click to review.";
+"Syncing from %@ would remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet." = "Syncing from %@ would remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet.";
+"Modified" = "Modified";
+
+"Review Blocked Bookmark Changes" = "Review Blocked Bookmark Changes";
+
+"Keeping Safari as is also brings the other browsers back to Safari's bookmarks." = "Keeping Safari as is also brings the other browsers back to Safari's bookmarks.";
+
+"Resume Bookmark Sync from %@" = "Resume Bookmark Sync from %@";
+"Keeping Safari as is pauses later bookmark changes from this browser until you resume them from the menu bar." = "Keeping Safari as is pauses later bookmark changes from this browser until you resume them from the menu bar.";
+
+"Syncing would remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet." = "Syncing would remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet.";
+"Syncing would remove %d, move %d and modify %d existing bookmarks in %@. Nothing was changed — click to review." = "Syncing would remove %d, move %d and modify %d existing bookmarks in %@. Nothing was changed — click to review.";
+"%@ Now" = "%@ Now";
+"Keep %@ As Is" = "Keep %@ As Is";
+"Keeping %@ as is pauses later bookmark changes to it until you resume them from the menu bar." = "Keeping %@ as is pauses later bookmark changes to it until you resume them from the menu bar.";
+"Resume Bookmark Sync to %@" = "Resume Bookmark Sync to %@";
+
+"Backup" = "Backup";
+
+"Extension Update Needed" = "Extension Update Needed";
+"Update the BrowSync extension in %@ to keep syncing bookmarks. Until then no bookmark changes are sent to it." = "Update the BrowSync extension in %@ to keep syncing bookmarks. Until then no bookmark changes are sent to it.";

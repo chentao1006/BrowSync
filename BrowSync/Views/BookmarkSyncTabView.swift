@@ -844,12 +844,14 @@ struct RecentBookmarkBackupsWindow: View {
             guard bookmark.isFolder || url != nil else { return nil }
             return SyncBookmark(id: bookmark.id, title: bookmark.title, url: url, parentId: bookmark.parentId, isFolder: bookmark.isFolder, sortIndex: bookmark.sortIndex, inBookmarksBar: bookmark.inBookmarksBar ?? false, dateAdded: bookmark.dateAdded)
         }
-        appState.syncService.recordInternalWrite()
-        _ = safariService.applyBookmarks(syncBookmarks, from: "Backup Restore", isFullMirror: replacing)
+        // Reviewed like any large write; held restores open the review window.
+        let appliedToSafari = appState.syncService.applyRestoreToSafari(syncBookmarks, replacing: replacing)
 
         var message = WSMessage(type: .sync, site: "*", category: "bookmarks", payload: .bookmarks(restoreSource), messageId: UUID().uuidString, timestamp: Date().timeIntervalSince1970)
         message.isFullMirror = replacing
-        appState.daemon.broadcast(message, participatingBrowsers: appState.settingsService.syncSettings.bookmarkParticipatingBrowsers)
+        // Routed so a large restore held by a browser's extension is reviewed.
+        appState.syncService.broadcastBookmarkSync(message)
+        guard appliedToSafari else { return }
         let itemCounts = backupItemCounts(backup.bookmarks)
         restoreResult = BookmarkRestoreResult(bookmarkCount: itemCounts.bookmarkCount, folderCount: itemCounts.folderCount)
     }
@@ -1080,7 +1082,8 @@ struct RecentlyDeletedBookmarksWindow: View {
         }
 
         appState.syncService.recordInternalWrite()
-        safariSvc.applyBookmarks(currentSafariBookmarks, from: "RestoreAll", isFullMirror: false)
+        // Reviewed like any large write (an additive restore rarely is).
+        let appliedToSafari = appState.syncService.applyRestoreToSafari(currentSafariBookmarks, replacing: false)
 
         var restoredItems: [SyncBookmark] = []
         for item in backupService.deletedBookmarks {
@@ -1106,9 +1109,10 @@ struct RecentlyDeletedBookmarksWindow: View {
             messageId: UUID().uuidString,
             timestamp: Date().timeIntervalSince1970
         )
-        appState.daemon.broadcast(msg, participatingBrowsers: appState.settingsService.syncSettings.bookmarkParticipatingBrowsers)
+        appState.syncService.broadcastBookmarkSync(msg)
 
-        backupService.clearAllDeletedBookmarks()
+        // Kept in the trash while the restore awaits review (or was kept out).
+        if appliedToSafari { backupService.clearAllDeletedBookmarks() }
     }
 
     private func restoreBookmark(_ item: DeletedBookmark) {
@@ -1128,7 +1132,8 @@ struct RecentlyDeletedBookmarksWindow: View {
         currentSafariBookmarks.append(contentsOf: newBookmarks)
 
         appState.syncService.recordInternalWrite()
-        safariSvc.applyBookmarks(currentSafariBookmarks, from: "Restore", isFullMirror: false)
+        // Reviewed like any large write (an additive restore rarely is).
+        let appliedToSafari = appState.syncService.applyRestoreToSafari(currentSafariBookmarks, replacing: false)
 
         let broadcastBookmarks = newBookmarks.map { b in
             Bookmark(
@@ -1150,9 +1155,9 @@ struct RecentlyDeletedBookmarksWindow: View {
             messageId: UUID().uuidString,
             timestamp: Date().timeIntervalSince1970
         )
-        appState.daemon.broadcast(msg, participatingBrowsers: appState.settingsService.syncSettings.bookmarkParticipatingBrowsers)
+        appState.syncService.broadcastBookmarkSync(msg)
 
-        backupService.removeDeletedBookmark(id: item.id)
+        if appliedToSafari { backupService.removeDeletedBookmark(id: item.id) }
     }
 }
 

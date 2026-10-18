@@ -33,6 +33,13 @@ struct WSMessage: Codable {
     var error: String?
     var isFullMirror: Bool?
     var targetBookmarkFolder: String?
+    /// Set when re-sending a bookmark sync the user approved after review: the
+    /// receiving extension writes it only if its dry run yields exactly the
+    /// reviewed plan (this signature).
+    var approvedPlanSignature: String?
+    /// Sent with `register`: features this extension build supports
+    /// (e.g. "bookmarkPlan" — reviewed full syncs and removal batches).
+    var capabilities: [String]?
 
     // MARK: Factory Methods
 

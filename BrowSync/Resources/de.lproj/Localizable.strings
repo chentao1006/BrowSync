@@ -96,7 +96,6 @@
 
 "Automatic Sync" = "Automatische Synchronisierung";
 "Sync automatically whenever changes are detected" = "Automatisch synchronisieren, wenn Änderungen erkannt werden";
-"iCloud Sync" = "iCloud-Synchronisierung";
 "Keep sync data in iCloud across your Macs" = "Synchronisierungsdaten in iCloud halten";
 
 "App Behavior" = "App-Verhalten";
@@ -121,7 +120,6 @@
 "Set as Default" = "Als Standard festlegen";
 "Notifications" = "Benachrichtigungen";
 "Sync Complete" = "Synchronisierung abgeschlossen";
-"Browser Connected" = "Browser verbunden";
 "Rule Match" = "Regelübereinstimmung";
 "Updates" = "Aktualisierungen";
 "Automatically check for updates" = "Automatisch nach Updates suchen";
@@ -157,7 +155,6 @@
 
 "State Sync" = "Status-Sync";
 "Bookmark Sync" = "Lesezeichen-Sync";
-"Link Router" = "Link Router";
 "Select an item" = "Element auswählen";
 
 "Installed Browsers" = "Installierte Browser";
@@ -254,15 +251,15 @@
 "\(field.displayName) \(s) to \(e)" = "%1$@ %2$@ bis %3$@";
 "\(field.displayName) \(self.operator.displayName) \(value)" = "%1$@ %2$@ %3$@";
 "Open \(info.displayName)" = "%1$@ oeffnen";
-" OR " = " OR ";
-" AND " = " AND ";
+" OR " = " ODER ";
+" AND " = " UND ";
 
 /* Swift UI Auto Extracted */
 "View source code on GitHub" = "Quellcode auf GitHub ansehen";
 "·" = "·";
 "Reason:" = "Reason:";
 "BrowSync Extension" = "BrowSync Extension";
-"Open %@" = "Open %@";
+"Open %@" = "%@ öffnen";
 "Exclude listed websites" = "Aufgelistete Websites ausschliessen";
 "Auto Sync Bookmarks" = "Auto Sync Bookmarks";
 "Not Equals" = "Ungleich";
@@ -278,7 +275,7 @@
 "Only sync listed websites" = "Nur aufgelistete Websites synchronisieren";
 "Delete this backup?" = "Delete this backup?";
 "Sync History & Backups" = "Sync History & Backups";
-"Restore" = "Restore";
+"Restore" = "Wiederherstellen";
 "Loading app list..." = "Loading app list...";
 "Local Storage" = "Lokaler Speicher";
 "All Conditions" = "Alle Bedingungen";
@@ -296,7 +293,7 @@
 "Regex Match" = "Regex-Treffer";
 "No conditions set. This rule will not apply." = "No conditions set. This rule will not apply.";
 "Time Period" = "Zeitraum";
-"%@ %@ to %@" = "%@ %@ to %@";
+"%@ %@ to %@" = "%@ %@ bis %@";
 "Many sites use browser fingerprinting or device-bound security tokens for authentication. Due to browser security restrictions, extensions cannot extract this data, and these tokens may be invalidated in different browser environments." = "Many sites use browser fingerprinting or device-bound security tokens for authentication. Due to browser security restrictions, extensions cannot extract this data, and these tokens may be invalidated in different browser environments.";
 "Delete this routing rule?" = "Delete this routing rule?";
 "URL" = "URL";
@@ -451,9 +448,9 @@
 
 
 
-"Grant Access" = "Grant Access";
-"Please select the Safari folder to grant BrowSync access for syncing." = "Please select the Safari folder to grant BrowSync access for syncing.";
-"Safari requires folder access due to Sandbox restrictions." = "Safari requires folder access due to Sandbox restrictions.";
+"Grant Access" = "Zugriff erlauben";
+"Please select the Safari folder to grant BrowSync access for syncing." = "Bitte wählen Sie den Safari-Ordner aus, um BrowSync den Zugriff für die Synchronisierung zu erlauben.";
+"Safari requires folder access due to Sandbox restrictions." = "Aufgrund von Sandbox-Beschränkungen benötigt Safari Ordnerzugriff.";
 "Safari Bookmark Permission Required" = "Safari-Lesezeichenzugriff erforderlich";
 "BrowSync now uses limited folder access instead of Full Disk Access. To keep your existing Safari bookmark sync running, select the Safari folder in the next dialog." = "BrowSync verwendet jetzt eingeschränkten Ordnerzugriff statt vollständigem Festplattenzugriff. Wählen Sie im nächsten Dialog den Safari-Ordner aus, um Ihre bestehende Safari-Lesezeichensynchronisierung fortzusetzen.";
 "Not Now" = "Jetzt nicht";
@@ -529,3 +526,53 @@
 "See App Store" = "Im App Store ansehen";
 "Send Feedback" = "Feedback senden";
 "day" = "Tag"; "days" = "Tage"; "week" = "Woche"; "weeks" = "Wochen"; "month" = "Monat"; "months" = "Monate"; "year" = "Jahr"; "years" = "Jahre"; "period" = "Zeitraum";
+
+"Large Bookmark Change Blocked" = "Große Lesezeichenänderung blockiert";
+"Review Changes" = "Änderungen prüfen";
+"Review Bookmark Changes" = "Lesezeichenänderungen prüfen";
+"After Sync" = "Nach der Synchronisierung";
+"Apply Changes" = "Änderungen anwenden";
+"Added" = "Hinzugefügt";
+"Removed" = "Entfernt";
+"Moved" = "Verschoben";
+
+"%@ reported %d individual bookmark deletions within a few seconds. Nothing was changed — tap Apply Deletions if this is expected." = "%@ hat innerhalb weniger Sekunden %d einzelne Lesezeichen-Löschungen gemeldet. Es wurde nichts geändert – klicken Sie auf „Löschungen anwenden“, wenn dies beabsichtigt ist.";
+"%d of %d bookmarks in %@ would be removed based on a single read. Nothing was changed — tap Apply Deletions if this is expected." = "Auf Grundlage eines einzigen Lesevorgangs würden %d von %d Lesezeichen in %@ entfernt. Es wurde nichts geändert – klicken Sie auf „Löschungen anwenden“, wenn dies beabsichtigt ist.";
+"Add Custom Browser..." = "Eigenen Browser hinzufügen …";
+"Apply Deletions" = "Löschungen anwenden";
+"Bookmark Deletion Burst Blocked" = "Gehäufte Lesezeichen-Löschungen blockiert";
+"Cannot Sync Domain" = "Domain kann nicht synchronisiert werden";
+"Confirm deletion" = "Löschen bestätigen";
+"Large Bookmark Deletion Blocked" = "Umfangreiche Lesezeichen-Löschung blockiert";
+"No active tabs found." = "Keine geöffneten Tabs gefunden.";
+"One-time purchase" = "Einmalkauf";
+"Open App Store Version" = "App-Store-Version öffnen";
+"Purchasing..." = "Kauf läuft …";
+"Real-time auto sync is a Professional feature. Unlock Professional to enable it." = "Echtzeit-Autosync ist eine Professional-Funktion. Schalten Sie Professional frei, um sie zu aktivieren.";
+"Remove Browser" = "Browser entfernen";
+"Restore Purchases" = "Käufe wiederherstellen";
+"Share open tabs between browsers" = "Geöffnete Tabs zwischen Browsern teilen";
+"The domain '%@' cannot be synced because of its security and authentication mechanisms." = "Die Domain „%@“ kann aufgrund ihrer Sicherheits- und Authentifizierungsmechanismen nicht synchronisiert werden.";
+
+"Syncing from %@ would remove %d, move %d and modify %d existing Safari bookmarks. Nothing was changed — click to review." = "Die Synchronisierung von %@ würde %d vorhandene Safari-Lesezeichen entfernen, %d verschieben und %d ändern. Es wurde nichts geändert – zum Prüfen klicken.";
+"Syncing from %@ would remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet." = "Die Synchronisierung von %@ würde %d entfernen, %d verschieben und %d ändern – von %d vorhandenen Safari-Lesezeichen. Es wurde noch nichts geschrieben.";
+"Modified" = "Geändert";
+
+"Review Blocked Bookmark Changes" = "Blockierte Lesezeichenänderungen prüfen";
+
+"Keeping Safari as is also brings the other browsers back to Safari's bookmarks." = "Wenn Sie Safari unverändert lassen, werden auch die anderen Browser auf die Safari-Lesezeichen zurückgesetzt.";
+
+"Resume Bookmark Sync from %@" = "Lesezeichen-Synchronisierung von %@ fortsetzen";
+"Keeping Safari as is pauses later bookmark changes from this browser until you resume them from the menu bar." = "Wenn Sie Safari unverändert lassen, werden spätere Lesezeichenänderungen aus diesem Browser angehalten, bis Sie sie über die Menüleiste fortsetzen.";
+
+"Syncing would remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet." = "Die Synchronisierung würde %d entfernen, %d verschieben und %d ändern – von %d vorhandenen Lesezeichen in %@. Es wurde noch nichts geschrieben.";
+"Syncing would remove %d, move %d and modify %d existing bookmarks in %@. Nothing was changed — click to review." = "Die Synchronisierung würde in %4$@ %1$d vorhandene Lesezeichen entfernen, %2$d verschieben und %3$d ändern. Es wurde nichts geändert – zum Prüfen klicken.";
+"%@ Now" = "%@ jetzt";
+"Keep %@ As Is" = "%@ unverändert lassen";
+"Keeping %@ as is pauses later bookmark changes to it until you resume them from the menu bar." = "Wenn Sie %@ unverändert lassen, werden spätere Lesezeichenänderungen dafür angehalten, bis Sie sie über die Menüleiste fortsetzen.";
+"Resume Bookmark Sync to %@" = "Lesezeichen-Synchronisierung zu %@ fortsetzen";
+
+"Backup" = "Sicherung";
+
+"Extension Update Needed" = "Erweiterung muss aktualisiert werden";
+"Update the BrowSync extension in %@ to keep syncing bookmarks. Until then no bookmark changes are sent to it." = "Aktualisieren Sie die BrowSync-Erweiterung in %@, um Lesezeichen weiter zu synchronisieren. Bis dahin werden keine Lesezeichenänderungen dorthin gesendet.";

@@ -96,7 +96,6 @@
 
 "Automatic Sync" = "自動同期";
 "Sync automatically whenever changes are detected" = "変更時に自動同期";
-"iCloud Sync" = "iCloud同期";
 "Keep sync data in iCloud across your Macs" = "複数のMac間で同期データを保持";
 
 "App Behavior" = "アプリの動作";
@@ -121,7 +120,6 @@
 "Set as Default" = "デフォルトに設定";
 "Notifications" = "通知";
 "Sync Complete" = "同期完了";
-"Browser Connected" = "ブラウザが接続されました";
 "Rule Match" = "ルールの照合";
 "Updates" = "アップデート";
 "Automatically check for updates" = "アップデートを自動的に確認";
@@ -157,7 +155,6 @@
 
 "State Sync" = "状態の同期";
 "Bookmark Sync" = "ブックマークの同期";
-"Link Router" = "ルーター";
 "Select an item" = "アイテムを選択";
 
 "Installed Browsers" = "インストール済みブラウザ";
@@ -262,7 +259,7 @@
 "·" = "·";
 "Reason:" = "Reason:";
 "BrowSync Extension" = "BrowSync Extension";
-"Open %@" = "Open %@";
+"Open %@" = "%@ を開く";
 "Exclude listed websites" = "一覧の Web サイトを除外";
 "Auto Sync Bookmarks" = "Auto Sync Bookmarks";
 "Not Equals" = "等しくない";
@@ -278,7 +275,7 @@
 "Only sync listed websites" = "一覧の Web サイトのみ同期";
 "Delete this backup?" = "Delete this backup?";
 "Sync History & Backups" = "Sync History & Backups";
-"Restore" = "Restore";
+"Restore" = "復元";
 "Loading app list..." = "Loading app list...";
 "Local Storage" = "ローカルストレージ";
 "All Conditions" = "すべての条件";
@@ -287,7 +284,7 @@
 "Bookmark Source" = "ブックマーク元";
 "No backups yet" = "No backups yet";
 "© 2026 BrowSync" = "© 2026 BrowSync";
-"Version %@ (%@)" = "Version %@ (%@)";
+"Version %@ (%@)" = "バージョン %@ (%@)";
 "localStorage data for each site" = "各サイトの localStorage データ";
 "Some sites may not sync state successfully" = "Some sites may not sync state successfully";
 "This action cannot be undone." = "This action cannot be undone.";
@@ -297,7 +294,7 @@
 "No conditions set. This rule will not apply." = "No conditions set. This rule will not apply.";
 "Time Period" = "期間";
 "Open %1$@" = "Open %1$@";
-"%@ %@ to %@" = "%@ %@ to %@";
+"%@ %@ to %@" = "%@ %@〜%@";
 "Many sites use browser fingerprinting or device-bound security tokens for authentication. Due to browser security restrictions, extensions cannot extract this data, and these tokens may be invalidated in different browser environments." = "Many sites use browser fingerprinting or device-bound security tokens for authentication. Due to browser security restrictions, extensions cannot extract this data, and these tokens may be invalidated in different browser environments.";
 "Delete this routing rule?" = "Delete this routing rule?";
 "URL" = "URL";
@@ -453,9 +450,9 @@
 
 
 
-"Grant Access" = "Grant Access";
-"Please select the Safari folder to grant BrowSync access for syncing." = "Please select the Safari folder to grant BrowSync access for syncing.";
-"Safari requires folder access due to Sandbox restrictions." = "Safari requires folder access due to Sandbox restrictions.";
+"Grant Access" = "アクセスを許可";
+"Please select the Safari folder to grant BrowSync access for syncing." = "同期のために BrowSync にアクセスを許可するには、Safari フォルダを選択してください。";
+"Safari requires folder access due to Sandbox restrictions." = "サンドボックスの制限により、Safari のフォルダへのアクセス許可が必要です。";
 "Safari Bookmark Permission Required" = "Safariブックマークへのアクセス許可が必要です";
 "BrowSync now uses limited folder access instead of Full Disk Access. To keep your existing Safari bookmark sync running, select the Safari folder in the next dialog." = "BrowSyncはフルディスクアクセスの代わりに、制限付きフォルダアクセスを使用するようになりました。既存のSafariブックマーク同期を継続するには、次のダイアログでSafariフォルダを選択してください。";
 "Not Now" = "今はしない";
@@ -531,3 +528,53 @@
 "See App Store" = "App Store で見る";
 "Send Feedback" = "フィードバックを送る";
 "day" = "日"; "days" = "日"; "week" = "週間"; "weeks" = "週間"; "month" = "か月"; "months" = "か月"; "year" = "年"; "years" = "年"; "period" = "期間";
+
+"Large Bookmark Change Blocked" = "大規模なブックマーク変更をブロックしました";
+"Review Changes" = "変更を確認";
+"Review Bookmark Changes" = "ブックマークの変更を確認";
+"After Sync" = "同期後";
+"Apply Changes" = "変更を適用";
+"Added" = "追加";
+"Removed" = "削除";
+"Moved" = "移動";
+
+"%@ reported %d individual bookmark deletions within a few seconds. Nothing was changed — tap Apply Deletions if this is expected." = "%1$@ から数秒間に %2$d 件のブックマーク削除が報告されました。何も変更されていません。意図した操作であれば「削除を適用」をクリックしてください。";
+"%d of %d bookmarks in %@ would be removed based on a single read. Nothing was changed — tap Apply Deletions if this is expected." = "1 回の読み取り結果に基づくと、%3$@ のブックマーク %2$d 件のうち %1$d 件が削除されます。何も変更されていません。意図した操作であれば「削除を適用」をクリックしてください。";
+"Add Custom Browser..." = "カスタムブラウザを追加…";
+"Apply Deletions" = "削除を適用";
+"Bookmark Deletion Burst Blocked" = "短時間の大量ブックマーク削除をブロックしました";
+"Cannot Sync Domain" = "このドメインは同期できません";
+"Confirm deletion" = "削除の確認";
+"Large Bookmark Deletion Blocked" = "大規模なブックマーク削除をブロックしました";
+"No active tabs found." = "開いているタブが見つかりません。";
+"One-time purchase" = "買い切り";
+"Open App Store Version" = "App Store 版を開く";
+"Purchasing..." = "購入中…";
+"Real-time auto sync is a Professional feature. Unlock Professional to enable it." = "リアルタイム自動同期はプロフェッショナル機能です。有効にするにはプロフェッショナルを解除してください。";
+"Remove Browser" = "ブラウザを削除";
+"Restore Purchases" = "購入を復元";
+"Share open tabs between browsers" = "ブラウザ間で開いているタブを共有";
+"The domain '%@' cannot be synced because of its security and authentication mechanisms." = "ドメイン「%@」は、セキュリティおよび認証の仕組みにより同期できません。";
+
+"Syncing from %@ would remove %d, move %d and modify %d existing Safari bookmarks. Nothing was changed — click to review." = "%1$@ からの同期により、Safari の既存ブックマークが %2$d 件削除、%3$d 件移動、%4$d 件変更されます。何も変更されていません。クリックして確認してください。";
+"Syncing from %@ would remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet." = "%1$@ からの同期により、Safari の既存ブックマーク %5$d 件のうち %2$d 件が削除、%3$d 件が移動、%4$d 件が変更されます。まだ何も書き込まれていません。";
+"Modified" = "変更";
+
+"Review Blocked Bookmark Changes" = "ブロックされたブックマークの変更を確認";
+
+"Keeping Safari as is also brings the other browsers back to Safari's bookmarks." = "Safari を変更しない場合、ほかのブラウザも Safari のブックマークに戻ります。";
+
+"Resume Bookmark Sync from %@" = "%@ からのブックマーク同期を再開";
+"Keeping Safari as is pauses later bookmark changes from this browser until you resume them from the menu bar." = "Safari を変更しない場合、メニューバーから再開するまで、このブラウザからの以降のブックマーク変更は一時停止されます。";
+
+"Syncing would remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet." = "同期により、%5$@ の既存ブックマーク %4$d 件のうち %1$d 件が削除、%2$d 件が移動、%3$d 件が変更されます。まだ何も書き込まれていません。";
+"Syncing would remove %d, move %d and modify %d existing bookmarks in %@. Nothing was changed — click to review." = "同期により、%4$@ の既存ブックマークが %1$d 件削除、%2$d 件移動、%3$d 件変更されます。何も変更されていません。クリックして確認してください。";
+"%@ Now" = "現在の %@";
+"Keep %@ As Is" = "%@ を変更しない";
+"Keeping %@ as is pauses later bookmark changes to it until you resume them from the menu bar." = "%@ を変更しない場合、メニューバーから再開するまで、このブラウザへの以降のブックマーク変更は一時停止されます。";
+"Resume Bookmark Sync to %@" = "%@ へのブックマーク同期を再開";
+
+"Backup" = "バックアップ";
+
+"Extension Update Needed" = "拡張機能のアップデートが必要です";
+"Update the BrowSync extension in %@ to keep syncing bookmarks. Until then no bookmark changes are sent to it." = "ブックマークの同期を続けるには、%@ の BrowSync 拡張機能をアップデートしてください。それまでブックマークの変更は送信されません。";

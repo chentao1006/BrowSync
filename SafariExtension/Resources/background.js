@@ -928,19 +928,6 @@ let localOtherId = '2';
 let localMobileId = '3';
 let systemRoots = new Set(['0', '1', '2', '3']);
 
-if (chrome.bookmarks) {
-  chrome.bookmarks.getTree().then(tree => {
-    send({
-      type: 'sync',
-      browser: DETECTED_BROWSER,
-      category: 'DEBUG_TREE',
-      payload: tree[0],
-      messageId: 'debug-tree',
-      timestamp: Date.now()
-    });
-  });
-}
-
 
 if (chrome.bookmarks) {
   chrome.bookmarks.getTree().then(tree => {

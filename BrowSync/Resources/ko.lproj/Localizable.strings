@@ -96,7 +96,6 @@
 
 "Automatic Sync" = "자동 동기화";
 "Sync automatically whenever changes are detected" = "변경 사항이 감지될 때마다 자동 동기화";
-"iCloud Sync" = "iCloud 동기화";
 "Keep sync data in iCloud across your Macs" = "여러 Mac에서 iCloud 동기화 데이터 유지";
 
 "App Behavior" = "앱 동작";
@@ -121,7 +120,6 @@
 "Set as Default" = "기본값으로 설정";
 "Notifications" = "알림";
 "Sync Complete" = "동기화 완료";
-"Browser Connected" = "브라우저 연결됨";
 "Rule Match" = "규칙 일치";
 "Updates" = "업데이트";
 "Automatically check for updates" = "업데이트 자동 확인";
@@ -157,7 +155,6 @@
 
 "State Sync" = "상태 동기화";
 "Bookmark Sync" = "북마크 동기화";
-"Link Router" = "라우터";
 "Select an item" = "항목 선택";
 
 "Installed Browsers" = "설치된 브라우저";
@@ -262,7 +259,7 @@
 "·" = "·";
 "Reason:" = "Reason:";
 "BrowSync Extension" = "BrowSync Extension";
-"Open %@" = "Open %@";
+"Open %@" = "%@ 열기";
 "Exclude listed websites" = "목록에 있는 웹사이트 제외";
 "Auto Sync Bookmarks" = "Auto Sync Bookmarks";
 "Not Equals" = "같지 않음";
@@ -278,7 +275,7 @@
 "Only sync listed websites" = "목록에 있는 웹사이트만 동기화";
 "Delete this backup?" = "Delete this backup?";
 "Sync History & Backups" = "Sync History & Backups";
-"Restore" = "Restore";
+"Restore" = "복원";
 "Loading app list..." = "Loading app list...";
 "Local Storage" = "로컬 스토리지";
 "All Conditions" = "모든 조건";
@@ -287,7 +284,7 @@
 "Bookmark Source" = "북마크 소스";
 "No backups yet" = "No backups yet";
 "© 2026 BrowSync" = "© 2026 BrowSync";
-"Version %@ (%@)" = "Version %@ (%@)";
+"Version %@ (%@)" = "버전 %@ (%@)";
 "localStorage data for each site" = "각 사이트의 localStorage 데이터";
 "Some sites may not sync state successfully" = "Some sites may not sync state successfully";
 "This action cannot be undone." = "This action cannot be undone.";
@@ -297,7 +294,7 @@
 "No conditions set. This rule will not apply." = "No conditions set. This rule will not apply.";
 "Time Period" = "기간";
 "Open %1$@" = "Open %1$@";
-"%@ %@ to %@" = "%@ %@ to %@";
+"%@ %@ to %@" = "%@ %@~%@";
 "Many sites use browser fingerprinting or device-bound security tokens for authentication. Due to browser security restrictions, extensions cannot extract this data, and these tokens may be invalidated in different browser environments." = "Many sites use browser fingerprinting or device-bound security tokens for authentication. Due to browser security restrictions, extensions cannot extract this data, and these tokens may be invalidated in different browser environments.";
 "Delete this routing rule?" = "Delete this routing rule?";
 "URL" = "URL";
@@ -453,9 +450,9 @@
 "Professional shares all open tabs." = "프로페셔널은 열려 있는 모든 탭을 공유합니다.";
 "iCloud Sync is available in Professional." = "iCloud 동기화는 프로페셔널에서 사용할 수 있습니다.";
 
-"Grant Access" = "Grant Access";
-"Please select the Safari folder to grant BrowSync access for syncing." = "Please select the Safari folder to grant BrowSync access for syncing.";
-"Safari requires folder access due to Sandbox restrictions." = "Safari requires folder access due to Sandbox restrictions.";
+"Grant Access" = "접근 허용";
+"Please select the Safari folder to grant BrowSync access for syncing." = "동기화를 위해 BrowSync에 접근 권한을 부여하려면 Safari 폴더를 선택하세요.";
+"Safari requires folder access due to Sandbox restrictions." = "샌드박스 제한으로 인해 Safari 폴더 접근 권한이 필요합니다.";
 "Safari Bookmark Permission Required" = "Safari 책갈피 권한이 필요합니다";
 "BrowSync now uses limited folder access instead of Full Disk Access. To keep your existing Safari bookmark sync running, select the Safari folder in the next dialog." = "BrowSync는 이제 전체 디스크 접근 대신 제한된 폴더 접근을 사용합니다. 기존 Safari 책갈피 동기화를 계속하려면 다음 대화상자에서 Safari 폴더를 선택하세요.";
 "Not Now" = "나중에";
@@ -531,3 +528,53 @@
 "See App Store" = "App Store에서 보기";
 "Send Feedback" = "의견 보내기";
 "day" = "일"; "days" = "일"; "week" = "주"; "weeks" = "주"; "month" = "개월"; "months" = "개월"; "year" = "년"; "years" = "년"; "period" = "기간";
+
+"Large Bookmark Change Blocked" = "대규모 북마크 변경이 차단됨";
+"Review Changes" = "변경 사항 검토";
+"Review Bookmark Changes" = "북마크 변경 사항 검토";
+"After Sync" = "동기화 후";
+"Apply Changes" = "변경 사항 적용";
+"Added" = "추가됨";
+"Removed" = "삭제됨";
+"Moved" = "이동됨";
+
+"%@ reported %d individual bookmark deletions within a few seconds. Nothing was changed — tap Apply Deletions if this is expected." = "%1$@에서 몇 초 사이에 북마크 삭제가 %2$d건 보고되었습니다. 아무것도 변경되지 않았습니다. 의도한 작업이라면 ‘삭제 적용’을 클릭하세요.";
+"%d of %d bookmarks in %@ would be removed based on a single read. Nothing was changed — tap Apply Deletions if this is expected." = "한 번의 읽기 결과에 따르면 %3$@의 북마크 %2$d개 중 %1$d개가 삭제됩니다. 아무것도 변경되지 않았습니다. 의도한 작업이라면 ‘삭제 적용’을 클릭하세요.";
+"Add Custom Browser..." = "사용자 지정 브라우저 추가…";
+"Apply Deletions" = "삭제 적용";
+"Bookmark Deletion Burst Blocked" = "짧은 시간 내 대량 북마크 삭제가 차단됨";
+"Cannot Sync Domain" = "도메인을 동기화할 수 없음";
+"Confirm deletion" = "삭제 확인";
+"Large Bookmark Deletion Blocked" = "대규모 북마크 삭제가 차단됨";
+"No active tabs found." = "열려 있는 탭이 없습니다.";
+"One-time purchase" = "일회성 구매";
+"Open App Store Version" = "App Store 버전 열기";
+"Purchasing..." = "구매 중…";
+"Real-time auto sync is a Professional feature. Unlock Professional to enable it." = "실시간 자동 동기화는 프로페셔널 기능입니다. 사용하려면 프로페셔널을 잠금 해제하세요.";
+"Remove Browser" = "브라우저 제거";
+"Restore Purchases" = "구매 복원";
+"Share open tabs between browsers" = "브라우저 간에 열린 탭 공유";
+"The domain '%@' cannot be synced because of its security and authentication mechanisms." = "'%@' 도메인은 보안 및 인증 방식 때문에 동기화할 수 없습니다.";
+
+"Syncing from %@ would remove %d, move %d and modify %d existing Safari bookmarks. Nothing was changed — click to review." = "%1$@에서 동기화하면 Safari의 기존 북마크 %2$d개가 삭제되고 %3$d개가 이동되며 %4$d개가 수정됩니다. 아무것도 변경되지 않았습니다. 클릭하여 검토하세요.";
+"Syncing from %@ would remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet." = "%1$@에서 동기화하면 Safari의 기존 북마크 %5$d개 중 %2$d개가 삭제되고 %3$d개가 이동되며 %4$d개가 수정됩니다. 아직 아무것도 기록되지 않았습니다.";
+"Modified" = "수정됨";
+
+"Review Blocked Bookmark Changes" = "차단된 북마크 변경 사항 검토";
+
+"Keeping Safari as is also brings the other browsers back to Safari's bookmarks." = "Safari를 그대로 유지하면 다른 브라우저도 Safari의 북마크로 되돌아갑니다.";
+
+"Resume Bookmark Sync from %@" = "%@에서 북마크 동기화 재개";
+"Keeping Safari as is pauses later bookmark changes from this browser until you resume them from the menu bar." = "Safari를 그대로 유지하면 메뉴 막대에서 재개할 때까지 이 브라우저의 이후 북마크 변경 사항이 일시 중지됩니다.";
+
+"Syncing would remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet." = "동기화하면 %5$@의 기존 북마크 %4$d개 중 %1$d개가 삭제되고 %2$d개가 이동되며 %3$d개가 수정됩니다. 아직 아무것도 기록되지 않았습니다.";
+"Syncing would remove %d, move %d and modify %d existing bookmarks in %@. Nothing was changed — click to review." = "동기화하면 %4$@의 기존 북마크 %1$d개가 삭제되고 %2$d개가 이동되며 %3$d개가 수정됩니다. 아무것도 변경되지 않았습니다. 클릭하여 검토하세요.";
+"%@ Now" = "현재 %@";
+"Keep %@ As Is" = "%@ 그대로 유지";
+"Keeping %@ as is pauses later bookmark changes to it until you resume them from the menu bar." = "%@를 그대로 유지하면 메뉴 막대에서 재개할 때까지 이 브라우저로의 이후 북마크 변경 사항이 일시 중지됩니다.";
+"Resume Bookmark Sync to %@" = "%@(으)로 북마크 동기화 재개";
+
+"Backup" = "백업";
+
+"Extension Update Needed" = "확장 프로그램 업데이트 필요";
+"Update the BrowSync extension in %@ to keep syncing bookmarks. Until then no bookmark changes are sent to it." = "북마크 동기화를 계속하려면 %@의 BrowSync 확장 프로그램을 업데이트하세요. 그때까지 북마크 변경 사항은 전송되지 않습니다.";

@@ -12,6 +12,8 @@
 		0A63D7EDCF55B55E811CB8EE /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 2F278BFDA3B2DF653CD4E4A2 /* Localizable.strings */; };
 		0CB37CF6BCB9021523F734DF /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4BE22F2B94BE5B640CCDB1E /* SafariWebExtensionHandler.swift */; };
 		0F5CB5937AE876460E91A93C /* RuleEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B56E2AFB07CC6CA3A5582028 /* RuleEditorView.swift */; };
+		6668E8A0E45D9384F15724C7 /* BookmarkChangeReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 945B7DF61D084A72FD968AA0 /* BookmarkChangeReviewView.swift */; };
+		8BE6F70E2DAF43E03AC21674 /* BookmarkChangeReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 945B7DF61D084A72FD968AA0 /* BookmarkChangeReviewView.swift */; };
 		10E9805314E7BF727FB2C9C4 /* download-on-app-store-en.svg in Resources */ = {isa = PBXBuildFile; fileRef = C1AF1FEF2387E709571DAA19 /* download-on-app-store-en.svg */; };
 		1150700A20301EFB81B57837 /* GeneralView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8449AE30421FC5A59FC77934 /* GeneralView.swift */; };
 		13C5A394060BB3FAA4E0F25B /* BackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F4144B8AE085C797A52208 /* BackupService.swift */; };
@@ -226,6 +228,7 @@
 		AFA7ED2885F5600F25B63D2D /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		B1108A1B4B7AA8CF05488F9C /* WSMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WSMessage.swift; sourceTree = "<group>"; };
 		B4F4144B8AE085C797A52208 /* BackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupService.swift; sourceTree = "<group>"; };
+		945B7DF61D084A72FD968AA0 /* BookmarkChangeReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkChangeReviewView.swift; sourceTree = "<group>"; };
 		B56E2AFB07CC6CA3A5582028 /* RuleEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuleEditorView.swift; sourceTree = "<group>"; };
 		B5B81522FABEA38722F4B7BF /* _locales */ = {isa = PBXFileReference; lastKnownFileType = folder; name = _locales; path = SafariExtension/Resources/_locales; sourceTree = SOURCE_ROOT; };
 		BE5BEE879CB61212F2D3F082 /* LanguageBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageBundle.swift; sourceTree = "<group>"; };
@@ -368,6 +371,7 @@
 				2332B7DC4ABFCC9469A81DA4 /* ContentView.swift */,
 				1D809DBD34AA9B22059033C6 /* ProTabView.swift */,
 				10F52E8BB62D4BA5E32CD492 /* RouterTabView.swift */,
+				945B7DF61D084A72FD968AA0 /* BookmarkChangeReviewView.swift */,
 				B56E2AFB07CC6CA3A5582028 /* RuleEditorView.swift */,
 				A871D9385C69C6022679A1A6 /* StateSyncTabView.swift */,
 				97ACC9858254F5F021C00B89 /* TabSharingTabView.swift */,
@@ -743,6 +747,7 @@
 				32705BB7B9B3DD1FAC405E50 /* RouterModels.swift in Sources */,
 				09C7E842D5114B27B18A86DB /* RouterTabView.swift in Sources */,
 				0F5CB5937AE876460E91A93C /* RuleEditorView.swift in Sources */,
+				6668E8A0E45D9384F15724C7 /* BookmarkChangeReviewView.swift in Sources */,
 				3A13FFD185F493D6D340336C /* SafariBookmarkService.swift in Sources */,
 				535088B6CF3CECB8AE6CBA8E /* SandboxAccessManager.swift in Sources */,
 				B73BEA26F240001A92A704D8 /* SettingsService.swift in Sources */,
@@ -778,6 +783,7 @@
 				9F1D0E4D4AF2BA3FA1137D30 /* RouterModels.swift in Sources */,
 				FBA2BBA70C6B7C1FCC3F5312 /* RouterTabView.swift in Sources */,
 				3BFC42816BF86AFFDAE82773 /* RuleEditorView.swift in Sources */,
+				8BE6F70E2DAF43E03AC21674 /* BookmarkChangeReviewView.swift in Sources */,
 				A7205BB2D9125ABE1C4DA63A /* SafariBookmarkService.swift in Sources */,
 				58060EA5878EA28F574B7CE2 /* SandboxAccessManager.swift in Sources */,
 				F7042BF2C7EA6202AE1EADD0 /* SettingsService.swift in Sources */,

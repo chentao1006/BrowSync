@@ -15,6 +15,8 @@ final class ConnectedClient {
     let connection: NWConnection
     var lastSeen: Date
     var stateCache: [String: Data] = [:]  // site -> last sync payload
+    /// From the register message; empty for extension builds that predate it.
+    var capabilities: Set<String> = []
 
     init(id: String, browser: Browser, connection: NWConnection) {
         self.id = id
@@ -187,6 +189,19 @@ final class DaemonServer: ObservableObject {
         }
     }
 
+    /// Coding paths can contain user data (e.g. storage keys inside a raw
+    /// payload), so only the kind of failure and the path depth are recorded.
+    private static func decodingErrorSummary(_ error: Error) -> String {
+        guard let error = error as? DecodingError else { return String(describing: type(of: error)) }
+        switch error {
+        case .keyNotFound(_, let context): return "keyNotFound (depth \(context.codingPath.count))"
+        case .typeMismatch(_, let context): return "typeMismatch (depth \(context.codingPath.count))"
+        case .valueNotFound(_, let context): return "valueNotFound (depth \(context.codingPath.count))"
+        case .dataCorrupted(let context): return "dataCorrupted (depth \(context.codingPath.count))"
+        @unknown default: return "unknown decoding error"
+        }
+    }
+
     private func processMessageData(_ data: Data, from connection: NWConnection) {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
@@ -196,11 +211,14 @@ final class DaemonServer: ObservableObject {
             let message = try JSONDecoder().decode(WSMessage.self, from: data)
             routeMessage(message, from: connection)
         } catch {
-            logger.warning("Failed to decode WebSocket message: \(error)")
+            logger.warning("Failed to decode WebSocket message: \(Self.decodingErrorSummary(error))")
             if let handle = try? FileHandle(forWritingTo: logFile) {
                 handle.seekToEndOfFile()
-                let rawString = String(data: data, encoding: .utf8) ?? "unknown"
-                let errStr = "[DECODE ERROR] \(error)\nRAW DATA: \(rawString)\n"
+                // Payloads carry bookmarks, cookies and storage. Persist only the
+                // envelope fields needed to identify the sender, never the body.
+                let envelope = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                let field = { (key: String) in (envelope?[key] as? String).map { String($0.prefix(64)) } ?? "?" }
+                let errStr = "[DECODE ERROR] \(Self.decodingErrorSummary(error))\nMESSAGE: type=\(field("type")) browser=\(field("browser")) category=\(field("category")) bytes=\(data.count)\n"
                 handle.write(errStr.data(using: .utf8)!)
                 try? handle.close()
             }
@@ -454,6 +472,7 @@ final class DaemonServer: ObservableObject {
         pendingConnections.removeValue(forKey: ObjectIdentifier(connection))
 
         let client = ConnectedClient(id: instanceId, browser: browser, connection: connection)
+        client.capabilities = Set(message.capabilities ?? [])
         clients[instanceId] = client
         connectedBrowsers.insert(browser)
 
