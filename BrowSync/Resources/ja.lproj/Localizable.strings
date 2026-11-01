@@ -578,3 +578,10 @@
 
 "Extension Update Needed" = "拡張機能のアップデートが必要です";
 "Update the BrowSync extension in %@ to keep syncing bookmarks. Until then no bookmark changes are sent to it." = "ブックマークの同期を続けるには、%@ の BrowSync 拡張機能をアップデートしてください。それまでブックマークの変更は送信されません。";
+
+/* iCloud settings conflict */
+"iCloud Already Has BrowSync Settings" = "iCloud に BrowSync の設定がすでにあります";
+"Another Mac has saved BrowSync settings to iCloud that differ from this Mac's settings. Choose which settings to keep on all Macs. The settings being replaced are backed up first." = "別の Mac が、この Mac とは異なる BrowSync の設定を iCloud に保存しています。すべての Mac で残す設定を選択してください。置き換えられる設定は事前にバックアップされます。";
+"Use iCloud Settings" = "iCloud の設定を使用";
+"Use This Mac's Settings" = "この Mac の設定を使用";
+"Turn Off iCloud Sync" = "iCloud 同期をオフにする";

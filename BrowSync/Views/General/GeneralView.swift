@@ -44,7 +44,13 @@ struct GeneralView: View {
                                 settings.iCloudSync.wrappedValue = false
                                 return
                             }
+                            let wasEnabled = settings.iCloudSync.wrappedValue
                             settings.iCloudSync.wrappedValue = enabled
+                            if enabled && !wasEnabled {
+                                appState.iCloudSyncManager.didEnableSync()
+                            } else if !enabled && wasEnabled {
+                                appState.iCloudSyncManager.didDisableSync()
+                            }
                         }
                     )) {
                         HStack(spacing: 6) {

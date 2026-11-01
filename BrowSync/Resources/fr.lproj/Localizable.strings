@@ -576,3 +576,10 @@
 
 "Extension Update Needed" = "Mise à jour de l’extension requise";
 "Update the BrowSync extension in %@ to keep syncing bookmarks. Until then no bookmark changes are sent to it." = "Mettez à jour l’extension BrowSync dans %@ pour continuer à synchroniser les signets. D’ici là, aucune modification de signets ne lui est envoyée.";
+
+/* iCloud settings conflict */
+"iCloud Already Has BrowSync Settings" = "iCloud contient déjà des réglages BrowSync";
+"Another Mac has saved BrowSync settings to iCloud that differ from this Mac's settings. Choose which settings to keep on all Macs. The settings being replaced are backed up first." = "Un autre Mac a enregistré dans iCloud des réglages BrowSync différents de ceux de ce Mac. Choisissez les réglages à conserver sur tous vos Mac. Les réglages remplacés sont sauvegardés au préalable.";
+"Use iCloud Settings" = "Utiliser les réglages iCloud";
+"Use This Mac's Settings" = "Utiliser les réglages de ce Mac";
+"Turn Off iCloud Sync" = "Désactiver la synchronisation iCloud";

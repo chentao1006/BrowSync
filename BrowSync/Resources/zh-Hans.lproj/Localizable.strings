@@ -638,3 +638,10 @@
 
 "Extension Update Needed" = "需要更新扩展";
 "Update the BrowSync extension in %@ to keep syncing bookmarks. Until then no bookmark changes are sent to it." = "请更新 %@ 中的 BrowSync 扩展以继续同步书签。在此之前，不会向其发送任何书签更改。";
+
+/* iCloud settings conflict */
+"iCloud Already Has BrowSync Settings" = "iCloud 中已有 BrowSync 设置";
+"Another Mac has saved BrowSync settings to iCloud that differ from this Mac's settings. Choose which settings to keep on all Macs. The settings being replaced are backed up first." = "另一台 Mac 已将 BrowSync 设置保存到 iCloud，且与这台 Mac 的设置不同。请选择要在所有 Mac 上保留哪一份设置。被替换的设置会先自动备份。";
+"Use iCloud Settings" = "使用 iCloud 中的设置";
+"Use This Mac's Settings" = "使用这台 Mac 的设置";
+"Turn Off iCloud Sync" = "关闭 iCloud 同步";

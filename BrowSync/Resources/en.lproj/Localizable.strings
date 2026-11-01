@@ -610,3 +610,10 @@
 
 "Extension Update Needed" = "Extension Update Needed";
 "Update the BrowSync extension in %@ to keep syncing bookmarks. Until then no bookmark changes are sent to it." = "Update the BrowSync extension in %@ to keep syncing bookmarks. Until then no bookmark changes are sent to it.";
+
+/* iCloud settings conflict */
+"iCloud Already Has BrowSync Settings" = "iCloud Already Has BrowSync Settings";
+"Another Mac has saved BrowSync settings to iCloud that differ from this Mac's settings. Choose which settings to keep on all Macs. The settings being replaced are backed up first." = "Another Mac has saved BrowSync settings to iCloud that differ from this Mac's settings. Choose which settings to keep on all Macs. The settings being replaced are backed up first.";
+"Use iCloud Settings" = "Use iCloud Settings";
+"Use This Mac's Settings" = "Use This Mac's Settings";
+"Turn Off iCloud Sync" = "Turn Off iCloud Sync";

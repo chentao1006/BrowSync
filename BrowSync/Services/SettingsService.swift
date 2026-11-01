@@ -337,7 +337,7 @@ final class SettingsService: ObservableObject {
         realUserHomeDirectory()?.appendingPathComponent("Library/Application Support/BrowSync")
     }
 
-    private static func hasMeaningfulConfiguration(_ settings: SettingsBundle) -> Bool {
+    static func hasMeaningfulConfiguration(_ settings: SettingsBundle) -> Bool {
         let router = settings.router ?? RouterSettings()
         let sync = settings.sync
         if isKnownBrokenSandboxDefault(router: router, sync: sync, general: settings.general) {
@@ -402,13 +402,17 @@ final class SettingsService: ObservableObject {
         }
     }
 
-    func save() {
+    var currentBundle: SettingsBundle {
+        SettingsBundle(general: general, sync: syncSettings, router: routerSettings)
+    }
+
+    func save(uploadToICloud: Bool = true) {
         do {
-            let bundle = SettingsBundle(general: general, sync: syncSettings, router: routerSettings)
-            let data = try JSONEncoder().encode(bundle)
+            let data = try JSONEncoder().encode(currentBundle)
             try data.write(to: settingsURL, options: .atomicWrite)
-            
+
             // Push to iCloud if enabled
+            guard uploadToICloud else { return }
             Task { @MainActor in
                 AppState.shared.iCloudSyncManager.uploadSettings(from: self)
             }
@@ -416,6 +420,35 @@ final class SettingsService: ObservableObject {
             logger.error("Failed to save settings: \(error)")
         }
     }
+
+    /// Copies the current settings file aside before it is replaced by settings
+    /// from another Mac, so a bad remote copy can never be the only copy left.
+    func backupSettingsFile(reason: String) {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: settingsURL.path) else { return }
+        let backupsDir = settingsURL.deletingLastPathComponent().appendingPathComponent("SettingsBackups")
+        do {
+            try fileManager.createDirectory(at: backupsDir, withIntermediateDirectories: true)
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = "yyyyMMdd-HHmmss"
+            let backupURL = backupsDir.appendingPathComponent("settings_\(formatter.string(from: Date()))_\(reason).json")
+            try? fileManager.removeItem(at: backupURL)
+            try fileManager.copyItem(at: settingsURL, to: backupURL)
+
+            let backups = try fileManager.contentsOfDirectory(at: backupsDir, includingPropertiesForKeys: nil)
+                .filter { $0.lastPathComponent.hasPrefix("settings_") }
+                .sorted { $0.lastPathComponent > $1.lastPathComponent }
+            for staleBackup in backups.dropFirst(Self.maxSettingsBackups) {
+                try? fileManager.removeItem(at: staleBackup)
+            }
+            logger.info("Backed up settings before \(reason, privacy: .public)")
+        } catch {
+            logger.error("Failed to back up settings: \(error)")
+        }
+    }
+
+    private static let maxSettingsBackups = 20
 
     // MARK: - Launch at Login
 
@@ -445,6 +478,7 @@ struct SettingsBundle: Codable {
 // ICloudSyncManager.swift
 // BrowSync — iCloud Synchronization
 
+import AppKit
 import Foundation
 import os.log
 
@@ -465,7 +499,18 @@ final class ICloudSyncManager: ObservableObject {
     // Prevent upload loops
     private var isDownloadingRemoteTabs = false
     private var isDownloadingSettings = false
-    
+    private var isPresentingConflictPrompt = false
+
+    /// This Mac may upload or apply settings only after its local settings were
+    /// reconciled with whatever iCloud already holds. Without this, a freshly
+    /// installed Mac turning on iCloud Sync pushed its blank defaults over the
+    /// settings every other Mac had, and those Macs then applied the blanks.
+    private static let settingsReconciledKey = "ICloudSettingsReconciledV1"
+    private var isSettingsReconciled: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.settingsReconciledKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.settingsReconciledKey) }
+    }
+
     // Dependencies
     private weak var settingsService: SettingsService?
     
@@ -489,30 +534,123 @@ final class ICloudSyncManager: ObservableObject {
         
         Task { @MainActor in
             if settingsService.general.iCloudSync && AppState.shared.purchaseService.isProUnlocked {
-                downloadSettings()
+                if isSettingsReconciled {
+                    downloadSettings()
+                } else {
+                    reconcileSettings()
+                }
                 downloadRemoteTabs()
-                uploadSettings(from: settingsService)
             }
         }
     }
-    
+
+    func didEnableSync() {
+        isSettingsReconciled = false
+        reconcileSettings()
+        downloadRemoteTabs()
+    }
+
+    func didDisableSync() {
+        isSettingsReconciled = false
+    }
+
+    // MARK: - Reconcile Settings
+
+    /// Decides, once per enable, whether this Mac adopts the iCloud settings,
+    /// publishes its own, or must ask. Blank settings never replace real ones.
+    private func reconcileSettings() {
+        guard let service = settingsService, service.general.iCloudSync else { return }
+        guard AppState.shared.purchaseService.isProUnlocked else { return }
+        guard !isPresentingConflictPrompt else { return }
+
+        kvStore.synchronize()
+        let local = service.currentBundle
+        guard let data = kvStore.data(forKey: settingsKey),
+              let remote = try? JSONDecoder().decode(SettingsBundle.self, from: data) else {
+            logger.info("No iCloud settings yet; publishing this Mac's settings.")
+            isSettingsReconciled = true
+            uploadSettings(from: service)
+            return
+        }
+
+        let localIsMeaningful = SettingsService.hasMeaningfulConfiguration(local)
+        let remoteIsMeaningful = SettingsService.hasMeaningfulConfiguration(remote)
+
+        if !remoteIsMeaningful {
+            logger.info("iCloud settings are blank; publishing this Mac's settings.")
+            isSettingsReconciled = true
+            uploadSettings(from: service)
+        } else if !localIsMeaningful {
+            logger.info("This Mac has blank settings; adopting iCloud settings.")
+            isSettingsReconciled = true
+            apply(remote, to: service)
+        } else if Self.syncedSettingsEqual(Self.applying(remote, to: local), local) {
+            isSettingsReconciled = true
+        } else {
+            promptForConflict(service: service, remote: remote)
+        }
+    }
+
+    private func promptForConflict(service: SettingsService, remote: SettingsBundle) {
+        isPresentingConflictPrompt = true
+        let alert = NSAlert()
+        alert.messageText = String(localized: "iCloud Already Has BrowSync Settings", bundle: LanguageBundle.systemBundle)
+        alert.informativeText = String(localized: "Another Mac has saved BrowSync settings to iCloud that differ from this Mac's settings. Choose which settings to keep on all Macs. The settings being replaced are backed up first.", bundle: LanguageBundle.systemBundle)
+        alert.addButton(withTitle: String(localized: "Use iCloud Settings", bundle: LanguageBundle.systemBundle))
+        alert.addButton(withTitle: String(localized: "Use This Mac's Settings", bundle: LanguageBundle.systemBundle))
+        alert.addButton(withTitle: String(localized: "Turn Off iCloud Sync", bundle: LanguageBundle.systemBundle))
+
+        NSApp.activate(ignoringOtherApps: true)
+        let handleResponse: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard let self else { return }
+            self.isPresentingConflictPrompt = false
+            switch response {
+            case .alertFirstButtonReturn:
+                self.isSettingsReconciled = true
+                self.apply(remote, to: service)
+            case .alertSecondButtonReturn:
+                self.isSettingsReconciled = true
+                self.uploadSettings(from: service)
+            default:
+                self.isSettingsReconciled = false
+                service.general.iCloudSync = false
+                service.save(uploadToICloud: false)
+            }
+        }
+
+        if let window = NSApp.keyWindow ?? NSApp.windows.first(where: { $0.isVisible }) {
+            alert.beginSheetModal(for: window, completionHandler: handleResponse)
+        } else {
+            handleResponse(alert.runModal())
+        }
+    }
+
     // MARK: - Upload Settings
-    
+
     func uploadSettings(from service: SettingsService) {
         guard service.general.iCloudSync else { return }
         guard AppState.shared.purchaseService.isProUnlocked else { return }
+        guard isSettingsReconciled, !isPresentingConflictPrompt else { return }
         guard !isDownloadingSettings else { return }
-        
+
         do {
-            let bundle = SettingsBundle(general: service.general, sync: service.syncSettings, router: service.routerSettings)
+            let bundle = service.currentBundle
             let encoder = JSONEncoder()
             encoder.outputFormatting = .sortedKeys
             let data = try encoder.encode(bundle)
-            
+
             if let existing = kvStore.data(forKey: settingsKey), existing == data {
                 return
             }
-            
+
+            if !SettingsService.hasMeaningfulConfiguration(bundle),
+               let existing = kvStore.data(forKey: settingsKey),
+               let remote = try? JSONDecoder().decode(SettingsBundle.self, from: existing),
+               SettingsService.hasMeaningfulConfiguration(remote) {
+                logger.warning("Refused to replace configured iCloud settings with blank settings.")
+                return
+            }
+
             kvStore.set(data, forKey: settingsKey)
             kvStore.synchronize()
             logger.info("Uploaded settings to iCloud.")
@@ -571,7 +709,16 @@ final class ICloudSyncManager: ObservableObject {
             logger.info("iCloud store changed remotely: \(changedKeys)")
             
             if changedKeys.contains(settingsKey) {
-                downloadSettings()
+                // An initial sync means iCloud's copy just arrived on this Mac and
+                // may discard what was written before it, so reconcile again.
+                if reasonForChange == NSUbiquitousKeyValueStoreInitialSyncChange {
+                    isSettingsReconciled = false
+                }
+                if isSettingsReconciled {
+                    downloadSettings()
+                } else {
+                    reconcileSettings()
+                }
             }
             
             if changedKeys.contains(where: { $0.hasPrefix(tabsPrefix) && $0 != tabsPrefix + deviceID }) {
@@ -583,67 +730,94 @@ final class ICloudSyncManager: ObservableObject {
     private func downloadSettings() {
         guard let service = settingsService else { return }
         guard AppState.shared.purchaseService.isProUnlocked else { return }
+        guard isSettingsReconciled, !isPresentingConflictPrompt else { return }
         guard let data = kvStore.data(forKey: settingsKey) else { return }
         
         do {
             let remoteBundle = try JSONDecoder().decode(SettingsBundle.self, from: data)
-            let wasSyncEnabled = service.general.iCloudSync
-            
-            isDownloadingSettings = true
-            
-            // General Settings: latest wins
-            service.general = remoteBundle.general
-            service.general.iCloudSync = wasSyncEnabled
-            
-            // Router Settings: Use remote
-            service.routerSettings.isEnabled = remoteBundle.router?.isEnabled ?? service.routerSettings.isEnabled
-            service.routerSettings.fallbackBrowserId = remoteBundle.router?.fallbackBrowserId ?? service.routerSettings.fallbackBrowserId
-            service.routerSettings.rules = remoteBundle.router?.rules ?? []
-            
-            // Sync Settings: Merge collections
-            let remoteSync = remoteBundle.sync
-            service.syncSettings.conflictStrategy = remoteSync.conflictStrategy
-            service.syncSettings.bookmarkSyncStrategy = remoteSync.bookmarkSyncStrategy
-            service.syncSettings.bookmarkSourceBrowser = remoteSync.bookmarkSourceBrowser
-            service.syncSettings.bookmarkAutoSync = remoteSync.bookmarkAutoSync
-            service.syncSettings.browserDataSyncStrategy = remoteSync.browserDataSyncStrategy
-            service.syncSettings.stateSourceBrowser = remoteSync.stateSourceBrowser
-            service.syncSettings.websiteListPolicy = remoteSync.websiteListPolicy
-            service.syncSettings.tabSharingEnabled = remoteSync.tabSharingEnabled
-            service.syncSettings.automaticSync = remoteSync.automaticSync
-            
-            // Sync Collections: Use remote
-            service.syncSettings.bookmarkParticipatingBrowsers = remoteSync.bookmarkParticipatingBrowsers
-            service.syncSettings.stateParticipatingBrowsers = remoteSync.stateParticipatingBrowsers
-            service.syncSettings.tabSharingParticipatingBrowsers = remoteSync.tabSharingParticipatingBrowsers
-            service.syncSettings.enabledCategories = remoteSync.enabledCategories
-            
-            // Website Settings: Use remote
-            service.syncSettings.websiteSettings = remoteSync.websiteSettings
-            
-            service.save() // Save locally
-            isDownloadingSettings = false
-            
-            logger.info("Successfully applied and merged iCloud settings to local store.")
-            
-            // Because save() skips iCloud upload during isDownloadingSettings, we should explicitly upload the *merged* result 
-            // once, so that the remote iCloud store gets the union of our local settings and the remote ones.
-            Task { @MainActor in
-                self.uploadSettings(from: service)
+            if !SettingsService.hasMeaningfulConfiguration(remoteBundle),
+               SettingsService.hasMeaningfulConfiguration(service.currentBundle) {
+                // An older BrowSync on another Mac can still publish blank defaults.
+                logger.warning("Ignored blank iCloud settings that would erase this Mac's configuration.")
+                return
             }
-            
-            // Inform AppState to broadcast
-            AppState.shared.broadcastSettings()
-            
-            // Because router rules might have changed:
-            AppState.shared.routerRules = service.routerSettings.rules
-            AppState.shared.isRouterEnabled = service.routerSettings.isEnabled
-            AppState.shared.fallbackBrowserId = service.routerSettings.fallbackBrowserId
-            
+            apply(remoteBundle, to: service)
         } catch {
-            isDownloadingSettings = false
             logger.error("Failed to decode remote settings: \(error)")
         }
+    }
+
+    private func apply(_ remoteBundle: SettingsBundle, to service: SettingsService) {
+        let local = service.currentBundle
+        let merged = Self.applying(remoteBundle, to: local)
+        guard !Self.syncedSettingsEqual(merged, local) else { return }
+
+        service.backupSettingsFile(reason: "icloud")
+
+        isDownloadingSettings = true
+        service.general = merged.general
+        service.syncSettings = merged.sync
+        service.routerSettings = merged.router ?? RouterSettings()
+        // The applied settings came from iCloud; uploading them again would only
+        // echo this Mac's device-local fields back and bounce between Macs.
+        service.save(uploadToICloud: false)
+        isDownloadingSettings = false
+        
+        logger.info("Applied iCloud settings to local store.")
+        
+        // Inform AppState to broadcast
+        AppState.shared.broadcastSettings()
+        
+        // Because router rules might have changed:
+        AppState.shared.routerRules = service.routerSettings.rules
+        AppState.shared.isRouterEnabled = service.routerSettings.isEnabled
+        AppState.shared.fallbackBrowserId = service.routerSettings.fallbackBrowserId
+    }
+
+    /// The settings this Mac would have after taking the iCloud copy. Fields that
+    /// only make sense on one Mac keep their local values.
+    static func applying(_ remoteBundle: SettingsBundle, to local: SettingsBundle) -> SettingsBundle {
+        var result = local
+
+        // General Settings: latest wins, except device-local fields
+        result.general = remoteBundle.general
+        result.general.iCloudSync = local.general.iCloudSync
+        result.general.launchAtLogin = local.general.launchAtLogin
+        result.general.firstLaunchDate = local.general.firstLaunchDate
+        
+        // Router Settings: Use remote
+        var router = local.router ?? RouterSettings()
+        router.isEnabled = remoteBundle.router?.isEnabled ?? router.isEnabled
+        router.fallbackBrowserId = remoteBundle.router?.fallbackBrowserId ?? router.fallbackBrowserId
+        router.rules = remoteBundle.router?.rules ?? []
+        result.router = router
+        
+        let remoteSync = remoteBundle.sync
+        result.sync.conflictStrategy = remoteSync.conflictStrategy
+        result.sync.bookmarkSyncStrategy = remoteSync.bookmarkSyncStrategy
+        result.sync.bookmarkSourceBrowser = remoteSync.bookmarkSourceBrowser
+        result.sync.bookmarkAutoSync = remoteSync.bookmarkAutoSync
+        result.sync.browserDataSyncStrategy = remoteSync.browserDataSyncStrategy
+        result.sync.stateSourceBrowser = remoteSync.stateSourceBrowser
+        result.sync.websiteListPolicy = remoteSync.websiteListPolicy
+        result.sync.tabSharingEnabled = remoteSync.tabSharingEnabled
+        result.sync.automaticSync = remoteSync.automaticSync
+        
+        // Sync Collections: Use remote
+        result.sync.bookmarkParticipatingBrowsers = remoteSync.bookmarkParticipatingBrowsers
+        result.sync.stateParticipatingBrowsers = remoteSync.stateParticipatingBrowsers
+        result.sync.tabSharingParticipatingBrowsers = remoteSync.tabSharingParticipatingBrowsers
+        result.sync.enabledCategories = remoteSync.enabledCategories
+        
+        // Website Settings: Use remote
+        result.sync.websiteSettings = remoteSync.websiteSettings
+        return result
+    }
+
+    static func syncedSettingsEqual(_ lhs: SettingsBundle, _ rhs: SettingsBundle) -> Bool {
+        lhs.general == rhs.general &&
+            lhs.sync == rhs.sync &&
+            (lhs.router ?? RouterSettings()) == (rhs.router ?? RouterSettings())
     }
     
     func downloadRemoteTabs() {
