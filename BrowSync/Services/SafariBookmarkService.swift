@@ -706,20 +706,41 @@ final class SafariBookmarkService {
         }
 
         processRoot(chromeParentId: "1", rootMatcher: isBookmarksBarNode, children: &children)
-        processRoot(chromeParentId: "2", rootMatcher: nil, children: &children)
+        let hasBookmarksMenu = children.contains(where: isBookmarksMenuNode)
+        if hasBookmarksMenu {
+            processRoot(chromeParentId: "2", rootMatcher: isBookmarksMenuNode, children: &children)
+        } else {
+            processRoot(chromeParentId: "2", rootMatcher: nil, children: &children)
+        }
 
-        // Restore any extracted nodes that weren't placed back (e.g., they were moved to a system folder not managed here)
-        for (_, node) in extractedLeavesByID {
-            children.append(node)
+        // Older BrowSync builds treated Safari's plist top level as Chrome's
+        // Other Bookmarks root, even though Safari stores that root inside the
+        // BookmarksMenu node. Keep those legacy root-level items during a
+        // merge, but remove them for an authoritative full mirror. Otherwise
+        // an empty Chrome Other Bookmarks folder can never clear the items the
+        // user sees at Safari's root.
+        if isFullMirror && hasBookmarksMenu {
+            children.removeAll { !isSafariSystemNode($0) }
         }
-        for (_, nodesList) in extractedLeavesByURL {
-            children.append(contentsOf: nodesList)
-        }
-        for (_, nodesList) in extractedFolders {
-            children.append(contentsOf: nodesList)
-        }
-        for (_, node) in extractedFoldersByID {
-            children.append(node)
+
+        // A merge keeps unmatched extracted nodes because they may be Safari-
+        // only copies. A full mirror is authoritative: restoring an unmatched
+        // URL/title duplicate here would recreate the very root-level item the
+        // source tree omitted (for example, a Safari-root copy of a bookmark
+        // that Chrome contains only in its Bookmarks Bar).
+        if !isFullMirror {
+            for (_, node) in extractedLeavesByID {
+                children.append(node)
+            }
+            for (_, nodesList) in extractedLeavesByURL {
+                children.append(contentsOf: nodesList)
+            }
+            for (_, nodesList) in extractedFolders {
+                children.append(contentsOf: nodesList)
+            }
+            for (_, node) in extractedFoldersByID {
+                children.append(node)
+            }
         }
 
         plist["Children"] = children
