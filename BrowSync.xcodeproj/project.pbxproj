@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        E91200000000000000000001 /* DaemonConnectionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = E91200000000000000000003 /* DaemonConnectionPolicy.swift */; };
+        E91200000000000000000002 /* DaemonConnectionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = E91200000000000000000003 /* DaemonConnectionPolicy.swift */; };
 		091C23D15A0618E4C9D93470 /* content.js in Resources */ = {isa = PBXBuildFile; fileRef = C92E6B86E06DBA3FAF458AA8 /* content.js */; };
 		09C7E842D5114B27B18A86DB /* RouterTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10F52E8BB62D4BA5E32CD492 /* RouterTabView.swift */; };
 		0A63D7EDCF55B55E811CB8EE /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 2F278BFDA3B2DF653CD4E4A2 /* Localizable.strings */; };
@@ -183,6 +185,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+        E91200000000000000000003 /* DaemonConnectionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DaemonConnectionPolicy.swift; sourceTree = "<group>"; };
 		005114DBA010E2061038E501 /* RouterModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouterModels.swift; sourceTree = "<group>"; };
 		01878D8F3BC20991BBF106DD /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/Localizable.strings; sourceTree = "<group>"; };
 		054F9457E89B187A9B05FC45 /* SandboxAccessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SandboxAccessManager.swift; sourceTree = "<group>"; };
@@ -351,6 +354,7 @@
 				91206874B5D1B45C9D05A911 /* AppConfig.swift */,
 				2AF71F0DA64453CD967B49F2 /* BrowserScanner.swift */,
 				3528BFE980A1D1244B97800E /* DaemonServer.swift */,
+				E91200000000000000000003 /* DaemonConnectionPolicy.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -739,6 +743,7 @@
 				F305BEDD3C3CF4EAB82BB3BA /* BrowsersTabView.swift in Sources */,
 				8A59C788940EE276FEF49438 /* ContentView.swift in Sources */,
 				707821BB2B42D121080578F5 /* DaemonServer.swift in Sources */,
+				E91200000000000000000001 /* DaemonConnectionPolicy.swift in Sources */,
 				1150700A20301EFB81B57837 /* GeneralView.swift in Sources */,
 				8DFBC220F863CB4B7D9E8740 /* LanguageBundle.swift in Sources */,
 				89B2FBA2DA46EBD47142C310 /* NotificationService.swift in Sources */,
@@ -775,6 +780,7 @@
 				F737B628ED37A3128BAF8DB5 /* BrowsersTabView.swift in Sources */,
 				71E4B05180F86920EA296940 /* ContentView.swift in Sources */,
 				A4E8C83C16645BEA33AE8648 /* DaemonServer.swift in Sources */,
+				E91200000000000000000002 /* DaemonConnectionPolicy.swift in Sources */,
 				60A3DD21B1DFD5A712F82F34 /* GeneralView.swift in Sources */,
 				42B08D8BB34FC99CDC1E51D9 /* LanguageBundle.swift in Sources */,
 				700AB5DA444624B2028F8FED /* NotificationService.swift in Sources */,

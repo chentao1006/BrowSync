@@ -29,7 +29,7 @@ struct BrowsersTabView: View {
 
             List {
                 ForEach(appState.browserInfos.filter { $0.isInstalled }) { info in
-                    BrowserRow(info: info)
+                    BrowserRow(info: info, daemon: appState.daemon)
                         .contextMenu {
                             if appState.settingsService.general.customBrowsers.contains(where: { $0.bundleIdentifier == info.browser.bundleIdentifier }) {
                                 Button(role: .destructive) {
@@ -112,6 +112,7 @@ struct BrowserRow: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var langBundle: LanguageBundle
     let info: BrowserInfo
+    @ObservedObject var daemon: DaemonServer
     
     @State private var isHovering = false
     
@@ -178,7 +179,32 @@ struct BrowserRow: View {
                 
                 Spacer(minLength: 16)
                 
-                if info.extensionStatus == .waitingConnection {
+                if !info.isConnected, daemon.deniedBrowserIDs.contains(info.browser.id) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "xmark.circle.fill")
+                        Text(String(localized: "Connection Denied", bundle: langBundle.bundle))
+                    }
+                    .foregroundStyle(.orange)
+                    Button(String(localized: "Reauthorize", bundle: langBundle.bundle)) {
+                        daemon.reviewDeniedBrowser(info.browser)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!daemon.isRunning)
+                } else if !info.isConnected, info.browser == .firefox,
+                          let deniedOrigin = daemon.deniedExtensionOrigins.first(where: { $0.hasPrefix("moz-extension://") }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "xmark.circle.fill")
+                        Text(String(localized: "Connection Denied", bundle: langBundle.bundle))
+                    }
+                    .foregroundStyle(.orange)
+                    Button(String(localized: "Reauthorize", bundle: langBundle.bundle)) {
+                        daemon.reviewDeniedOrigin(deniedOrigin)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!daemon.isRunning)
+                } else if info.extensionStatus == .waitingConnection {
                     HStack(spacing: 6) {
                         ProgressView()
                             .controlSize(.small)

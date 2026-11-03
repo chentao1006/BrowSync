@@ -7,6 +7,7 @@ struct GeneralView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var langBundle: LanguageBundle
     @State private var showUpgradeAlert = false
+    @State private var showResetExtensionAccess = false
 
     private var settings: Binding<GeneralSettings> {
         Binding(
@@ -107,6 +108,23 @@ struct GeneralView: View {
                     Toggle(String(localized: "Notify on Browser Connected", bundle: langBundle.bundle), isOn: settings.notifyBrowserConnected)
                 }
 
+                Section(String(localized: "Extension Access", bundle: langBundle.bundle)) {
+                    Text(String(localized: "Approve each Chrome or Firefox extension once on this Mac. Approved browsers reconnect automatically. Safari connects automatically.", bundle: langBundle.bundle))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    DeniedExtensionConnectionsView(daemon: appState.daemon)
+                    Button(String(localized: "Reset Extension Access...", bundle: langBundle.bundle)) {
+                        showResetExtensionAccess = true
+                    }
+                    .confirmationDialog(String(localized: "Reset Extension Access?", bundle: langBundle.bundle), isPresented: $showResetExtensionAccess) {
+                        Button(String(localized: "Reset Extension Access", bundle: langBundle.bundle), role: .destructive) {
+                            appState.daemon.resetExtensionApprovals()
+                        }
+                    } message: {
+                        Text(String(localized: "All extensions will be disconnected. Chrome and Firefox extensions must be approved again; Safari reconnects automatically. Your sync settings and browser data will be kept.", bundle: langBundle.bundle))
+                    }
+                }
+
             }
             .formStyle(.grouped)
             .alert(String(localized: "Professional Required", bundle: langBundle.bundle), isPresented: $showUpgradeAlert) {
@@ -123,6 +141,46 @@ struct GeneralView: View {
         case .system: NSApp.appearance = nil
         case .light: NSApp.appearance = NSAppearance(named: .aqua)
         case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
+        }
+    }
+}
+
+private struct DeniedExtensionConnectionsView: View {
+    @ObservedObject var daemon: DaemonServer
+    @EnvironmentObject var langBundle: LanguageBundle
+
+    var body: some View {
+        ForEach(daemon.deniedBrowserIDs, id: \.self) { browserID in
+            if let browser = (Browser.standardBrowsers + AppState.shared.settingsService.general.customBrowsers).first(where: { $0.id == browserID }) {
+                HStack(spacing: 8) {
+                    if let appURL = browser.appURL {
+                        Image(nsImage: NSWorkspace.shared.icon(forFile: appURL.path))
+                            .resizable()
+                            .frame(width: 24, height: 24)
+                    }
+                    Text(browser.displayName)
+                    Spacer()
+                    Button(String(localized: "Reauthorize", bundle: langBundle.bundle)) {
+                        daemon.reviewDeniedBrowser(browser)
+                    }
+                    .disabled(!daemon.isRunning)
+                }
+            }
+        }
+        ForEach(daemon.deniedExtensionOrigins, id: \.self) { origin in
+            HStack(spacing: 8) {
+                if let appURL = Browser.firefox.appURL {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: appURL.path))
+                        .resizable()
+                        .frame(width: 24, height: 24)
+                }
+                Text(Browser.firefox.displayName)
+                Spacer()
+                Button(String(localized: "Reauthorize", bundle: langBundle.bundle)) {
+                    daemon.reviewDeniedOrigin(origin)
+                }
+                .disabled(!daemon.isRunning)
+            }
         }
     }
 }

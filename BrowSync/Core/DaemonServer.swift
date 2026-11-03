@@ -1,6 +1,6 @@
 // DaemonServer.swift
 // BrowSync — WebSocket server using Network.framework NWProtocolWebSocket
-// Listens on ws://127.0.0.1:62333
+// Listens exclusively on 127.0.0.1:62333 and [::1]:62333
 
 import Foundation
 import Network
@@ -26,6 +26,17 @@ final class ConnectedClient {
     }
 }
 
+private final class ApprovalAlertAction: NSObject {
+    let decide: (Bool) -> Void
+
+    init(decide: @escaping (Bool) -> Void) {
+        self.decide = decide
+    }
+
+    @objc func allow() { decide(true) }
+    @objc func deny() { decide(false) }
+}
+
 // MARK: - Daemon Server Delegate
 
 protocol DaemonServerDelegate: AnyObject {
@@ -48,7 +59,17 @@ final class DaemonServer: ObservableObject {
 
     private let logger = Logger(subsystem: "com.ct106.browsync", category: "DaemonServer")
 
-    private var listener: NWListener?
+    private var listeners: [NWListener] = []
+    private var readyListeners: Set<ObjectIdentifier> = []
+    private var restartTask: Task<Void, Never>?
+    private let connectionPolicy = DaemonConnectionPolicy()
+    private var originApprovalQueue: [String] = []
+    private var browserApprovalQueue: [Browser] = []
+    private var approvalAlert: NSAlert?
+    private var approvalAlertAction: ApprovalAlertAction?
+    private var approvalGeneration = UUID()
+    private var activeApprovalSession: UUID?
+    private var pendingSince: [ObjectIdentifier: Date] = [:]
     /// Connections that haven't registered yet
     private var pendingConnections: [ObjectIdentifier: NWConnection] = [:]
     /// Registered clients keyed by instanceId
@@ -57,82 +78,319 @@ final class DaemonServer: ObservableObject {
 
     @Published var isRunning: Bool = false
     @Published var connectedBrowsers: Set<Browser> = []
+    @Published private(set) var deniedBrowserIDs: [String] = []
+    @Published private(set) var deniedExtensionOrigins: [String] = []
 
     weak var delegate: DaemonServerDelegate?
+
+    init() {
+        deniedBrowserIDs = connectionPolicy.deniedBrowserIDs
+        deniedExtensionOrigins = connectionPolicy.deniedOrigins
+    }
 
     // MARK: - Lifecycle
 
     func start() {
-        guard !isRunning else { return }
-
-        // Build WebSocket parameters over TCP
-        let wsOptions = NWProtocolWebSocket.Options()
-        wsOptions.maximumMessageSize = 50_000_000
-        wsOptions.autoReplyPing = true  // let the stack handle WebSocket pings automatically
-
-        let params = NWParameters.tcp
-        params.defaultProtocolStack.applicationProtocols.insert(wsOptions, at: 0)
-        params.allowLocalEndpointReuse = true
+        guard listeners.isEmpty else { return }
+        restartTask?.cancel()
+        restartTask = nil
+        let session = connectionPolicy.cancelPendingApprovals()
+        activeApprovalSession = session
 
         do {
-            let port = NWEndpoint.Port(rawValue: DaemonServer.port)!
-            listener = try NWListener(using: params, on: port)
+            for host in DaemonConnectionPolicy.loopbackHosts {
+                let wsOptions = NWProtocolWebSocket.Options()
+                wsOptions.maximumMessageSize = 50_000_000
+                wsOptions.autoReplyPing = true
+                let policy = connectionPolicy
+                wsOptions.setClientRequestHandler(.global(qos: .userInitiated)) { [weak self] _, headers in
+                    switch policy.evaluate(headers: headers, session: session) {
+                    case .allow:
+                        return NWProtocolWebSocket.Response(status: .accept, subprotocol: nil)
+                    case .requestApproval(let origin):
+                        Task { @MainActor [weak self] in self?.requestOriginApproval(origin, session: session) }
+                    case .reject:
+                        break
+                    }
+                    // No WebSocket traffic or registration is accepted before
+                    // approval. Existing extensions retry automatically.
+                    return NWProtocolWebSocket.Response(status: .reject, subprotocol: nil)
+                }
+                let params = DaemonConnectionPolicy.parameters(host: host, port: Self.port, webSocket: wsOptions)
+                let listener = try NWListener(using: params)
+                listeners.append(listener)
+                listener.stateUpdateHandler = { [weak self, weak listener] state in
+                    Task { @MainActor in
+                        guard let self, let listener,
+                              self.listeners.contains(where: { $0 === listener }) else { return }
+                        self.handleListenerState(state, listener: listener)
+                    }
+                }
+                listener.newConnectionHandler = { [weak self, weak listener] connection in
+                    Task { @MainActor in
+                        guard let self, let listener,
+                              self.listeners.contains(where: { $0 === listener }) else {
+                            connection.cancel()
+                            return
+                        }
+                        self.handleNewConnection(connection)
+                    }
+                }
+            }
         } catch {
-            logger.error("Failed to create WebSocket listener: \(error)")
+            logger.error("Failed to create loopback WebSocket listeners: \(error)")
+            stop()
             return
         }
 
-        listener?.stateUpdateHandler = { [weak self] state in
-            Task { @MainActor in self?.handleListenerState(state) }
-        }
-
-        listener?.newConnectionHandler = { [weak self] connection in
-            Task { @MainActor in self?.handleNewConnection(connection) }
-        }
-
-        listener?.start(queue: .global(qos: .userInitiated))
+        for listener in listeners { listener.start(queue: .global(qos: .userInitiated)) }
         startHeartbeatTimer()
-        isRunning = true
-        logger.info("DaemonServer (WebSocket) started on port \(DaemonServer.port)")
     }
 
     func stop() {
+        restartTask?.cancel()
+        restartTask = nil
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
-        listener?.cancel()
-        listener = nil
-        for (_, client) in clients { client.connection.cancel() }
+        let oldListeners = listeners
+        listeners.removeAll()
+        activeApprovalSession = nil
+        readyListeners.removeAll()
+        for listener in oldListeners { listener.cancel() }
+        for client in Array(clients.values) { removeConnection(client.connection) }
         for (_, conn) in pendingConnections { conn.cancel() }
         clients.removeAll()
         pendingConnections.removeAll()
+        pendingSince.removeAll()
         connectedBrowsers.removeAll()
+        cancelApprovalDialogs()
         isRunning = false
         logger.info("DaemonServer stopped")
     }
 
     // MARK: - Listener State
 
-    private func handleListenerState(_ state: NWListener.State) {
+    private func handleListenerState(_ state: NWListener.State, listener: NWListener) {
         switch state {
         case .ready:
-            logger.info("WebSocket listener ready on port \(DaemonServer.port)")
+            readyListeners.insert(ObjectIdentifier(listener))
+            isRunning = readyListeners.count == listeners.count
+            logger.info("Loopback WebSocket listener ready: \(String(describing: listener.parameters.requiredLocalEndpoint))")
         case .failed(let error):
             logger.error("Listener failed: \(error)")
-            isRunning = false
-            // Retry after 3 seconds
-            Task { try? await Task.sleep(nanoseconds: 3_000_000_000); self.start() }
-        case .cancelled:
-            isRunning = false
+            stop()
+            restartTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard !Task.isCancelled else { return }
+                self?.start()
+            }
         default:
             break
         }
     }
 
+    // MARK: - Browser Authorization
+
+    private func approvalContent(for browser: Browser, message: String) -> NSView {
+        func iconView(_ image: NSImage, size: CGFloat) -> NSImageView {
+            let view = NSImageView(image: image)
+            view.imageScaling = .scaleProportionallyUpOrDown
+            view.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                view.widthAnchor.constraint(equalToConstant: size),
+                view.heightAnchor.constraint(equalToConstant: size)
+            ])
+            return view
+        }
+
+        let appIcon = iconView(NSApp.applicationIconImage, size: 64)
+        let linkIcon = iconView(NSImage(systemSymbolName: "link", accessibilityDescription: nil) ?? NSImage(), size: 26)
+        linkIcon.contentTintColor = .secondaryLabelColor
+        let browserImage = browser.appURL.map { NSWorkspace.shared.icon(forFile: $0.path) }
+            ?? NSImage(systemSymbolName: "globe", accessibilityDescription: nil) ?? NSImage()
+        let browserIcon = iconView(browserImage, size: 64)
+
+        let icons = NSStackView(views: [appIcon, linkIcon, browserIcon])
+        icons.orientation = .horizontal
+        icons.alignment = .centerY
+        icons.spacing = 16
+        icons.frame = NSRect(x: 0, y: 0, width: 186, height: 68)
+
+        let messageField = NSTextField(wrappingLabelWithString: message)
+        messageField.font = .systemFont(ofSize: NSFont.systemFontSize)
+        messageField.textColor = .secondaryLabelColor
+        messageField.alignment = .natural
+        messageField.translatesAutoresizingMaskIntoConstraints = false
+        messageField.widthAnchor.constraint(equalToConstant: 420).isActive = true
+
+        let content = NSStackView(views: [icons, messageField])
+        content.orientation = .vertical
+        content.alignment = .centerX
+        content.spacing = 16
+        content.frame = NSRect(origin: .zero, size: content.fittingSize)
+        return content
+    }
+
+    private func removeDefaultIconLayout(from alert: NSAlert) {
+        alert.layout()
+        guard let contentView = alert.window.contentView,
+              let iconView = contentView.subviews.first(where: { $0 is NSImageView }) else { return }
+        let remainingViews = contentView.subviews.filter { $0 !== iconView }
+        let frames = remainingViews.map { ($0, $0.frame) }
+        let contentWidth = contentView.frame.width
+        let contentHeight = (remainingViews.map(\.frame.maxY).max() ?? contentView.frame.height) + 20
+        iconView.removeFromSuperview()
+        alert.window.setContentSize(NSSize(width: contentWidth, height: contentHeight))
+        // Resizing an NSAlert moves its labels because they are top anchored.
+        // Restore the original frames so the title, message and accessory keep
+        // their standard spacing, with only the icon row removed.
+        for (view, frame) in frames { view.frame = frame }
+    }
+
+    private func showApprovalAlert(_ alert: NSAlert, completion: @escaping (Bool) -> Void) {
+        removeDefaultIconLayout(from: alert)
+        let action = ApprovalAlertAction { [weak self, weak alert] allowed in
+            guard let self, let alert, self.approvalAlert === alert else { return }
+            if let parent = alert.window.sheetParent {
+                parent.endSheet(alert.window)
+            } else {
+                alert.window.orderOut(nil)
+            }
+            self.approvalAlert = nil
+            self.approvalAlertAction = nil
+            completion(allowed)
+        }
+        approvalAlert = alert
+        approvalAlertAction = action
+        alert.buttons[0].target = action
+        alert.buttons[0].action = #selector(ApprovalAlertAction.deny)
+        alert.buttons[1].target = action
+        alert.buttons[1].action = #selector(ApprovalAlertAction.allow)
+
+        if let window = NSApp.windows.first(where: {
+            $0.title == "BrowSync" && $0.isVisible && $0.attachedSheet == nil
+        }) {
+            window.beginSheet(alert.window)
+        } else {
+            alert.window.level = .normal
+            alert.window.orderFront(nil)
+            NSApp.requestUserAttention(.informationalRequest)
+        }
+    }
+
+    private func requestOriginApproval(_ origin: String, session: UUID) {
+        guard !listeners.isEmpty, connectionPolicy.isOriginPending(origin, session: session) else { return }
+        originApprovalQueue.append(origin)
+        presentNextOriginApproval()
+    }
+
+    private func presentNextOriginApproval() {
+        guard approvalAlert == nil, !originApprovalQueue.isEmpty else {
+            if originApprovalQueue.isEmpty { presentNextBrowserApproval() }
+            return
+        }
+        let origin = originApprovalQueue.removeFirst()
+        let bundle = LanguageBundle(language: AppState.shared.settingsService.general.language).bundle
+        let browser = Browser.firefox
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(format: String(localized: "BrowSync: Allow %@ to Connect?", bundle: bundle), browser.displayName)
+        let message = String(localized: "Only allow this request if you just enabled BrowSync in your browser. The extension can use your enabled sync features. Your choice is remembered on this Mac for future connections.", bundle: bundle)
+        alert.informativeText = ""
+        alert.accessoryView = approvalContent(for: browser, message: message)
+        alert.addButton(withTitle: String(localized: "Don't Allow", bundle: bundle))
+        alert.addButton(withTitle: String(localized: "Allow Connection", bundle: bundle))
+        let generation = approvalGeneration
+        showApprovalAlert(alert) { [weak self] allowed in
+            guard let self, self.approvalGeneration == generation else { return }
+            self.connectionPolicy.resolveOrigin(origin, allow: allowed)
+            if allowed { self.connectionPolicy.approveFirefoxAfterOriginConsent() }
+            self.deniedExtensionOrigins = self.connectionPolicy.deniedOrigins
+            self.presentNextOriginApproval()
+        }
+    }
+
+    private func requestBrowserApproval(_ browser: Browser, session: UUID) {
+        guard activeApprovalSession == session,
+              connectionPolicy.isBrowserPending(browser.id, session: session) else { return }
+        browserApprovalQueue.append(browser)
+        presentNextBrowserApproval()
+    }
+
+    private func presentNextBrowserApproval() {
+        guard approvalAlert == nil, originApprovalQueue.isEmpty,
+              let session = activeApprovalSession else { return }
+        while let browser = browserApprovalQueue.first,
+              !connectionPolicy.isBrowserPending(browser.id, session: session) {
+            browserApprovalQueue.removeFirst()
+        }
+        guard !browserApprovalQueue.isEmpty else { return }
+        let browser = browserApprovalQueue.removeFirst()
+        let bundle = LanguageBundle(language: AppState.shared.settingsService.general.language).bundle
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(format: String(localized: "BrowSync: Allow %@ to Connect?", bundle: bundle), browser.displayName)
+        let message = String(localized: "Only allow this request if you just enabled BrowSync in your browser. The extension can use your enabled sync features. Your choice is remembered on this Mac for future connections.", bundle: bundle)
+        alert.informativeText = ""
+        alert.accessoryView = approvalContent(for: browser, message: message)
+        alert.addButton(withTitle: String(localized: "Don't Allow", bundle: bundle))
+        alert.addButton(withTitle: String(localized: "Allow Connection", bundle: bundle))
+        let generation = approvalGeneration
+        showApprovalAlert(alert) { [weak self] allowed in
+            guard let self, self.approvalGeneration == generation else { return }
+            self.connectionPolicy.resolveBrowser(browser.id, allow: allowed)
+            self.deniedBrowserIDs = self.connectionPolicy.deniedBrowserIDs
+            self.presentNextOriginApproval()
+        }
+    }
+
+    private func cancelApprovalDialogs() {
+        approvalGeneration = UUID()
+        originApprovalQueue.removeAll()
+        browserApprovalQueue.removeAll()
+        connectionPolicy.cancelPendingApprovals()
+        if let alert = approvalAlert {
+            if let parent = alert.window.sheetParent {
+                parent.endSheet(alert.window, returnCode: .abort)
+            } else {
+                NSApp.abortModal()
+                alert.window.orderOut(nil)
+            }
+        }
+        approvalAlert = nil
+        approvalAlertAction = nil
+    }
+
+    func resetExtensionApprovals() {
+        stop()
+        connectionPolicy.reset()
+        deniedBrowserIDs = []
+        deniedExtensionOrigins = []
+        start()
+    }
+
+    func reviewDeniedBrowser(_ browser: Browser) {
+        guard let session = activeApprovalSession,
+              connectionPolicy.retryDeniedBrowser(browser.id, session: session) else { return }
+        deniedBrowserIDs = connectionPolicy.deniedBrowserIDs
+        requestBrowserApproval(browser, session: session)
+    }
+
+    func reviewDeniedOrigin(_ origin: String) {
+        guard let session = activeApprovalSession,
+              connectionPolicy.retryDeniedOrigin(origin, session: session) else { return }
+        deniedExtensionOrigins = connectionPolicy.deniedOrigins
+        requestOriginApproval(origin, session: session)
+    }
+
     // MARK: - New Connection
 
     private func handleNewConnection(_ connection: NWConnection) {
+        // Bound idle/half-open connections, including rejected handshakes.
+        guard pendingConnections.count < 32 else { connection.cancel(); return }
         let key = ObjectIdentifier(connection)
         pendingConnections[key] = connection
+        pendingSince[key] = Date()
 
         connection.stateUpdateHandler = { [weak self, weak connection] state in
             guard let self, let connection else { return }
@@ -184,6 +442,8 @@ final class DaemonServer: ObservableObject {
                     }
                 }
 
+                let key = ObjectIdentifier(connection)
+                guard self.pendingConnections[key] != nil || self.clients.values.contains(where: { $0.connection === connection }) else { return }
                 self.receiveNextMessage(on: connection)
             }
         }
@@ -236,6 +496,18 @@ final class DaemonServer: ObservableObject {
 
     private func routeMessage(_ message: WSMessage, from connection: NWConnection) {
         let connKey = ObjectIdentifier(connection)
+
+        // The handshake already requires an approved extension Origin. Do not
+        // dispatch anything until that connection has registered, either.
+        let registered = clients.values.contains { $0.connection === connection }
+        guard message.type == .register || registered else {
+            removeConnection(connection)
+            return
+        }
+        if message.type == .register && registered {
+            removeConnection(connection)
+            return
+        }
 
         switch message.type {
         case .register:
@@ -426,8 +698,11 @@ final class DaemonServer: ObservableObject {
     // MARK: - Register
 
     private func handleRegister(_ message: WSMessage, connection: NWConnection) {
-        guard let browserRaw = message.browser, let originalInstanceId = message.instanceId else {
-            logger.warning("Invalid register message: \(String(describing: message))")
+        guard pendingConnections[ObjectIdentifier(connection)] != nil,
+              let browserRaw = message.browser, let originalInstanceId = message.instanceId,
+              !originalInstanceId.isEmpty, originalInstanceId.utf8.count <= 256 else {
+            logger.warning("Invalid register message")
+            removeConnection(connection)
             return
         }
         
@@ -458,6 +733,24 @@ final class DaemonServer: ObservableObject {
         }
         guard let browser = allBrowsers.first(where: { $0.id == realBrowserId }) else {
             logger.warning("Unknown browser id: \(realBrowserId)")
+            removeConnection(connection)
+            return
+        }
+
+        if browser != .safari, let session = activeApprovalSession {
+            switch connectionPolicy.evaluateBrowser(browser.id, session: session) {
+            case .allow:
+                break
+            case .requestApproval:
+                requestBrowserApproval(browser, session: session)
+                removeConnection(connection)
+                return
+            case .reject:
+                removeConnection(connection)
+                return
+            }
+        } else if browser != .safari {
+            removeConnection(connection)
             return
         }
         
@@ -470,6 +763,7 @@ final class DaemonServer: ObservableObject {
         }
 
         pendingConnections.removeValue(forKey: ObjectIdentifier(connection))
+        pendingSince.removeValue(forKey: ObjectIdentifier(connection))
 
         let client = ConnectedClient(id: instanceId, browser: browser, connection: connection)
         client.capabilities = Set(message.capabilities ?? [])
@@ -484,8 +778,7 @@ final class DaemonServer: ObservableObject {
             sendWSMessage(WSMessage.ack(messageId: msgId, browserId: realBrowserId), to: client)
         }
 
-        // Continue receiving
-        receiveNextMessage(on: connection)
+        // The receive loop schedules the next read after routing returns.
     }
 
 
@@ -529,6 +822,7 @@ final class DaemonServer: ObservableObject {
     private func removeConnection(_ connection: NWConnection) {
         connection.cancel()
         pendingConnections.removeValue(forKey: ObjectIdentifier(connection))
+        pendingSince.removeValue(forKey: ObjectIdentifier(connection))
 
         if let (id, client) = clients.first(where: {
             ObjectIdentifier($0.value.connection) == ObjectIdentifier(connection)
@@ -553,6 +847,10 @@ final class DaemonServer: ObservableObject {
 
     private func checkHeartbeats() {
         let now = Date()
+        let expired = pendingSince.filter { now.timeIntervalSince($0.value) > 30 }.map(\.key)
+        for key in expired {
+            if let connection = pendingConnections[key] { removeConnection(connection) }
+        }
         var timedOut: [String] = []
         for (id, client) in clients {
             if now.timeIntervalSince(client.lastSeen) > DaemonServer.heartbeatTimeout {
@@ -578,6 +876,7 @@ final class DaemonServer: ObservableObject {
         clients.values.contains { $0.browser == browser }
     }
 }
+
 
 // MARK: - Global State Store
 

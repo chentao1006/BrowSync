@@ -645,3 +645,18 @@
 "Use iCloud Settings" = "使用 iCloud 中的设置";
 "Use This Mac's Settings" = "使用这台 Mac 的设置";
 "Turn Off iCloud Sync" = "关闭 iCloud 同步";
+
+/* Local extension connection approval */
+"Extension Access" = "扩展连接授权";
+"Reauthorize" = "重新授权";
+"Connection Denied" = "连接已拒绝";
+"Approve each Chrome or Firefox extension once on this Mac. Approved browsers reconnect automatically. Safari connects automatically." = "这台 Mac 上的 Chrome 或 Firefox 扩展只需确认一次，之后会自动重连。Safari 会自动连接。";
+"Reset Extension Access..." = "重置扩展授权…";
+"Reset Extension Access?" = "重置扩展授权？";
+"Reset Extension Access" = "重置扩展授权";
+"All extensions will be disconnected. Chrome and Firefox extensions must be approved again; Safari reconnects automatically. Your sync settings and browser data will be kept." = "所有扩展将断开连接。Chrome 和 Firefox 扩展需要重新确认，Safari 会自动连接。同步设置和浏览器数据会保留。";
+"BrowSync: Allow %@ to Connect?" = "BrowSync：允许 %@ 连接？";
+"Chromium browser" = "Chromium 浏览器";
+"Only allow this request if you just enabled BrowSync in your browser. The extension can use your enabled sync features. Your choice is remembered on this Mac for future connections." = "请仅在刚刚在浏览器中启用同览扩展时允许连接。此扩展可使用你已开启的同步功能。这台 Mac 会记住你的选择，之后自动连接。";
+"Don't Allow" = "不允许";
+"Allow Connection" = "允许连接";

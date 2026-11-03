@@ -583,3 +583,18 @@
 "Use iCloud Settings" = "Usa impostazioni iCloud";
 "Use This Mac's Settings" = "Usa impostazioni di questo Mac";
 "Turn Off iCloud Sync" = "Disattiva sincronizzazione iCloud";
+
+/* Local extension connection approval */
+"Extension Access" = "Accesso estensioni";
+"Reauthorize" = "Autorizza di nuovo";
+"Connection Denied" = "Connessione negata";
+"Approve each Chrome or Firefox extension once on this Mac. Approved browsers reconnect automatically. Safari connects automatically." = "Approva le estensioni Chrome o Firefox una sola volta su questo Mac. Si riconnetteranno automaticamente. Safari si connette automaticamente.";
+"Reset Extension Access..." = "Reimposta accesso estensioni…";
+"Reset Extension Access?" = "Reimpostare l’accesso delle estensioni?";
+"Reset Extension Access" = "Reimposta accesso estensioni";
+"All extensions will be disconnected. Chrome and Firefox extensions must be approved again; Safari reconnects automatically. Your sync settings and browser data will be kept." = "Tutte le estensioni verranno disconnesse. Quelle di Chrome e Firefox dovranno essere approvate di nuovo; Safari si riconnetterà automaticamente. Le impostazioni di sincronizzazione e i dati dei browser verranno conservati.";
+"BrowSync: Allow %@ to Connect?" = "BrowSync: consentire la connessione di %@?";
+"Chromium browser" = "Browser Chromium";
+"Only allow this request if you just enabled BrowSync in your browser. The extension can use your enabled sync features. Your choice is remembered on this Mac for future connections." = "Consenti solo se hai appena attivato BrowSync nel browser. L’estensione può utilizzare le funzioni di sincronizzazione attivate. Questo Mac ricorderà la scelta per le connessioni future.";
+"Don't Allow" = "Non consentire";
+"Allow Connection" = "Consenti connessione";

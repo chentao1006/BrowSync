@@ -585,3 +585,18 @@
 "Use iCloud Settings" = "iCloud 설정 사용";
 "Use This Mac's Settings" = "이 Mac의 설정 사용";
 "Turn Off iCloud Sync" = "iCloud 동기화 끄기";
+
+/* Local extension connection approval */
+"Extension Access" = "확장 프로그램 연결 권한";
+"Reauthorize" = "다시 승인";
+"Connection Denied" = "연결 거부됨";
+"Approve each Chrome or Firefox extension once on this Mac. Approved browsers reconnect automatically. Safari connects automatically." = "이 Mac에서 Chrome 또는 Firefox 확장 프로그램을 한 번 승인하면 자동으로 다시 연결됩니다. Safari는 자동으로 연결됩니다.";
+"Reset Extension Access..." = "확장 프로그램 권한 초기화…";
+"Reset Extension Access?" = "확장 프로그램 권한을 초기화할까요?";
+"Reset Extension Access" = "확장 프로그램 권한 초기화";
+"All extensions will be disconnected. Chrome and Firefox extensions must be approved again; Safari reconnects automatically. Your sync settings and browser data will be kept." = "모든 확장 프로그램의 연결이 해제됩니다. Chrome과 Firefox 확장 프로그램은 다시 승인해야 하며 Safari는 자동으로 다시 연결됩니다. 동기화 설정과 브라우저 데이터는 유지됩니다.";
+"BrowSync: Allow %@ to Connect?" = "BrowSync: %@의 연결을 허용할까요?";
+"Chromium browser" = "Chromium 브라우저";
+"Only allow this request if you just enabled BrowSync in your browser. The extension can use your enabled sync features. Your choice is remembered on this Mac for future connections." = "방금 브라우저에서 BrowSync를 활성화한 경우에만 허용하세요. 확장 프로그램은 활성화된 동기화 기능을 사용할 수 있습니다. 이 Mac에 선택이 저장되어 이후 자동으로 연결됩니다.";
+"Don't Allow" = "허용 안 함";
+"Allow Connection" = "연결 허용";

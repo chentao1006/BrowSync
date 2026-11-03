@@ -24,6 +24,14 @@
 - **Native macOS App**: Built with SwiftUI. Supports Dark/Light themes, Menu Bar integration, and Launch at Login.
 - **iCloud Sync**: Automatically sync your routing rules, settings, and site preferences across all your Mac devices via iCloud.
 
+## Local listener and extension access
+
+The WebSocket server binds explicitly to IPv4 `127.0.0.1:62333` and IPv6 `[::1]:62333`. It does not listen on LAN or wildcard addresses. Extensions connect to `ws://127.0.0.1:62333`.
+
+The Safari extension ships with the app and connects automatically. Chrome and Firefox browsers ask for approval in the main app on their first connection. Approval is saved per browser on this Mac; browser/app restarts and reconnects do not ask again. Registration is rejected while approval is pending; the extension reconnects after approval. Approving Chrome does not approve Edge or another Chromium browser. If you accidentally choose Don't Allow, the installed browser list shows **Connection Denied** and a **Reauthorize** button to see the prompt again; other approvals are kept. **General Settings → Extension Access** also lists denied browsers and offers **Reset Extension Access** to revoke Chrome/Firefox approvals and disconnect all extensions. Safari reconnects automatically.
+
+Missing, null, duplicate, website, and malformed Origins are rejected before registration or data access. The server accepts the published BrowSync Chromium extension Origin; Firefox extension Origins require confirmation. Browser approval is checked before sync messages are accepted. A browser-managed Origin helps reject a different browser extension, but local native programs can forge an Origin, and the browser ID in registration is self-reported. Strong client identity requires a credential verified by the app, which the current extension protocol does not provide.
+
 ## 🌐 Supported Browsers
 
 BrowSync supports a wide range of browsers out of the box, and allows you to add virtually any Chromium-based browser manually.
