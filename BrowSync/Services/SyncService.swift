@@ -427,8 +427,14 @@ final class SyncService: ObservableObject {
 
     func bookmarkFolderMissing(_ browser: Browser, folder: String?) -> Bool {
         guard let folder, !folder.isEmpty else { return false }
+        let wasReportedMissing = BookmarkFolderPath.canonicalized(missingBookmarkFolders[browser.rawValue]) == BookmarkFolderPath.canonicalized(folder)
+        // Other browsers are read through cached snapshots. A newer failure
+        // reported by their extension takes precedence over that cache.
+        if browser != .safari, wasReportedMissing { return true }
         let tree = bookmarkTreeSnapshot(for: browser)
-        guard !tree.isEmpty else { return false }
+        guard !tree.isEmpty else {
+            return wasReportedMissing
+        }
         return !BookmarkTreeMerger.folderExists(tree: tree, folderPath: folder)
     }
 
@@ -441,9 +447,9 @@ final class SyncService: ObservableObject {
 
     private func bookmarkTreeSnapshot(for browser: Browser) -> [Bookmark] {
         if browser == .safari {
-            if let cachedSafari = backupService?.getSnapshot(sourceBrowser: "safari"), !cachedSafari.isEmpty {
-                return cachedSafari
-            }
+            // Safari's diff snapshot contains the selected folder's flattened
+            // contents, not the folder itself. Validate against the live tree,
+            // just like the folder picker, rather than that scoped snapshot.
             return safariBookmarks.readBookmarks().map {
                 Bookmark(id: $0.id, title: $0.title, url: $0.url.flatMap { $0 }, parentId: $0.parentId, isFolder: $0.isFolder, sortIndex: $0.sortIndex, inBookmarksBar: $0.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
             }

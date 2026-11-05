@@ -366,7 +366,6 @@ struct BookmarkSyncTabView: View {
     private func refreshMissingManagedFolderState() {
         let participants = syncSettings.bookmarkParticipatingBrowsers.wrappedValue
         hasMissingManagedFolder = participants.contains { browser in
-            if appState.syncService.missingBookmarkFolders[browser.rawValue] != nil { return true }
             return appState.syncService.bookmarkFolderMissing(browser, folder: syncSettings.wrappedValue.bookmarkFolder(for: browser))
         }
     }
@@ -1309,20 +1308,15 @@ struct BookmarkFolderManagementRow: View {
     let langBundle: Bundle
 
     @State private var showingPicker = false
+    @State private var missing = false
 
     private var displayName: String {
         BookmarkFolderPath.displayPath(selection, bundle: langBundle) ?? String(localized: "Root Directory (All Bookmarks)", bundle: langBundle)
     }
 
-    private var missing: Bool {
+    private func refreshMissingState() {
         let canonicalSelection = BookmarkFolderPath.canonicalized(selection)
-        if appState.syncService.bookmarkFolderKnownExists(browser, folder: canonicalSelection) {
-            return false
-        }
-        if appState.syncService.missingBookmarkFolders[browser.rawValue] != nil {
-            return true
-        }
-        return appState.syncService.bookmarkFolderMissing(browser, folder: canonicalSelection)
+        missing = appState.syncService.bookmarkFolderMissing(browser, folder: canonicalSelection)
     }
 
     var body: some View {
@@ -1374,6 +1368,17 @@ struct BookmarkFolderManagementRow: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
+        .onAppear { refreshMissingState() }
+        .onChange(of: selection) { _ in refreshMissingState() }
+        .onChange(of: showingPicker) { isPresented in
+            if !isPresented { refreshMissingState() }
+        }
+        .onChange(of: appState.syncService.missingBookmarkFolders) { _ in
+            refreshMissingState()
+        }
+        .onReceive(appState.backupService.$lastSnapshotUpdate) { _ in
+            refreshMissingState()
+        }
     }
 }
 
