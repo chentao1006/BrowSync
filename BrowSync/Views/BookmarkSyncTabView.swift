@@ -135,7 +135,6 @@ struct BookmarkSyncTabView: View {
                 bookmarkBackupWarningSection
                 participatingBrowsersSection
                 syncStrategySection
-                recentBackupsSection
                 recentlyDeletedSection
             }
             .formStyle(.grouped)
@@ -186,18 +185,58 @@ struct BookmarkSyncTabView: View {
         }
     }
 
+    /// Backup advice and the backup tools in one card: back up before the
+    /// first sync, back up again at any time, and browse the backups.
     private var bookmarkBackupWarningSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 Label(String(localized: "Bookmark Backup Warning Header", bundle: langBundle.bundle), systemImage: "exclamationmark.triangle")
                     .font(.headline)
                     .foregroundStyle(.orange)
 
-                Text(String(localized: "Bookmark Backup Warning Detail", bundle: langBundle.bundle))
+                Text(String(localized: "Before turning on bookmark sync for the first time, back up every browser's bookmarks. Back Up Now saves each participating browser's synced folder; you can also export bookmarks with each browser's own tools.", bundle: langBundle.bundle))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(alignment: .center, spacing: 10) {
+                    Text(String(localized: "Before each sync, the synced folder of every changed browser is backed up automatically and kept for 7 days. Manual backups are kept until you delete them.", bundle: langBundle.bundle))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Button(isBackingUp
+                           ? String(localized: "Backing Up…", bundle: langBundle.bundle)
+                           : String(localized: "Back Up Now", bundle: langBundle.bundle)) {
+                        isBackingUp = true
+                        appState.syncService.backUpBookmarksNow { succeeded, failed in
+                            isBackingUp = false
+                            manualBackupResult = (succeeded, failed)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isBackingUp || syncSettings.bookmarkParticipatingBrowsers.wrappedValue.filter(\.isInstalledApp).isEmpty)
+                    Button(String(localized: "View", bundle: langBundle.bundle)) {
+                        showRecentBackupsWindow = true
+                    }
+                    .buttonStyle(.bordered)
+                }
             }
             .padding(.vertical, 4)
+        }
+        .alert(manualBackupResult?.succeeded.isEmpty == false
+               ? String(localized: "Backup completed", bundle: langBundle.bundle)
+               : String(localized: "Backup failed", bundle: langBundle.bundle),
+               isPresented: Binding(get: { manualBackupResult != nil }, set: { if !$0 { manualBackupResult = nil } })) {
+            Button(String(localized: "OK", bundle: langBundle.bundle), role: .cancel) { manualBackupResult = nil }
+            if manualBackupResult?.succeeded.isEmpty == false {
+                Button(String(localized: "View", bundle: langBundle.bundle)) {
+                    manualBackupResult = nil
+                    showRecentBackupsWindow = true
+                }
+            }
+        } message: {
+            Text(manualBackupMessage)
         }
     }
 
@@ -379,49 +418,6 @@ struct BookmarkSyncTabView: View {
                                 result.failed.map(\.displayName).joined(separator: ", ")))
         }
         return lines.joined(separator: "\n\n")
-    }
-
-    private var recentBackupsSection: some View {
-        Section {
-            HStack {
-                Text(String(localized: "Before each sync, the synced folder of every changed browser is backed up automatically and kept for 7 days. Manual backups are kept until you delete them.", bundle: langBundle.bundle))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer()
-                Button(isBackingUp
-                       ? String(localized: "Backing Up…", bundle: langBundle.bundle)
-                       : String(localized: "Back Up Now", bundle: langBundle.bundle)) {
-                    isBackingUp = true
-                    appState.syncService.backUpBookmarksNow { succeeded, failed in
-                        isBackingUp = false
-                        manualBackupResult = (succeeded, failed)
-                    }
-                }
-                .buttonStyle(.bordered)
-                .disabled(isBackingUp || syncSettings.bookmarkParticipatingBrowsers.wrappedValue.isEmpty)
-                Button(String(localized: "View", bundle: langBundle.bundle)) {
-                    showRecentBackupsWindow = true
-                }
-                .buttonStyle(.bordered)
-            }
-        } header: {
-            Text(String(localized: "Backups", bundle: langBundle.bundle))
-        }
-        .alert(manualBackupResult?.succeeded.isEmpty == false
-               ? String(localized: "Backup completed", bundle: langBundle.bundle)
-               : String(localized: "Backup failed", bundle: langBundle.bundle),
-               isPresented: Binding(get: { manualBackupResult != nil }, set: { if !$0 { manualBackupResult = nil } })) {
-            Button(String(localized: "OK", bundle: langBundle.bundle), role: .cancel) { manualBackupResult = nil }
-            if manualBackupResult?.succeeded.isEmpty == false {
-                Button(String(localized: "View", bundle: langBundle.bundle)) {
-                    manualBackupResult = nil
-                    showRecentBackupsWindow = true
-                }
-            }
-        } message: {
-            Text(manualBackupMessage)
-        }
     }
 
     private func participatingBrowserBinding(for browser: Browser) -> Binding<Bool> {
