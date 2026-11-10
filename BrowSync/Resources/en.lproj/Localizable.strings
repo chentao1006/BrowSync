@@ -228,6 +228,9 @@
 /* BookmarkSyncTabView */
 "Bookmark Sync Title" = "Bookmark Sync";
 "Enable Bookmark Sync" = "Enable Bookmark Sync";
+"Safe Mode — review every bookmark change" = "Safe Mode — review every bookmark change";
+"Safe Mode" = "Safe Mode";
+"Review every bookmark change before it is applied." = "Review every bookmark change before it is applied.";
 "Sync Strategy" = "Sync Strategy";
 "Bookmark Strategy" = "Default Strategy";
 "Bookmark Source Browser" = "Source Browser";
@@ -383,6 +386,7 @@
 "Deleted Bookmarks (Trash Bin)" = "Recently Deleted Bookmarks";
 "No deleted bookmarks" = "No deleted bookmarks";
 "These bookmarks were deleted recently. You can restore them individually." = "These bookmarks were deleted recently. You can restore them individually.";
+"Deleted from %@" = "Deleted from %@";
 "Clear All" = "Clear All";
 "Delete Permanently" = "Delete Permanently";
 "This deleted bookmark will be permanently removed from the trash bin." = "This deleted bookmark will be permanently removed from the trash bin.";
@@ -590,9 +594,15 @@
 
 "Syncing from %@ would remove %d, move %d and modify %d existing Safari bookmarks. Nothing was changed — click to review." = "Syncing from %@ would remove %d, move %d and modify %d existing Safari bookmarks. Nothing was changed — click to review.";
 "Syncing from %@ would remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet." = "Syncing from %@ would remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet.";
+"Syncing from %@ would add %d, remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet." = "Syncing from %@ would add %d, remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet.";
 "Modified" = "Modified";
 
 "Review Blocked Bookmark Changes" = "Review Blocked Bookmark Changes";
+"Bookmark Conflict" = "Bookmark Conflict";
+"These bookmarks use the same location but differ. Choose which version to keep before syncing." = "These bookmarks use the same location but differ. Choose which version to keep before syncing.";
+"“%@” and “%@” use the same location but differ. Choose which version to keep before syncing." = "“%@” and “%@” use the same location but differ. Choose which version to keep before syncing.";
+"Keep %@" = "Keep %@";
+"Keep Both" = "Keep Both";
 
 "Keeping Safari as is also brings the other browsers back to Safari's bookmarks." = "Keeping Safari as is also brings the other browsers back to Safari's bookmarks.";
 
@@ -600,9 +610,18 @@
 "Keeping Safari as is pauses later bookmark changes from this browser until you resume them from the menu bar." = "Keeping Safari as is pauses later bookmark changes from this browser until you resume them from the menu bar.";
 
 "Syncing would remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet." = "Syncing would remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet.";
+"Syncing would add %d, remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet." = "Syncing would add %d, remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet.";
 "Syncing would remove %d, move %d and modify %d existing bookmarks in %@. Nothing was changed — click to review." = "Syncing would remove %d, move %d and modify %d existing bookmarks in %@. Nothing was changed — click to review.";
 "%@ Now" = "%@ Now";
 "Keep %@ As Is" = "Keep %@ As Is";
+"Skip This Destination (%@)" = "Skip This Destination (%@)";
+"This destination would add %d, remove %d, move %d and modify %d bookmarks. Nothing has been written yet." = "This destination would add %d, remove %d, move %d and modify %d bookmarks. Nothing has been written yet.";
+"%d destinations awaiting review" = "%d destinations awaiting review";
+"Across %d destinations, this sync would add %d, remove %d, move %d and modify %d bookmarks. Nothing has been written yet." = "Across %d destinations, this sync would add %d, remove %d, move %d and modify %d bookmarks. Nothing has been written yet.";
+"Skip All Destinations" = "Skip All Destinations";
+"Apply All Changes" = "Apply All Changes";
+"Cancel This Sync" = "Cancel This Sync";
+"Apply Selected Changes" = "Apply Selected Changes";
 "Keeping %@ as is pauses later bookmark changes to it until you resume them from the menu bar." = "Keeping %@ as is pauses later bookmark changes to it until you resume them from the menu bar.";
 "Resume Bookmark Sync to %@" = "Resume Bookmark Sync to %@";
 
@@ -632,3 +651,14 @@
 "Only allow this request if you just enabled BrowSync in your browser. The extension can use your enabled sync features. Your choice is remembered on this Mac for future connections." = "Only allow this request if you just enabled BrowSync in your browser. The extension can use your enabled sync features. Your choice is remembered on this Mac for future connections.";
 "Don't Allow" = "Don't Allow";
 "Allow Connection" = "Allow Connection";
+"Restore to %@" = "Restore to %@";
+"Restore to…" = "Restore to…";
+"%@ → %@: add %d, remove %d, move %d and modify %d. Nothing was changed — click to review." = "%@ → %@: add %d, remove %d, move %d and modify %d. Nothing was changed — click to review.";
+"A complete copy of every changed source and destination folder is saved before synchronization. Backups are kept for 7 days." = "A complete copy of every changed source and destination folder is saved before synchronization. Backups are kept for 7 days.";
+"Reordered" = "Reordered";
+"Across %d destinations, this sync would add %d, remove %d, move %d, reorder %d and modify %d bookmarks. Nothing has been written yet." = "Across %d destinations, this sync would add %d, remove %d, move %d, reorder %d and modify %d bookmarks. Nothing has been written yet.";
+"Ignore" = "Ignore";
+"Don't offer this change again unless it changes." = "Don't offer this change again unless it changes.";
+"Ignored Bookmark Changes" = "Ignored Bookmark Changes";
+"%d ignored changes are not offered again until they change." = "%d ignored changes are not offered again until they change.";
+"Review" = "Review";

@@ -194,6 +194,9 @@
 
 "Bookmark Sync Title" = "북마크 동기화";
 "Enable Bookmark Sync" = "북마크 동기화 활성화";
+"Safe Mode — review every bookmark change" = "안전 모드 — 모든 북마크 변경 사항 검토";
+"Safe Mode" = "안전 모드";
+"Review every bookmark change before it is applied." = "모든 북마크 변경 사항을 적용하기 전에 검토합니다.";
 "Sync Strategy" = "동기화 전략";
 "Bookmark Strategy" = "기본 전략";
 "Bookmark Source Browser" = "소스 브라우저";
@@ -389,6 +392,7 @@
 "Deleted Bookmarks (Trash Bin)" = "최근 삭제된 북마크";
 "No deleted bookmarks" = "삭제된 북마크가 없습니다";
 "These bookmarks were deleted recently. You can restore them individually." = "이 북마크는 최근에 삭제되었습니다. 각각 복원할 수 있습니다.";
+"Deleted from %@" = "%@에서 삭제됨";
 "Clear All" = "모두 지우기";
 "Delete Permanently" = "영구 삭제";
 "This deleted bookmark will be permanently removed from the trash bin." = "이 삭제된 북마크는 휴지통에서 영구적으로 제거됩니다.";
@@ -558,9 +562,15 @@
 
 "Syncing from %@ would remove %d, move %d and modify %d existing Safari bookmarks. Nothing was changed — click to review." = "%1$@에서 동기화하면 Safari의 기존 북마크 %2$d개가 삭제되고 %3$d개가 이동되며 %4$d개가 수정됩니다. 아무것도 변경되지 않았습니다. 클릭하여 검토하세요.";
 "Syncing from %@ would remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet." = "%1$@에서 동기화하면 Safari의 기존 북마크 %5$d개 중 %2$d개가 삭제되고 %3$d개가 이동되며 %4$d개가 수정됩니다. 아직 아무것도 기록되지 않았습니다.";
+"Syncing from %@ would add %d, remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet." = "%1$@에서 동기화하면 Safari의 기존 북마크 %6$d개에 %2$d개가 추가되고 %3$d개가 삭제되며 %4$d개가 이동되고 %5$d개가 수정됩니다. 아직 아무것도 기록되지 않았습니다.";
 "Modified" = "수정됨";
 
 "Review Blocked Bookmark Changes" = "차단된 북마크 변경 사항 검토";
+"Bookmark Conflict" = "북마크 충돌";
+"These bookmarks use the same location but differ. Choose which version to keep before syncing." = "이 북마크들은 같은 위치에 있지만 서로 다릅니다. 동기화하기 전에 유지할 버전을 선택하세요.";
+"“%@” and “%@” use the same location but differ. Choose which version to keep before syncing." = "“%@” 및 “%@”은 같은 위치에 있지만 서로 다릅니다. 동기화하기 전에 유지할 버전을 선택하세요.";
+"Keep %@" = "%@ 유지";
+"Keep Both" = "둘 다 유지";
 
 "Keeping Safari as is also brings the other browsers back to Safari's bookmarks." = "Safari를 그대로 유지하면 다른 브라우저도 Safari의 북마크로 되돌아갑니다.";
 
@@ -568,9 +578,18 @@
 "Keeping Safari as is pauses later bookmark changes from this browser until you resume them from the menu bar." = "Safari를 그대로 유지하면 메뉴 막대에서 재개할 때까지 이 브라우저의 이후 북마크 변경 사항이 일시 중지됩니다.";
 
 "Syncing would remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet." = "동기화하면 %5$@의 기존 북마크 %4$d개 중 %1$d개가 삭제되고 %2$d개가 이동되며 %3$d개가 수정됩니다. 아직 아무것도 기록되지 않았습니다.";
+"Syncing would add %d, remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet." = "동기화하면 %6$@의 기존 북마크 %5$d개에 %1$d개가 추가되고 %2$d개가 삭제되며 %3$d개가 이동되고 %4$d개가 수정됩니다. 아직 아무것도 기록되지 않았습니다.";
 "Syncing would remove %d, move %d and modify %d existing bookmarks in %@. Nothing was changed — click to review." = "동기화하면 %4$@의 기존 북마크 %1$d개가 삭제되고 %2$d개가 이동되며 %3$d개가 수정됩니다. 아무것도 변경되지 않았습니다. 클릭하여 검토하세요.";
 "%@ Now" = "현재 %@";
 "Keep %@ As Is" = "%@ 그대로 유지";
+"Skip This Destination (%@)" = "이 대상 건너뛰기(%@)";
+"This destination would add %d, remove %d, move %d and modify %d bookmarks. Nothing has been written yet." = "이 대상에 북마크 %d개를 추가하고, %d개를 삭제하고, %d개를 이동하고, %d개를 수정합니다. 아직 변경 사항을 기록하지 않았습니다.";
+"%d destinations awaiting review" = "%d개 대상 검토 대기 중";
+"Across %d destinations, this sync would add %d, remove %d, move %d and modify %d bookmarks. Nothing has been written yet." = "%d개 대상에서 이 동기화는 북마크 %d개를 추가하고, %d개를 삭제하고, %d개를 이동하고, %d개를 수정합니다. 아직 변경 사항을 기록하지 않았습니다.";
+"Skip All Destinations" = "모든 대상 건너뛰기";
+"Apply All Changes" = "모든 변경 사항 적용";
+"Cancel This Sync" = "이번 동기화 취소";
+"Apply Selected Changes" = "선택한 변경 사항 적용";
 "Keeping %@ as is pauses later bookmark changes to it until you resume them from the menu bar." = "%@를 그대로 유지하면 메뉴 막대에서 재개할 때까지 이 브라우저로의 이후 북마크 변경 사항이 일시 중지됩니다.";
 "Resume Bookmark Sync to %@" = "%@(으)로 북마크 동기화 재개";
 
@@ -600,3 +619,14 @@
 "Only allow this request if you just enabled BrowSync in your browser. The extension can use your enabled sync features. Your choice is remembered on this Mac for future connections." = "방금 브라우저에서 BrowSync를 활성화한 경우에만 허용하세요. 확장 프로그램은 활성화된 동기화 기능을 사용할 수 있습니다. 이 Mac에 선택이 저장되어 이후 자동으로 연결됩니다.";
 "Don't Allow" = "허용 안 함";
 "Allow Connection" = "연결 허용";
+"Restore to %@" = "%@(으)로 복원";
+"Restore to…" = "복원 위치…";
+"%@ → %@: add %d, remove %d, move %d and modify %d. Nothing was changed — click to review." = "%@ → %@: %d개 추가, %d개 삭제, %d개 이동, %d개 수정. 아직 변경되지 않았습니다. 클릭하여 검토하세요.";
+"A complete copy of every changed source and destination folder is saved before synchronization. Backups are kept for 7 days." = "동기화 전에 변경된 각 원본 및 대상 폴더의 전체 복사본을 저장합니다. 백업은 7일 동안 보관됩니다.";
+"Reordered" = "순서 변경";
+"Across %d destinations, this sync would add %d, remove %d, move %d, reorder %d and modify %d bookmarks. Nothing has been written yet." = "이 동기화는 %d개 대상에서 북마크 %d개를 추가하고, %d개를 삭제하고, %d개를 이동하고, %d개의 순서를 변경하고, %d개를 수정합니다. 아직 변경 사항이 기록되지 않았습니다.";
+"Ignore" = "무시";
+"Don't offer this change again unless it changes." = "변경되지 않는 한 이 변경 사항을 다시 표시하지 않습니다.";
+"Ignored Bookmark Changes" = "무시한 북마크 변경 사항";
+"%d ignored changes are not offered again until they change." = "무시한 변경 사항 %d개는 내용이 바뀌기 전까지 다시 표시되지 않습니다.";
+"Review" = "검토";

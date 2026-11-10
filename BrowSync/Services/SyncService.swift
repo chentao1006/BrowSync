@@ -2,6 +2,7 @@
 // BrowSync — Orchestrates sync operations between browsers via the Daemon
 
 import Foundation
+import AppKit
 import os.log
 import CryptoKit
 
@@ -49,11 +50,69 @@ final class SyncService: ObservableObject {
 
     @Published var lastSyncDate: Date? = nil
     @Published var isSyncing: Bool = false
+    @Published private(set) var lastManualSyncWasCancelled = false
     @Published var syncLog: [SyncLogEntry] = []
     /// Bookmark count per browser ID (e.g. "safari", "chrome"). Updated on sync.
     @Published var bookmarkCounts: [String: Int] = [:]
     
     private var currentManualSyncStats = SyncStats()
+    private var activeManualSyncID: UUID?
+
+    /// One bookmark sync pass: every source's changes since its per-target
+    /// baseline, one native context per target, one aggregate review and one
+    /// verified write per target.
+    struct BookmarkSyncSession {
+        enum Phase { case collecting, reviewing, applying, finalizing }
+        let id = UUID()
+        let manual: Bool
+        let settingsFingerprint: String
+        var phase: Phase = .collecting
+        /// Newest snapshot of every participant at session start.
+        var observed: [Browser: [Bookmark]] = [:]
+        /// Changes per source -> target pair, relative to that pair's baseline.
+        var deltas: [String: BookmarkSnapshotDelta] = [:]
+        var contexts: [Browser: BookmarkNativeTreeContext] = [:]
+        var clientIds: [Browser: String] = [:]
+        var awaitingContexts: [String: Browser] = [:]
+        var conflicts: [BookmarkSyncConflict] = []
+        var plans: [Browser: BookmarkTargetPlan] = [:]
+        /// Plans computed with the user's choices, and what was sent from them.
+        var appliedPlans: [Browser: BookmarkTargetPlan] = [:]
+        /// Plans before ignored rows were removed; used to keep ignored
+        /// changes pending instead of treating them as synchronized.
+        var rawPlans: [Browser: BookmarkTargetPlan] = [:]
+        var appliedRawPlans: [Browser: BookmarkTargetPlan] = [:]
+        var dispatched: [Browser: [BookmarkMutationOperation]] = [:]
+        var outstandingWrites: [String: Browser] = [:]
+        var verified: Set<Browser> = []
+        var resolutionsApplied = false
+        var awaitingFreshSnapshots: Set<Browser> = []
+        var finalizedSources: Set<Browser> = []
+        var baselines: [String: [Bookmark]] = [:]
+        /// Differences between live trees that no pending change explains.
+        var reconciliation = BookmarkReconciliation()
+        /// Ignore list the plans were filtered with (fixed for the approval).
+        var ignored: Set<String> = []
+
+        static func pairKey(_ source: Browser, _ target: Browser) -> String { "\(source.rawValue)>\(target.rawValue)" }
+    }
+    var bookmarkSyncSession: BookmarkSyncSession?
+    var bookmarkSessionNeedsRerun = false
+    var bookmarkSessionScheduleTask: Task<Void, Never>?
+    static let bookmarkSessionReviewKey = "bookmark-sync"
+    static let bookmarkSessionConflictRouteId = "bookmark-sync|conflicts"
+    /// Review rows the user chose to ignore ("target|kind|content" keys and
+    /// "conflict|id"). An ignored change is never planned again until its
+    /// content differs; the list can be cleared in Bookmark Sync settings.
+    private static let ignoredBookmarkChangesKey = "BrowSyncIgnoredBookmarkChanges"
+    @Published private(set) var ignoredBookmarkChanges: Set<String> =
+        Set(UserDefaults.standard.stringArray(forKey: SyncService.ignoredBookmarkChangesKey) ?? []) {
+        didSet { UserDefaults.standard.set(Array(ignoredBookmarkChanges).sorted(), forKey: Self.ignoredBookmarkChangesKey) }
+    }
+    // Browser snapshot replies are asynchronous and do not reference the
+    // request ID. After cancelling a review, discard only this short reply
+    // window so it cannot recreate the cancelled plan.
+    private var ignoreBookmarkObservationsUntil: Date?
     private struct SilentBrowserDataPull {
         let requesterClientId: String
         let site: String?
@@ -63,30 +122,12 @@ final class SyncService: ObservableObject {
     private var pendingEmptyBookmarkSnapshots: [String: PendingEmptyBookmarkSnapshot] = [:]
     private var forceAcceptedEmptyBookmarkMessageIds = Set<String>()
 
-    // A single deliberate deletion arrives as one `bookmarks_removed` message, but a
-    // misbehaving extension/browser sync can emit dozens within seconds. Each one is
-    // applied to Safari and rebroadcast to every other participant, so an unchecked
-    // burst can wipe every synced browser in one shot. Buffer per-client and only
-    // auto-apply small batches; anything larger waits for explicit user confirmation.
-    private static let bookmarkRemovalBurstThreshold = 8
-    // Extensions report removals immediately so MV3 worker suspension cannot
-    // lose an in-memory timer. The native app owns the quiet window instead:
-    // collect a browser's removal burst for 10 seconds, then deduplicate and
-    // apply it or require confirmation when it crosses the safety threshold.
-    private static let bookmarkRemovalBurstDebounceNanoseconds: UInt64 = 10_000_000_000
-    private var pendingBookmarkRemovalBuffers: [String: [Bookmark]] = [:]
-    private var bookmarkRemovalBurstTasks: [String: Task<Void, Never>] = [:]
-    private var pendingBookmarkRemovalBursts: [String: [Bookmark]] = [:]
     // Deletion events are not the only destructive path: a malformed tree can
     // relocate most of Safari's bookmarks without deleting any. Automatic writes
     // that would remove or move many existing items wait here for the user.
     private struct PendingSafariWrite {
         let sourceName: String
         let held: SafariBookmarkService.HeldWrite
-        /// Set when the held write is a batch of removal events (already
-        /// limited to the source's sync folder): after Safari is written, the
-        /// same removals are recorded and sent to the others.
-        var removals: [Bookmark]? = nil
         /// Set for a held backup restore, to recompute it if Safari changed.
         var restore: (bookmarks: [SyncBookmark], replacing: Bool)? = nil
         /// The bookmark sync settings the change was computed under. If they
@@ -100,179 +141,48 @@ final class SyncService: ObservableObject {
         didSet { publishPendingReviews() }
     }
 
-    // Writes into other browsers are computed by their extensions as a dry
-    // run; a large one is reported here instead of being written. After
-    // review the app re-sends the same message with the plan's signature.
+    // Writes into other browsers are planned here from an extension-provided
+    // native tree. Extensions only validate the input token, execute the
+    // app-approved operations and report actual results.
     // Keyed "to:<clientId>" (a key without the prefix is a write into Safari).
     private struct PendingBrowserWrite {
         let message: WSMessage
         let impact: SafariBookmarkService.WriteImpact
         let preview: BookmarkChangePreview
         let settingsFingerprint: String
+        var nativeOperations: [BookmarkMutationOperation]? = nil
     }
     private var pendingBrowserWrites: [String: PendingBrowserWrite] = [:] {
         didSet { publishPendingReviews() }
     }
+    private struct PendingNativePlanInput {
+        let message: WSMessage
+        let clientId: String
+        let browser: Browser
+        /// A stable-snapshot reconciliation may only surface a conflict. It
+        /// must never turn a quiet cross-browser difference into a write.
+        let conflictOnly: Bool
+    }
+    private struct PendingBookmarkConflictResolution {
+        let input: PendingNativePlanInput
+        let context: BookmarkNativeTreeContext
+        let desired: [Bookmark]
+        let conflicts: [BookmarkConflict]
+        /// Participating browsers that do not contain the disputed item still
+        /// need the user-selected result. They are planned after the same
+        /// aggregate decision; they must not disappear merely because they do
+        /// not themselves form a two-sided conflict.
+        var propagationTargets: [Browser] = []
+        var resolutions: [String: BookmarkConflictResolution] = [:]
+        var index = 0
+    }
+    private var pendingNativePlanInputs: [String: PendingNativePlanInput] = [:]
+    private var pendingBookmarkConflictResolution: PendingBookmarkConflictResolution?
+    private var dispatchedNativePlans: [String: [BookmarkMutationOperation]] = [:]
+    private static let nativePlanContextTimeout: UInt64 = 30_000_000_000
     /// The last bookmark sync sent to each browser, to re-send after approval.
     private var lastBookmarkMessageByClient: [String: WSMessage] = [:]
-    /// Browsers with a removal batch not yet answered (held or written).
-    private var unacknowledgedRemovalBatches = Set<String>()
-    private static let removalBatchAnswerTimeout: UInt64 = 120_000_000_000
-
-    /// A removal batch that will not be answered (browser gone, its sync
-    /// folder missing, no answer in time): the browser is no longer treated as
-    /// under review, and the deletions wait for its next connection instead
-    /// of being lost.
-    func abandonRemovalBatch(for clientId: String, reason: String) {
-        guard unacknowledgedRemovalBatches.remove(clientId) != nil else { return }
-        removalBatchTimerTokens.removeValue(forKey: clientId)
-        if case .bookmarks(let items)? = lastBookmarkMessageByClient["rm:" + clientId]?.payload {
-            keepUndeliveredRemovals(items, for: clientId)
-        }
-        // Still connected (no answer in time, settings changed): try again now
-        // rather than at the next reconnect, which can be hours away — but
-        // not endlessly for a browser that never answers; its removals then
-        // wait for its next connection.
-        if reason == "timeout" {
-            removalBatchTimeouts[clientId, default: 0] += 1
-        }
-        if (reason == "timeout" && removalBatchTimeouts[clientId, default: 0] <= 2) || reason == "bookmark sync settings changed" {
-            DispatchQueue.main.async { [weak self] in
-                _ = self?.deliverPendingBrowserRemovals(to: clientId)
-            }
-        }
-        log("No answer to the bookmark removal batch for [\(clientId)] (\(reason)); its deletions are kept for the next connection.")
-    }
-
-    /// Each send (including an approved re-send) gets its own token, so an
-    /// older timer never abandons a newer send of the same batch.
-    private var removalBatchTimerTokens: [String: UUID] = [:]
-    /// Consecutive unanswered batches per browser; reset by any answer or a reconnect.
-    private var removalBatchTimeouts: [String: Int] = [:]
-    private func armRemovalBatchTimer(for clientId: String) {
-        let token = UUID()
-        removalBatchTimerTokens[clientId] = token
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: Self.removalBatchAnswerTimeout)
-            guard let self, self.removalBatchTimerTokens[clientId] == token else { return }
-            self.abandonRemovalBatch(for: clientId, reason: "timeout")
-        }
-    }
-
-    /// Deletions made in another browser that could not be delivered to this
-    /// one (kept per browser instance, persisted). Unlike Safari's own pending
-    /// removals they are not checked against Safari: Safari may not take part,
-    /// and a Safari bookmark with the same title says nothing about them.
-    private var pendingBrowserRemovals: [String: [Bookmark]] = [:]
-    private var pendingBrowserRemovalsURL: URL {
-        dataDir.appendingPathComponent("pending-browser-bookmark-removals.json")
-    }
-
-    private func loadPendingBrowserRemovals() {
-        guard let data = try? Data(contentsOf: pendingBrowserRemovalsURL),
-              let saved = try? JSONDecoder().decode([String: [Bookmark]].self, from: data) else { return }
-        pendingBrowserRemovals = saved
-    }
-
-    private func savePendingBrowserRemovals() {
-        guard let data = try? JSONEncoder().encode(pendingBrowserRemovals) else { return }
-        do { try data.write(to: pendingBrowserRemovalsURL, options: .atomic) }
-        catch { log("Could not save pending bookmark removals: \(error.localizedDescription)") }
-    }
-
-    /// Undelivered removals, kept by origin: Safari's own go through Safari's
-    /// "restored meanwhile" check on delivery, the others are delivered as is.
-    private func keepUndeliveredRemovals(_ items: [Bookmark], for clientId: String) {
-        let browserId = clientId.components(separatedBy: "-").first ?? clientId
-        let fromSafari = items.filter { $0.sourceBrowser == .safari }
-        let fromBrowsers = items.filter { $0.sourceBrowser != .safari }
-        if !fromSafari.isEmpty { queuePendingSafariRemovals(fromSafari, forBrowserId: browserId) }
-        // Only browsers that can be delivered to later keep removals.
-        guard !fromBrowsers.isEmpty, Browser(rawValue: browserId) != nil else { return }
-        var pending = pendingBrowserRemovals[clientId] ?? []
-        for item in fromBrowsers where !pending.contains(where: { $0.id == item.id }) {
-            pending.append(item)
-        }
-        pendingBrowserRemovals[clientId] = pending
-        savePendingBrowserRemovals()
-    }
-
-    /// On (re)connect, in any sync mode: one batch, reviewed by the extension.
-    func deliverPendingBrowserRemovals(to clientId: String) -> Bool {
-        let browserId = clientId.components(separatedBy: "-").first ?? clientId
-        guard let items = pendingBrowserRemovals[clientId], !items.isEmpty,
-              let browser = Browser(rawValue: browserId) else { return false }
-        // Delivered only as the current settings would route them. A browser
-        // not taking part right now keeps its removals: participation can be
-        // limited only until the purchase status has loaded at launch, and
-        // dropping them would let its next snapshot bring the bookmarks back.
-        guard settings.enabledCategories.contains(.bookmarks),
-              settings.bookmarkParticipatingBrowsers.contains(browser) else { return false }
-        // In one-way sync only deletions from the source browser reach the
-        // others; the reviewed full mirror brings the rest in line.
-        let routed: [Bookmark]
-        if settings.bookmarkSyncStrategy == .twoWayMerge {
-            routed = items
-        } else {
-            let source = settings.bookmarkSourceBrowser
-            routed = browser == source ? [] : items.filter { $0.sourceBrowser == source }
-        }
-        if routed.count < items.count {
-            // Decided first, so unrouted items never wait on anything else.
-            log("Dropped \(items.count - routed.count) pending bookmark removals for [\(clientId)] that the current sync direction does not send.")
-            if routed.isEmpty {
-                pendingBrowserRemovals.removeValue(forKey: clientId)
-            } else {
-                pendingBrowserRemovals[clientId] = routed
-            }
-            savePendingBrowserRemovals()
-            guard !routed.isEmpty else { return false }
-        }
-        guard missingBookmarkFolders[browserId] == nil,
-              let client = daemon?.connectedClients.first(where: { $0.id == clientId }),
-              mayWriteBookmarks(to: client) else { return false }
-        pendingBrowserRemovals.removeValue(forKey: clientId)
-        savePendingBrowserRemovals()
-        sendBookmarkRemovalBatch(routed, browsers: [browser], onlyClientId: clientId)
-        log("Delivered \(routed.count) pending bookmark removals to [\(clientId)]")
-        return true
-    }
-
-    /// Participation can change without a reconnect (purchase status loading
-    /// at launch, settings): deliver kept removals to every connected browser
-    /// then, and ask for its tree once they are in.
-    func deliverAllPendingBrowserRemovals() {
-        for client in daemon?.connectedClients ?? [] where deliverPendingBrowserRemovals(to: client.id) {
-            let refresh = WSMessage(type: .sync, site: "*", category: "bookmarks", payload: nil,
-                                    messageId: UUID().uuidString, timestamp: Date().timeIntervalSince1970)
-            daemon?.sendWSMessage(refresh, to: client)
-        }
-    }
-
-    /// The browser answered a removal batch (late or not): whatever of it was
-    /// kept for re-delivery has arrived.
-    private func settleKeptRemovals(answeredBy clientId: String) {
-        guard case .bookmarks(let answered)? = lastBookmarkMessageByClient["rm:" + clientId]?.payload,
-              var kept = pendingBrowserRemovals[clientId] else { return }
-        let ids = Set(answered.map(\.id))
-        kept.removeAll { ids.contains($0.id) }
-        pendingBrowserRemovals[clientId] = kept.isEmpty ? nil : kept
-        savePendingBrowserRemovals()
-    }
-
-    func resetRemovalBatchTimeouts(for clientId: String) {
-        removalBatchTimeouts.removeValue(forKey: clientId)
-    }
-
-    private func queuePendingSafariRemovals(_ items: [Bookmark], forBrowserId browserId: String) {
-        var pending = pendingSafariRemovals[browserId] ?? []
-        for item in items where !pending.contains(where: { $0.id == item.id }) {
-            pending.append(item)
-        }
-        pendingSafariRemovals[browserId] = pending
-        savePendingSafariRemovals()
-    }
-
+    private var pendingDeletedRestoreByMessageId: [String: (ids: Set<String>, browser: Browser)] = [:]
     /// While a browser's incoming change is under review (or a removal batch
     /// to it is unanswered), its snapshots still show what is being reviewed
     /// (e.g. a folder deleted elsewhere). Merging them into Safari or
@@ -280,14 +190,11 @@ final class SyncService: ObservableObject {
     private func isAwaitingReview(of clientId: String) -> Bool {
         pendingBrowserWrites["to:" + clientId] != nil
             || pendingBrowserWrites["to:rm:" + clientId] != nil
-            || unacknowledgedRemovalBatches.contains(clientId)
-            // Deletions it has not received yet: its tree still has them.
-            || (pendingBrowserRemovals[clientId]?.isEmpty == false
-                && Browser(rawValue: clientId.components(separatedBy: "-").first ?? clientId) != nil)
     }
 
-    private func publishPendingReviews() {
-        AppState.shared.pendingBookmarkReviewClientIds = (Array(pendingSafariWrites.keys) + Array(pendingBrowserWrites.keys)).sorted()
+    func publishPendingReviews() {
+        let session = bookmarkSyncSession?.phase == .reviewing ? [Self.bookmarkSessionReviewKey] : []
+        AppState.shared.pendingBookmarkReviewClientIds = session + (Array(pendingSafariWrites.keys) + Array(pendingBrowserWrites.keys)).sorted()
     }
     // A reviewed change the user approved but that could not be written as is
     // because Safari changed meanwhile. A fresh snapshot is requested; if it
@@ -345,16 +252,20 @@ final class SyncService: ObservableObject {
 
     /// BrowSync's own repairs of Safari bookmarks follow the same rule as any
     /// write: a small one is applied, a large one is reviewed first.
+    /// Maintenance repairs are proposals only: they are computed for the whole
+    /// Safari library, so they run only when Safari syncs its whole library
+    /// (no selected folder) and are always reviewed, whatever their size.
     private func runSafariCleanup(_ held: SafariBookmarkService.HeldWrite?, key: String) {
         guard let held, held.impact.affected > 0 else { return }
-        if held.impact.requiresConfirmation {
-            holdLargeSafariWrite(PendingSafariWrite(sourceName: "BrowSync cleanup", held: held), clientId: key)
-        } else {
-            prepareSafariForIncomingBookmarkMutation()
-            guard safariBookmarks.commitHeldWrite(held, from: "BrowSync cleanup") != nil else { return }
-            log("Cleaned up \(held.impact.affected) bookmarks BrowSync had written into Safari by mistake.")
-            refreshSafariSnapshot()
+        guard BookmarkMaintenancePolicy.allowsSafariCleanup(settings: settings) else {
+            log("Skipped Safari bookmark cleanup: bookmark sync is off, Safari is not participating, Safari is the read-only one-way source, or Safari syncs only a selected folder.")
+            return
         }
+        holdLargeSafariWrite(PendingSafariWrite(sourceName: "BrowSync cleanup", held: held), clientId: key)
+    }
+
+    private var safariMutationIsAuthorized: Bool {
+        BookmarkWritePolicy.allowsWrite(to: .safari, settings: settings)
     }
 
     /// A refusal holds only under the settings it was made with; changing the
@@ -397,8 +308,6 @@ final class SyncService: ObservableObject {
     private var safariMonitorFileDescriptor: Int32 = -1
     private var safariBookmarkDebounceTask: Task<Void, Never>?
     private var recentSafariPushByClient: [String: (bookmarks: [Bookmark], sentAt: Date)] = [:]
-    // Explicit Safari removals must survive an offline browser and an app restart.
-    private var pendingSafariRemovals: [String: [Bookmark]] = [:]
     private var lastNetworkSyncTime: Date = Date.distantPast
     private var suppressSafariPreSyncBackupUntil: Date = .distantPast
     @Published var missingBookmarkFolders: [String: String] = [:]
@@ -407,8 +316,7 @@ final class SyncService: ObservableObject {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         dataDir = appSupport.appendingPathComponent("BrowSync")
         createDataDirectories()
-        loadPendingSafariRemovals()
-        loadPendingBrowserRemovals()
+        removeLegacyRemovalQueues()
         loadBookmarkCountsFromDisk()
         // After launch, not during init: a large cleanup opens the review,
         // which needs AppState.shared (still being initialized right now).
@@ -464,13 +372,7 @@ final class SyncService: ObservableObject {
     }
 
     private func clearMissingBookmarkFolder(_ browser: Browser) {
-        let wasMissing = missingBookmarkFolders.removeValue(forKey: browser.rawValue) != nil
-        if wasMissing {
-            // Removals kept while the folder was missing can go out now.
-            for client in daemon?.connectedClients ?? [] where client.browser == browser {
-                _ = deliverPendingBrowserRemovals(to: client.id)
-            }
-        }
+        missingBookmarkFolders.removeValue(forKey: browser.rawValue)
     }
 
     func folderAdjustedBookmarksForSource(_ bookmarks: [Bookmark], browser: Browser) -> [Bookmark]? {
@@ -555,54 +457,28 @@ final class SyncService: ObservableObject {
         return result
     }
 
-    private func bookmarkDeletionIsInsideSelectedFolder(_ bookmark: Bookmark, browser: Browser, clientId: String) -> Bool {
-        guard let folder = settings.bookmarkFolder(for: browser), !folder.isEmpty else { return true }
-        guard let selectedSnapshot = BookmarkTreeMerger.extractExistingSubtreeAsRoot(sourceTree: snapshotForClient(clientId), folderPath: folder) else {
-            markMissingBookmarkFolder(browser, folder: folder)
-            return false
-        }
-
-        if selectedSnapshot.contains(where: { $0.id == bookmark.id }) { return true }
-        if let url = bookmarkURL(bookmark)?.lowercased(),
-           selectedSnapshot.contains(where: { bookmarkURL($0)?.lowercased() == url }) {
-            return true
-        }
-        if bookmark.isFolder {
-            let title = bookmark.title.lowercased()
-            return selectedSnapshot.contains { $0.isFolder && $0.title.lowercased() == title }
-        }
-        return false
-    }
-
-    /// Entry point for every incoming `bookmarks_removed` message. Buffered per
-    /// client and coalesced by a quiet-period debounce so a rapid-fire burst of
-    /// individual removal events (e.g. a browser's own account sync churning
-    /// through reconciliation) is evaluated as one batch instead of each item
-    /// being trusted and propagated the instant it arrives.
-    private func handleIncomingBookmarkRemoval(_ bm: Bookmark, clientId: String) {
-        pendingBookmarkRemovalBuffers[clientId, default: []].append(bm)
-        bookmarkRemovalBurstTasks[clientId]?.cancel()
-        bookmarkRemovalBurstTasks[clientId] = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Self.bookmarkRemovalBurstDebounceNanoseconds)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                self?.flushBookmarkRemovalBuffer(for: clientId)
-            }
-        }
-    }
-
     /// Browser workers report create/update/move activity immediately. Keep
     /// the restartable quiet-period timer in the long-lived native app.
     private func handleIncomingBookmarkChangeSignal(clientId: String) {
         let browserId = clientId.components(separatedBy: "-").first ?? clientId
         guard let browser = Browser(rawValue: browserId),
               settings.bookmarkParticipatingBrowsers.contains(browser),
-              settings.bookmarkSyncStrategy != .oneWay || settings.bookmarkSourceBrowser == browser else { return }
+              settings.bookmarkSyncStrategy != .oneWay || settings.bookmarkSourceBrowser == browser else {
+            log("Ignored bookmark activity from [\(clientId)]: this browser is not the configured one-way source.")
+            return
+        }
         let isPro = AppState.shared.purchaseService.isProUnlocked
-        guard (isPro && settings.bookmarkAutoSync && settings.enabledCategories.contains(.bookmarks)) || isSyncing else { return }
+        guard (isPro && settings.bookmarkAutoSync && settings.enabledCategories.contains(.bookmarks)) || isSyncing else {
+            log("Observed bookmark activity from [\(clientId)], but automatic bookmark sync is off or unavailable.")
+            return
+        }
 
         bookmarkChangeDebounceTasks[clientId]?.cancel()
         bookmarkChangeDebounceTasks[clientId] = Task { [weak self] in
+            // Browsers commonly finish a bookmark edit by asynchronously
+            // rewriting sibling indexes and metadata. Wait for a real quiet
+            // period so a single create does not produce a half-finished tree
+            // and an immediate review window.
             try? await Task.sleep(nanoseconds: 10_000_000_000)
             guard !Task.isCancelled else { return }
             await MainActor.run {
@@ -615,59 +491,6 @@ final class SyncService: ObservableObject {
         }
     }
 
-    private func flushBookmarkRemovalBuffer(for clientId: String) {
-        bookmarkRemovalBurstTasks[clientId] = nil
-        guard let items = pendingBookmarkRemovalBuffers.removeValue(forKey: clientId), !items.isEmpty else { return }
-        // Limited to the source's sync folder once, as they arrive. A batch
-        // still awaiting review absorbs them as is (it was filtered when it
-        // arrived; the source's newer snapshots no longer contain its items).
-        let earlier = pendingSafariWrites["rm:" + clientId]?.removals ?? []
-        let fresh = removalsInsideSyncFolder(items, clientId: clientId).filter { item in !earlier.contains { $0.id == item.id } }
-        let eligible = earlier + fresh
-        guard !eligible.isEmpty else { return }
-
-        // Weigh removals by what they take with them: removing one folder can
-        // remove thousands of bookmarks, so counting events is not enough.
-        let sourceSnapshot = snapshotForClient(clientId)
-        let removedWeight = removalWeight(of: eligible, in: sourceSnapshot)
-        let tooLarge = eligible.count > Self.bookmarkRemovalBurstThreshold
-            || removedWeight > max(Self.bookmarkRemovalBurstThreshold, sourceSnapshot.count / 20)
-        // Dry run against Safari: the review shows exactly what Safari loses.
-        let safariPreview = settings.bookmarkParticipatingBrowsers.contains(.safari) && SandboxAccessManager.shared.hasSafariAccess
-            ? safariBookmarks.previewRemovals(eligible.map { ($0.id, $0.title, $0.url ?? nil) })
-            : nil
-        // Safari's own review covers Safari. Every other browser receives the
-        // batch and reviews it in its extension, so nothing is held here when
-        // Safari would not change (an empty review would also share one
-        // signature across unrelated batches).
-        if let held = safariPreview, held.impact.affected > 0, tooLarge || held.impact.requiresConfirmation {
-            log("Held \(eligible.count) bookmark deletion events from [\(clientId)] (\(held.impact.removed) Safari items) for review.")
-            holdLargeSafariWrite(PendingSafariWrite(sourceName: clientId, held: held, removals: eligible), clientId: "rm:" + clientId)
-            return
-        }
-        applyBookmarkRemovals(eligible, clientId: clientId)
-    }
-
-    private func removalsInsideSyncFolder(_ items: [Bookmark], clientId: String) -> [Bookmark] {
-        guard let browser = Browser(rawValue: clientId.components(separatedBy: "-").first ?? clientId) else { return items }
-        return items.filter { bm in
-            guard !bookmarkDeletionIsInsideSelectedFolder(bm, browser: browser, clientId: clientId) else { return true }
-            log("Ignored \(bm.isFolder ? "folder" : "bookmark") deletion (id \(bm.id)) from [\(clientId)] outside selected sync folder")
-            return false
-        }
-    }
-
-    /// The removed items plus everything below them in the source's last snapshot.
-    private func removalWeight(of items: [Bookmark], in snapshot: [Bookmark]) -> Int {
-        let childrenByParent = Dictionary(grouping: snapshot.filter { $0.parentId != nil }, by: { $0.parentId! })
-        var seen = Set<String>()
-        func count(_ id: String) -> Int {
-            guard seen.insert(id).inserted else { return 0 }
-            return 1 + (childrenByParent[id] ?? []).reduce(0) { $0 + count($1.id) }
-        }
-        return items.reduce(0) { $0 + count($1.id) }
-    }
-
     private var bookmarkSettingsFingerprint: String {
         let s = settings
         return [
@@ -675,7 +498,8 @@ final class SyncService: ObservableObject {
             s.bookmarkSourceBrowser.rawValue,
             s.bookmarkParticipatingBrowsers.map(\.rawValue).sorted().joined(separator: ","),
             s.enabledCategories.contains(.bookmarks) ? "on" : "off",
-            Browser.allCases.map { "\($0.rawValue)=\(s.bookmarkFolder(for: $0) ?? "")" }.joined(separator: ",")
+            Browser.allCases.map { "\($0.rawValue)=\(s.bookmarkFolder(for: $0) ?? "")" }.joined(separator: ","),
+            s.bookmarkSafeMode ? "safe" : "threshold"
         ].joined(separator: "|")
     }
 
@@ -693,23 +517,20 @@ final class SyncService: ObservableObject {
 
     /// Called after bookmark sync settings change.
     func discardStalePendingSafariWrites() {
-        if lastSettingsFingerprintSeen != bookmarkSettingsFingerprint {
-            lastSettingsFingerprintSeen = bookmarkSettingsFingerprint
-            for clientId in unacknowledgedRemovalBatches.sorted() {
-                abandonRemovalBatch(for: clientId, reason: "bookmark sync settings changed")
-            }
+        if let session = bookmarkSyncSession, session.settingsFingerprint != bookmarkSettingsFingerprint,
+           session.phase == .collecting || session.phase == .reviewing {
+            discardBookmarkSyncSession(reason: "bookmark sync settings changed")
         }
         for key in pendingBrowserWrites.keys.sorted() {
             _ = validPendingBrowserWrite(key: key)
         }
-        deliverAllPendingBrowserRemovals()
         let pendingBefore = pendingSafariWrites.count
         for clientId in pendingSafariWrites.keys.sorted() {
             _ = validPendingSafariWrite(for: clientId)
         }
         if pendingSafariWrites.count < pendingBefore {
-            // Pushes to those browsers were deferred during the review.
-            pushFinalSafariBookmarksToBookmarkParticipantsIfNeeded()
+            // Changes deferred during the review are recomputed by a session.
+            scheduleBookmarkSyncSession()
         }
         let fingerprint = bookmarkSettingsFingerprint
         approvedSafariWriteSignatures = approvedSafariWriteSignatures.filter { $0.value.settingsFingerprint == fingerprint }
@@ -736,8 +557,21 @@ final class SyncService: ObservableObject {
         var write = write
         write.settingsFingerprint = bookmarkSettingsFingerprint
         let impact = write.held.impact
-        if write.removals == nil,
-           let approval = approvedSafariWriteSignatures.removeValue(forKey: clientId),
+        guard impact.changeCount > 0 else {
+            clearPendingSafariWrite(for: clientId)
+            AppState.shared.notificationService.removeBookmarkReviewNotification(clientId: clientId)
+            log("Discarded a zero-change Safari review from [\(clientId)] before queuing or notifying.")
+            return true
+        }
+        guard hasReviewableChanges(write.held.preview) else {
+            // A count without matching preview rows is not an approval
+            // contract. Fail closed rather than showing an empty review card.
+            clearPendingSafariWrite(for: clientId)
+            requestFreshBookmarkSnapshot(for: clientId)
+            log("Rejected an inconsistent Safari bookmark review from [\(clientId)]: reported changes had no reviewable operations. Safari was not written.")
+            return true
+        }
+        if let approval = approvedSafariWriteSignatures.removeValue(forKey: clientId),
            approval.signature == impact.signature,
            approval.settingsFingerprint == write.settingsFingerprint,
            approval.expires > Date() {
@@ -767,29 +601,30 @@ final class SyncService: ObservableObject {
         if previous?.held.impact.destructiveSignature == impact.destructiveSignature {
             // Same destructive change, perhaps with different additions: refresh
             // an open review in place, but never re-interrupt the user.
-            if previous?.held.impact.signature != impact.signature, reviewWindow.presentedClientId == clientId {
-                presentPendingSafariWrite(from: clientId, activate: false)
+            if previous?.held.impact.signature != impact.signature, let presented = reviewWindow.presentedClientId {
+                presentPendingSafariWrite(from: presented, activate: false)
             }
             return false
         }
         log("Blocked a large Safari bookmark change from [\(clientId)]: \(impact.removed) removed, \(impact.moved) moved and \(impact.modified) modified of \(impact.total) existing items. Nothing was written — asking user to confirm.")
-        // An open review of this browser is updated in place without taking
-        // focus or posting another notification (the user may still be
-        // reorganizing). Another browser's open review is never replaced;
-        // this one stays reachable from its notification and the menu bar.
-        if reviewWindow.presentedClientId == clientId {
-            presentPendingSafariWrite(from: clientId, activate: false)
+        // There is one aggregate review window. A newly held plan is appended
+        // to it without stealing focus.
+        if let presented = reviewWindow.presentedClientId {
+            presentPendingSafariWrite(from: presented, activate: false)
             return false
         }
         if reviewWindow.presentedClientId == nil {
             presentPendingSafariWrite(from: clientId)
         }
-        AppState.shared.notificationService.notifyLargeSafariBookmarkChangeSuspected(
+        AppState.shared.notificationService.notifyBookmarkChangesAwaitingReview(
             source: Self.displayName(forClient: clientId),
+            target: "Safari",
             clientId: clientId,
+            added: impact.added,
             removed: impact.removed,
             moved: impact.moved,
-            modified: impact.modified
+            modified: impact.modified,
+            isLarge: impact.requiresConfirmation
         )
         return false
     }
@@ -799,12 +634,52 @@ final class SyncService: ObservableObject {
     /// anything real.
     private func clearPendingSafariWrite(for clientId: String) {
         approvedSafariWriteSignatures.removeValue(forKey: clientId)
+        AppState.shared.notificationService.removeBookmarkReviewNotification(clientId: clientId)
         guard pendingSafariWrites.removeValue(forKey: clientId) != nil else { return }
         BookmarkChangeReviewWindowController.shared.dismiss(ifPresenting: clientId)
     }
 
     /// Opens the before/after review for a held write (notification, menu bar).
+    func presentPendingBookmarkReview(preferredKey: String? = nil) {
+        if bookmarkSyncSession?.phase == .reviewing,
+           preferredKey == nil || preferredKey == Self.bookmarkSessionReviewKey
+            || BookmarkChangeReviewWindowController.shared.presentedClientId == nil {
+            presentBookmarkSyncSessionReview()
+            return
+        }
+        let candidates = [preferredKey, BookmarkChangeReviewWindowController.shared.presentedClientId]
+            .compactMap { $0 }
+        for key in candidates {
+            if key.hasPrefix("to:"), validPendingBrowserWrite(key: key) != nil {
+                presentPendingBrowserWrite(key: key)
+                return
+            }
+            if validPendingSafariWrite(for: key) != nil {
+                presentPendingSafariWrite(from: key)
+                return
+            }
+        }
+        for key in pendingSafariWrites.keys.sorted() where validPendingSafariWrite(for: key) != nil {
+            presentPendingSafariWrite(from: key)
+            return
+        }
+        for key in pendingBrowserWrites.keys.sorted() where validPendingBrowserWrite(key: key) != nil {
+            presentPendingBrowserWrite(key: key)
+            return
+        }
+        log("Review notification was opened after its pending bookmark plan had already expired or been resolved.")
+    }
+
+    func hasPendingBookmarkReview(key: String) -> Bool {
+        if key == Self.bookmarkSessionReviewKey { return bookmarkSyncSession?.phase == .reviewing }
+        return key.hasPrefix("to:") ? pendingBrowserWrites[key] != nil : pendingSafariWrites[key] != nil
+    }
+
     func presentPendingSafariWrite(from clientId: String, activate: Bool = true) {
+        // A review is a frozen approval contract.  Do not replace its SwiftUI
+        // tree while the user is ticking rows: later plans wait for the next
+        // review instead of resetting selection or changing row order.
+        guard BookmarkChangeReviewWindowController.shared.presentedClientId == nil else { return }
         if clientId.hasPrefix("to:") {
             presentPendingBrowserWrite(key: clientId, activate: activate)
             return
@@ -814,19 +689,34 @@ final class SyncService: ObservableObject {
             return
         }
         let reviewed = write.held.impact
+        guard reviewed.changeCount > 0 else {
+            log("Discarded an empty bookmark review from [\(clientId)]; no destination changes were proposed.")
+            clearPendingSafariWrite(for: clientId)
+            presentNextPendingSafariWrite()
+            return
+        }
+        guard hasReviewableChanges(write.held.preview) else {
+            clearPendingSafariWrite(for: clientId)
+            requestFreshBookmarkSnapshot(for: clientId)
+            log("Dismissed an inconsistent Safari review from [\(clientId)]; it had no visible operations and Safari was not written.")
+            presentNextPendingSafariWrite()
+            return
+        }
         BookmarkChangeReviewWindowController.shared.present(
             clientId: clientId,
-            destination: .safari(source: Self.displayName(forClient: clientId), keepUpdatesOtherBrowsers: settings.bookmarkSyncStrategy == .twoWayMerge),
-            impact: reviewed,
-            preview: write.held.preview,
+            reviewRoutes: pendingReviewRoutes,
             activate: activate,
-            onApply: { [weak self] in self?.applyPendingSafariWrite(from: clientId, reviewedSignature: reviewed.signature) },
-            onKeep: { [weak self] in self?.rejectPendingSafariWrite(from: clientId, reviewed: reviewed) }
+            onApplySelected: { [weak self] selection, conflicts in self?.applySelectedPendingBookmarkReviews(selection, conflictResolutions: conflicts) },
+            onCancel: { [weak self] in self?.cancelPendingBookmarkReview() }
         )
     }
 
     private func presentNextPendingSafariWrite() {
-        guard BookmarkChangeReviewWindowController.shared.presentedClientId == nil else { return }
+        guard !isResolvingReviewBatch, BookmarkChangeReviewWindowController.shared.presentedClientId == nil else { return }
+        if pendingBookmarkConflictResolution != nil {
+            presentPendingBookmarkConflictReview()
+            return
+        }
         for next in pendingSafariWrites.keys.sorted() where validPendingSafariWrite(for: next) != nil {
             presentPendingSafariWrite(from: next)
             return
@@ -837,11 +727,165 @@ final class SyncService: ObservableObject {
         }
     }
 
+    /// Every held target is reviewed independently. A decision for one browser
+    /// never approves, rejects, or rewrites another target.
+    private var pendingReviewRoutes: [BookmarkReviewRoute] {
+        let safariRoutes: [BookmarkReviewRoute] = pendingSafariWrites.compactMap { entry in
+            let (key, write) = entry
+            guard write.held.impact.changeCount > 0, hasReviewableChanges(write.held.preview) else { return nil }
+            return BookmarkReviewRoute(id: key, source: Self.displayName(forClient: key), target: "Safari", impact: write.held.impact, preview: write.held.preview)
+        }
+        let browserRoutes: [BookmarkReviewRoute] = pendingBrowserWrites.compactMap { entry in
+            let (key, write) = entry
+            guard write.impact.changeCount > 0, hasReviewableChanges(write.preview) else { return nil }
+            return BookmarkReviewRoute(
+                id: key,
+                source: write.message.browser.map(Self.displayName(forClient:)) ?? "BrowSync",
+                target: Self.displayName(forClient: key),
+                impact: write.impact,
+                preview: write.preview
+            )
+        }
+        let conflictRoutes: [BookmarkReviewRoute] = pendingBookmarkConflictResolution.map { pending in
+            [BookmarkReviewRoute(
+                id: pendingBookmarkConflictRouteID,
+                source: pending.input.message.browser.map(Self.displayName(forClient:)) ?? "BrowSync",
+                target: Self.displayName(forClient: pending.input.clientId),
+                impact: .init(added: 0, removed: 0, moved: 0, modified: 0, total: 0, signature: "conflicts", destructiveSignature: ""),
+                preview: .init(before: [], after: []),
+                conflicts: pending.conflicts
+            )]
+        } ?? []
+        let propagationRoutes: [BookmarkReviewRoute] = pendingBookmarkConflictResolution.map { pending in
+            pending.propagationTargets.compactMap { browser in
+                guard let client = daemon?.connectedClients.first(where: { $0.browser == browser }),
+                      mayWriteBookmarks(to: client) else { return nil }
+                let nodes = pending.conflicts.map { conflict in
+                    BookmarkReviewNode(
+                        id: "\(conflict.id)|\(browser.rawValue)",
+                        title: conflict.source.title,
+                        url: conflict.source.url.flatMap { $0 },
+                        isFolder: conflict.source.isFolder,
+                        change: .added,
+                        children: [],
+                        containingPath: "/"
+                    )
+                }
+                guard !nodes.isEmpty else { return nil }
+                return BookmarkReviewRoute(
+                    id: conflictPropagationRouteID(browser),
+                    source: pending.input.message.browser.map(Self.displayName(forClient:)) ?? "BrowSync",
+                    target: browser.displayName,
+                    impact: .init(added: nodes.count, removed: 0, moved: 0, modified: 0, total: nodes.count,
+                                  signature: "conflict-propagation-\(browser.rawValue)", destructiveSignature: ""),
+                    preview: .init(before: [], after: nodes)
+                )
+            }
+        } ?? []
+        return (safariRoutes + browserRoutes + conflictRoutes + propagationRoutes).sorted {
+            if $0.source != $1.source { return $0.source.localizedStandardCompare($1.source) == .orderedAscending }
+            return $0.target.localizedStandardCompare($1.target) == .orderedAscending
+        }
+    }
+
+    /// A review is valid only when it has concrete, visible operations. A
+    /// transport count alone is not sufficient to authorize a write.
+    private func hasReviewableChanges(_ preview: BookmarkChangePreview) -> Bool {
+        preview.before.contains(where: \.containsChange)
+            || preview.after.contains(where: \.containsChange)
+    }
+
+    private var isResolvingReviewBatch = false
+
+    private var pendingBookmarkConflictRouteID: String {
+        guard let pending = pendingBookmarkConflictResolution else { return "conflict" }
+        return "conflict:\(pending.input.clientId):\(pending.input.message.messageId ?? "")"
+    }
+
+    private func conflictPropagationRouteID(_ browser: Browser) -> String {
+        "\(pendingBookmarkConflictRouteID):to:\(browser.rawValue)"
+    }
+
+    private func applySelectedPendingBookmarkReviews(
+        _ selection: [String: Set<String>],
+        conflictResolutions: [String: [String: BookmarkConflictResolution]]
+    ) {
+        let safari = pendingSafariWrites.map { ($0.key, $0.value.held.impact.signature) }
+        let browsers = pendingBrowserWrites.map { ($0.key, $0.value.impact.signature) }
+        isResolvingReviewBatch = true
+        safari.forEach {
+            if let ids = selection[$0.0], !ids.isEmpty { applyPendingSafariWrite(from: $0.0, reviewedSignature: $0.1, selectedNodeIds: ids) }
+            else { clearPendingSafariWrite(for: $0.0) }
+        }
+        browsers.forEach {
+            if let ids = selection[$0.0], !ids.isEmpty { applyPendingBrowserWrite(key: $0.0, reviewedSignature: $0.1, selectedNodeIds: ids) }
+            else { clearPendingBrowserWrite(key: $0.0) }
+        }
+        if let resolutions = conflictResolutions[pendingBookmarkConflictRouteID] {
+            let selectedPropagationTargets = Set(
+                pendingBookmarkConflictResolution?.propagationTargets.filter {
+                    !(selection[conflictPropagationRouteID($0)] ?? []).isEmpty
+                } ?? []
+            )
+            applyPendingBookmarkConflictResolutions(resolutions, propagationTargets: selectedPropagationTargets)
+        }
+        isResolvingReviewBatch = false
+        presentNextPendingSafariWrite()
+    }
+
+    private func cancelPendingBookmarkReview() {
+        let safari = Array(pendingSafariWrites.keys)
+        let browsers = Array(pendingBrowserWrites.keys)
+        isResolvingReviewBatch = true
+        safari.forEach { clearPendingSafariWrite(for: $0) }
+        browsers.forEach { clearPendingBrowserWrite(key: $0) }
+        pendingBookmarkConflictResolution = nil
+        isResolvingReviewBatch = false
+        cancelActiveManualSyncIfNeeded()
+        log("Cancelled the current bookmark sync review. No rejection was remembered; future syncs will recompute all differences.")
+    }
+
+    private func cancelActiveManualSyncIfNeeded() {
+        guard activeManualSyncID != nil else { return }
+        activeManualSyncID = nil
+        lastManualSyncWasCancelled = true
+        ignoreBookmarkObservationsUntil = Date().addingTimeInterval(12)
+        isSyncing = false
+        log("Cancelled the active manual bookmark sync; late bookmark observations are ignored for this request window.")
+    }
+
+    private func manualSyncIsActive(_ id: UUID) -> Bool {
+        isSyncing && activeManualSyncID == id
+    }
+
     // MARK: Large writes into other browsers
 
     func recordSentBookmarkMessage(_ message: WSMessage, to clientId: String) {
         guard case .bookmarks = message.payload else { return }
         lastBookmarkMessageByClient[Self.messageRecordKey(clientId, message.category)] = message
+    }
+
+    /// Takes ownership before DaemonServer dispatches any browser bookmark
+    /// mutation. The extension receives only a read-only context request.
+    func stageBrowserBookmarkMutation(_ message: WSMessage, to client: ConnectedClient) -> Bool {
+        let explicitRestore = message.isExplicitDeletedBookmarkRestore == true || message.isExplicitBookmarkRestore == true
+        guard client.browser != .safari,
+              case .bookmarks = message.payload,
+              BookmarkWritePolicy.allowsWrite(to: client.browser, settings: settings, explicitRestore: explicitRestore) else { return true }
+        let requestId = UUID().uuidString
+        pendingNativePlanInputs[requestId] = PendingNativePlanInput(message: message, clientId: client.id, browser: client.browser, conflictOnly: false)
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.nativePlanContextTimeout)
+            guard let self, self.pendingNativePlanInputs.removeValue(forKey: requestId) != nil else { return }
+            self.log("Discarded bookmark planning request for [\(client.id)] because the extension did not return a current tree in time. Nothing was written and the request will not be retried automatically.")
+        }
+        let request = WSMessage(type: .pull, site: requestId, category: "bookmark_plan_context",
+                                payload: .raw(["requestId": AnyCodable(requestId),
+                                               "targetFolder": AnyCodable(message.targetBookmarkFolder ?? NSNull())]),
+                                messageId: UUID().uuidString, timestamp: Date().timeIntervalSince1970)
+        daemon?.sendBookmarkControlMessage(request, to: client)
+        log("Requested native bookmark tree from [\(client.id)] before planning mutation in the app.")
+        return true
     }
 
     /// Removal batches and full syncs are recorded apart, so neither
@@ -854,10 +898,6 @@ final class SyncService: ObservableObject {
         guard let write = pendingBrowserWrites[key] else { return nil }
         guard write.settingsFingerprint == bookmarkSettingsFingerprint else {
             clearPendingBrowserWrite(key: key)
-            if key.hasPrefix("to:rm:"), case .bookmarks(let items)? = write.message.payload {
-                // Not lost: re-delivered (and reviewed again) under the new settings.
-                keepUndeliveredRemovals(items, for: Self.reviewTarget(key))
-            }
             log("Discarded the held bookmark change into [\(Self.reviewTarget(key))] because bookmark sync settings changed.")
             return nil
         }
@@ -865,6 +905,7 @@ final class SyncService: ObservableObject {
     }
 
     private func clearPendingBrowserWrite(key: String) {
+        AppState.shared.notificationService.removeBookmarkReviewNotification(clientId: key)
         guard pendingBrowserWrites.removeValue(forKey: key) != nil else { return }
         BookmarkChangeReviewWindowController.shared.dismiss(ifPresenting: key)
     }
@@ -880,12 +921,6 @@ final class SyncService: ObservableObject {
         // approved; a report about an older one is superseded by the newer one.
         let removalBatch = lastBookmarkMessageByClient["rm:" + clientId]
         let isRemovalBatch = reportedMessageId != nil && removalBatch?.messageId == reportedMessageId
-        if isRemovalBatch {
-            unacknowledgedRemovalBatches.remove(clientId)
-            removalBatchTimeouts.removeValue(forKey: clientId)
-            // Held for review now: the review owns these items.
-            settleKeptRemovals(answeredBy: clientId)
-        }
         let key = (isRemovalBatch ? "to:rm:" : "to:") + clientId
         guard let sent = isRemovalBatch ? removalBatch : lastBookmarkMessageByClient[clientId],
               reportedMessageId == nil || reportedMessageId == sent.messageId else {
@@ -894,9 +929,14 @@ final class SyncService: ObservableObject {
         }
         let count = { (field: String) in (raw[field]?.value as? Int) ?? 0 }
         let impact = SafariBookmarkService.WriteImpact(
-            removed: count("removed"), moved: count("moved"), modified: count("modified"), total: count("total"),
+            added: count("added"), removed: count("removed"), moved: count("moved"), modified: count("modified"), total: count("total"),
             signature: signature, destructiveSignature: destructive
         )
+        guard impact.changeCount > 0 else {
+            clearPendingBrowserWrite(key: key)
+            log("Discarded a zero-change browser review into [\(clientId)] before queuing or notifying.")
+            return
+        }
         if rejectedSafariWriteSignatures[key] == rejectionKey(destructive) {
             clearPendingBrowserWrite(key: key)
             if loggedRejectedSafariWriteSkips.insert(key + destructive).inserted {
@@ -905,29 +945,37 @@ final class SyncService: ObservableObject {
             return
         }
         let preview = BookmarkChangePreview(before: reviewNodes(raw["before"]?.value), after: reviewNodes(raw["after"]?.value))
+        guard hasReviewableChanges(preview) else {
+            log("Rejected an inconsistent held bookmark plan into [\(clientId)]: its reported changes had no reviewable operations. Nothing was written; requesting a fresh snapshot.")
+            requestFreshBookmarkSnapshot(for: clientId)
+            return
+        }
         let previous = validPendingBrowserWrite(key: key)
         pendingBrowserWrites[key] = PendingBrowserWrite(message: sent, impact: impact, preview: preview, settingsFingerprint: bookmarkSettingsFingerprint)
         let reviewWindow = BookmarkChangeReviewWindowController.shared
         if previous?.impact.destructiveSignature == destructive {
-            if previous?.impact.signature != signature, reviewWindow.presentedClientId == key {
-                presentPendingBrowserWrite(key: key, activate: false)
+            if previous?.impact.signature != signature, let presented = reviewWindow.presentedClientId {
+                presentPendingSafariWrite(from: presented, activate: false)
             }
             return
         }
         log("Blocked a large bookmark change into [\(clientId)]: \(impact.removed) removed, \(impact.moved) moved and \(impact.modified) modified of \(impact.total) existing items. Nothing was written — asking user to confirm.")
-        if reviewWindow.presentedClientId == key {
-            presentPendingBrowserWrite(key: key, activate: false)
+        if let presented = reviewWindow.presentedClientId {
+            presentPendingSafariWrite(from: presented, activate: false)
             return
         }
         if reviewWindow.presentedClientId == nil {
             presentPendingBrowserWrite(key: key)
         }
-        AppState.shared.notificationService.notifyLargeBrowserBookmarkChangeSuspected(
+        AppState.shared.notificationService.notifyBookmarkChangesAwaitingReview(
+            source: sent.browser.map(Self.displayName(forClient:)) ?? "BrowSync",
             target: Self.displayName(forClient: clientId),
             clientId: key,
+            added: impact.added,
             removed: impact.removed,
             moved: impact.moved,
-            modified: impact.modified
+            modified: impact.modified,
+            isLarge: impact.requiresConfirmation
         )
     }
 
@@ -935,19 +983,26 @@ final class SyncService: ObservableObject {
     private func handleBrowserWriteResult(_ message: WSMessage, clientId: String) {
         guard case .raw(let raw) = message.payload else { return }
         let messageId = raw["messageId"]?.value as? String
+        if let messageId, acceptSessionBookmarkWriteResult(raw, messageId: messageId, clientId: clientId) { return }
+        if let messageId, let operations = dispatchedNativePlans.removeValue(forKey: messageId) {
+            guard (raw["applied"]?.value as? Bool) == true,
+                  (raw["verified"]?.value as? Bool) == true,
+                  verifyNativeOperationResults(raw["operationResults"]?.value, operations: operations) else {
+                log("App rejected the bookmark write result from [\(clientId)]: execution failed or independently verified results did not match the approved plan.")
+                let key = "to:" + clientId
+                clearPendingBrowserWrite(key: key)
+                return
+            }
+        }
         let isRemovalBatch = messageId != nil && lastBookmarkMessageByClient["rm:" + clientId]?.messageId == messageId
         let isFullSync = messageId == nil || lastBookmarkMessageByClient[clientId]?.messageId == messageId
         // A result for a superseded message settles nothing.
         guard isRemovalBatch || isFullSync else { return }
-        if isRemovalBatch {
-            unacknowledgedRemovalBatches.remove(clientId)
-            removalBatchTimeouts.removeValue(forKey: clientId)
-            // Only a batch that was actually applied settles what was kept for
-            // it; a failed answer (e.g. its sync folder missing) leaves the
-            // kept deletions for the next delivery.
-            if (raw["applied"]?.value as? Bool) == true {
-                settleKeptRemovals(answeredBy: clientId)
-            }
+        if let messageId,
+           let restore = pendingDeletedRestoreByMessageId.removeValue(forKey: messageId),
+           raw["applied"]?.value as? Bool == true,
+           raw["verified"]?.value as? Bool == true {
+            backupService?.markDeletedBookmarksRestored(ids: restore.ids, from: restore.browser)
         }
         // A result only settles the review of the same message.
         let key = (isRemovalBatch ? "to:rm:" : "to:") + clientId
@@ -958,6 +1013,52 @@ final class SyncService: ObservableObject {
         if ((raw["writes"]?.value as? Int) ?? 0) > 0, rejectedSafariWriteSignatures.removeValue(forKey: key) != nil {
             log("Bookmark sync into [\(clientId)] is back in line; the earlier decision to keep it unchanged no longer applies.")
         }
+    }
+
+    private func verifyNativeOperationResults(_ value: Any?, operations: [BookmarkMutationOperation]) -> Bool {
+        let rawItems: [Any]
+        if let value = value as? [Any] { rawItems = value }
+        else if let value = value as? [AnyCodable] { rawItems = value.map(\.value) }
+        else { return false }
+        func dictionary(_ value: Any) -> [String: Any] {
+            if let value = value as? [String: Any] { return value }
+            if let value = value as? [String: AnyCodable] { return value.mapValues(\.value) }
+            return [:]
+        }
+        let results = Dictionary(rawItems.compactMap { item -> (String, [String: Any])? in
+            let result = dictionary(item)
+            guard let id = result["id"] as? String, let type = result["type"] as? String else { return nil }
+            return (type + "|" + id, result)
+        }, uniquingKeysWith: { _, last in last })
+        guard results.count == Set(operations.map { $0.kind.rawValue + "|" + $0.id }).count else { return false }
+        let actualIds = Dictionary(operations.compactMap { operation -> (String, String)? in
+            guard operation.kind == .create,
+                  let actualId = results[operation.kind.rawValue + "|" + operation.id]?["actualId"] as? String else { return nil }
+            return (operation.id, actualId)
+        }, uniquingKeysWith: { first, _ in first })
+        func canonicalURL(_ value: String?) -> String? {
+            guard let value, !value.isEmpty else { return nil }
+            return URL(string: value)?.absoluteURL.absoluteString ?? value
+        }
+        for operation in operations {
+            guard let result = results[operation.kind.rawValue + "|" + operation.id] else { return false }
+            let exists = result["exists"] as? Bool ?? false
+            if operation.kind == .removeTree {
+                if exists { return false }
+                continue
+            }
+            guard exists else { return false }
+            if let title = operation.title, result["title"] as? String != title { return false }
+            if let url = operation.url,
+               canonicalURL(result["url"] as? String) != canonicalURL(url) { return false }
+            if operation.kind == .create || operation.kind == .move, let parent = operation.parentId {
+                let expectedParent = actualIds[parent] ?? parent
+                if result["parentId"] as? String != expectedParent { return false }
+            }
+            if operation.kind == .create || operation.kind == .move,
+               let index = operation.index, result["index"] as? Int != index { return false }
+        }
+        return true
     }
 
     private func reviewNodes(_ value: Any?) -> [BookmarkReviewNode] {
@@ -983,23 +1084,36 @@ final class SyncService: ObservableObject {
     }
 
     private func presentPendingBrowserWrite(key: String, activate: Bool = true) {
+        // See `presentPendingSafariWrite`: never mutate an open review.
+        guard BookmarkChangeReviewWindowController.shared.presentedClientId == nil else { return }
         guard let write = validPendingBrowserWrite(key: key) else {
             presentNextPendingSafariWrite()
             return
         }
         let reviewed = write.impact
+        guard reviewed.changeCount > 0 else {
+            log("Discarded an empty bookmark review into [\(Self.reviewTarget(key))]; no destination changes were proposed.")
+            clearPendingBrowserWrite(key: key)
+            presentNextPendingSafariWrite()
+            return
+        }
+        guard hasReviewableChanges(write.preview) else {
+            clearPendingBrowserWrite(key: key)
+            requestFreshBookmarkSnapshot(for: Self.reviewTarget(key))
+            log("Dismissed an inconsistent browser review into [\(Self.reviewTarget(key))]; it had no visible operations and nothing was written.")
+            presentNextPendingSafariWrite()
+            return
+        }
         BookmarkChangeReviewWindowController.shared.present(
             clientId: key,
-            destination: .browser(name: Self.displayName(forClient: key)),
-            impact: reviewed,
-            preview: write.preview,
+            reviewRoutes: pendingReviewRoutes,
             activate: activate,
-            onApply: { [weak self] in self?.applyPendingBrowserWrite(key: key, reviewedSignature: reviewed.signature) },
-            onKeep: { [weak self] in self?.rejectPendingBrowserWrite(key: key, reviewed: reviewed) }
+            onApplySelected: { [weak self] selection, conflicts in self?.applySelectedPendingBookmarkReviews(selection, conflictResolutions: conflicts) },
+            onCancel: { [weak self] in self?.cancelPendingBookmarkReview() }
         )
     }
 
-    private func applyPendingBrowserWrite(key: String, reviewedSignature: String) {
+    private func applyPendingBrowserWrite(key: String, reviewedSignature: String, selectedNodeIds: Set<String>? = nil) {
         guard let write = validPendingBrowserWrite(key: key) else {
             log("The reviewed bookmark change into [\(Self.reviewTarget(key))] is no longer pending; nothing was sent.")
             presentNextPendingSafariWrite()
@@ -1009,28 +1123,39 @@ final class SyncService: ObservableObject {
             presentPendingBrowserWrite(key: key)
             return
         }
-        clearPendingBrowserWrite(key: key)
         let clientId = Self.reviewTarget(key)
+        clearPendingBrowserWrite(key: key)
         // The extension recomputes the plan and writes only if it is still
         // exactly the reviewed one; otherwise it reports a new review.
         var message = write.message
+        if message.category == "bookmark_apply_plan", case .raw(var raw)? = message.payload {
+            var selected = selectedNodeIds ?? []
+            let creates = Dictionary(uniqueKeysWithValues: (write.nativeOperations ?? [])
+                .filter { $0.kind == .create }.map { ($0.id, $0) })
+            for id in Array(selected) {
+                var parent = creates[id]?.parentId
+                while let current = parent, let create = creates[current] {
+                    selected.insert(current)
+                    parent = create.parentId
+                }
+            }
+            raw["selectedNodeIds"] = AnyCodable(Array(selected))
+            message.payload = .raw(raw)
+            if let messageId = message.messageId {
+                dispatchedNativePlans[messageId] = (write.nativeOperations ?? []).filter { selected.contains($0.id) }
+            }
+        }
         if let latest = lastBookmarkMessageByClient[Self.messageRecordKey(clientId, message.category)], latest.messageId != message.messageId {
             // A newer sync went out meanwhile: it supersedes the reviewed one.
             // Send it unapproved; if it is large too, it is reviewed itself.
             message = latest
-        } else {
+        } else if message.category != "bookmark_apply_plan" {
             message.approvedPlanSignature = reviewedSignature
+            message.approvedBookmarkNodeIds = selectedNodeIds.map(Array.init)
         }
         if let client = daemon?.connectedClients.first(where: { $0.id == clientId }) {
-            if message.category == Self.removalBatchCategory {
-                unacknowledgedRemovalBatches.insert(clientId)
-                armRemovalBatchTimer(for: clientId)
-            }
             daemon?.sendWSMessage(message, to: client)
             log("User approved a large bookmark change into [\(clientId)] (\(write.impact.removed) removed, \(write.impact.moved) moved, \(write.impact.modified) modified).")
-        } else if message.category == Self.removalBatchCategory, case .bookmarks(let items)? = message.payload {
-            keepUndeliveredRemovals(items, for: clientId)
-            log("User approved a large bookmark removal for [\(clientId)], but it is not connected; it is delivered (and reviewed there) when it reconnects.")
         } else {
             log("User approved a large bookmark change into [\(clientId)], but it is not connected; it will be reviewed again on its next sync.")
         }
@@ -1056,15 +1181,11 @@ final class SyncService: ObservableObject {
         // Remember the reviewed change even if a newer one replaced it meanwhile:
         // the user has explicitly said no to this one.
         rejectedSafariWriteSignatures[clientId] = rejectionKey(reviewed.destructiveSignature)
-        // In two-way sync Safari is the reference after "Keep": send its tree
-        // so the other browsers converge instead of staying diverged (which
-        // would hold every later change). Pushes were deferred meanwhile.
-        pushFinalSafariBookmarksToBookmarkParticipantsIfNeeded()
         presentNextPendingSafariWrite()
     }
 
     /// Called when the user approves the change shown in the review window.
-    private func applyPendingSafariWrite(from clientId: String, reviewedSignature: String) {
+    private func applyPendingSafariWrite(from clientId: String, reviewedSignature: String, selectedNodeIds: Set<String>? = nil) {
         guard let write = validPendingSafariWrite(for: clientId) else {
             log("The reviewed Safari bookmark change from [\(clientId)] is no longer pending; nothing was written.")
             presentNextPendingSafariWrite()
@@ -1076,38 +1197,16 @@ final class SyncService: ObservableObject {
             return
         }
         clearPendingSafariWrite(for: clientId)
+        func commit(_ held: SafariBookmarkService.HeldWrite) -> Int? {
+            if let selectedNodeIds { return safariBookmarks.commitHeldWrite(held, selectedNodeIds: selectedNodeIds, from: write.sourceName) }
+            return safariBookmarks.commitHeldWrite(held, from: write.sourceName)
+        }
         log("User approved a large Safari bookmark change from [\(clientId)] (\(write.held.impact.removed) removed, \(write.held.impact.moved) moved, \(write.held.impact.modified) modified).")
         prepareSafariForIncomingBookmarkMutation()
         // Write exactly the reviewed result, and only onto the Safari file it
         // was computed from.
-        if let removals = write.removals {
-            // Removal events: commit the reviewed Safari result, recomputing it
-            // if Safari changed meanwhile (same change → write, else ask again).
-            let sourceClientId = write.sourceName
-            var held = write.held
-            if safariBookmarks.commitHeldWrite(held, from: write.sourceName) == nil {
-                guard let fresh = safariBookmarks.previewRemovals(removals.map { ($0.id, $0.title, $0.url ?? nil) }) else {
-                    log("Could not read Safari bookmarks to apply the reviewed deletions; nothing was written.")
-                    presentNextPendingSafariWrite()
-                    return
-                }
-                // Same change → write it; now small → write it like any small batch.
-                let acceptable = fresh.impact.signature == reviewedSignature || !fresh.impact.requiresConfirmation
-                guard acceptable, safariBookmarks.commitHeldWrite(fresh, from: write.sourceName) != nil else {
-                    log("Safari bookmarks changed while the review was open; asking again.")
-                    holdLargeSafariWrite(PendingSafariWrite(sourceName: write.sourceName, held: fresh, removals: removals), clientId: clientId)
-                    return
-                }
-                held = fresh
-            }
-            lastNetworkSyncTime = Date()
-            log("Applied \(removals.count) reviewed bookmark deletion events from [\(sourceClientId)] (\(held.impact.removed) Safari items).")
-            applyBookmarkRemovals(removals, clientId: sourceClientId, safariAlreadyWritten: true)
-            presentNextPendingSafariWrite()
-            return
-        }
         if clientId.hasPrefix(Self.cleanupReviewKey) {
-            if let count = safariBookmarks.commitHeldWrite(write.held, from: write.sourceName) {
+            if let count = commit(write.held) {
                 lastNetworkSyncTime = Date()
                 finishApprovedSafariWrite(count)
             } else if let fresh = clientId == Self.mobileCleanupKey
@@ -1123,16 +1222,26 @@ final class SyncService: ObservableObject {
             return
         }
         if let restore = write.restore {
-            if let count = safariBookmarks.commitHeldWrite(write.held, from: write.sourceName) {
+            // An explicit backup/history restore is the narrow exception to
+            // one-way source read-only. Preserve that authorization through a
+            // held Safe Mode review; bookmark Sync OFF is still enforced by
+            // the service's final boundary.
+            if let count = safariBookmarks.commitHeldWrite(write.held, from: write.sourceName, explicitRestore: true) {
                 lastNetworkSyncTime = Date()
                 finishApprovedSafariWrite(count)
             } else {
                 // Safari changed during the review: recompute the restore; the
                 // same change is written, a different one is reviewed again.
-                let count = safariBookmarks.applyBookmarks(restore.bookmarks, from: write.sourceName, isFullMirror: restore.replacing, guardLargeChanges: true)
+                let count = safariBookmarks.applyBookmarks(
+                    restore.bookmarks,
+                    from: write.sourceName,
+                    isFullMirror: restore.replacing,
+                    guardLargeChanges: true,
+                    explicitRestore: true
+                )
                 if count == SafariBookmarkService.blockedLargeChange, let held = safariBookmarks.lastBlockedWrite {
                     guard held.impact.signature == reviewedSignature,
-                          let committed = safariBookmarks.commitHeldWrite(held, from: write.sourceName) else {
+                          let committed = safariBookmarks.commitHeldWrite(held, from: write.sourceName, explicitRestore: true) else {
                         log("Safari bookmarks changed while the restore review was open; asking again.")
                         holdLargeSafariWrite(PendingSafariWrite(sourceName: write.sourceName, held: held, restore: restore), clientId: clientId)
                         return
@@ -1145,7 +1254,7 @@ final class SyncService: ObservableObject {
             presentNextPendingSafariWrite()
             return
         }
-        if let count = safariBookmarks.commitHeldWrite(write.held, from: write.sourceName) {
+        if let count = commit(write.held) {
             lastNetworkSyncTime = Date()
             finishApprovedSafariWrite(count)
             if settings.bookmarkSyncStrategy != .twoWayMerge {
@@ -1164,8 +1273,7 @@ final class SyncService: ObservableObject {
             )
             log("Safari bookmarks changed while the review was open; requesting a fresh snapshot from [\(clientId)].")
             if clientId == "Safari" {
-                // Recompute the deduplication from Safari's current file now.
-                pushFinalSafariBookmarksToBookmarkParticipantsIfNeeded()
+                scheduleBookmarkSyncSession()
             } else {
                 requestFreshBookmarkSnapshot(for: clientId)
             }
@@ -1187,7 +1295,7 @@ final class SyncService: ObservableObject {
                 daemon?.sendWSMessage(message, to: client)
             }
         } else if clientId == "Safari" {
-            pushFinalSafariBookmarksToBookmarkParticipantsIfNeeded()
+            scheduleBookmarkSyncSession()
         } else {
             requestFreshBookmarkSnapshot(for: clientId)
         }
@@ -1201,53 +1309,23 @@ final class SyncService: ObservableObject {
             || rejectedSafariWriteSignatures.keys.contains { $0.hasPrefix(prefix) }
     }
 
-    /// Removal events for other browsers go out as one batch per browser. Its
-    /// extension dry-runs the whole batch (subtrees included) and holds it for
-    /// review when large, exactly like a full sync. A batch for a browser
-    /// whose previous batch is still held is merged into it, so no held
-    /// deletion is lost by being superseded.
-    func sendBookmarkRemovalBatch(_ items: [Bookmark], browsers: Set<Browser>? = nil, excluding excludedId: String? = nil, onlyClientId: String? = nil) {
-        guard let daemon, !items.isEmpty else { return }
-        for client in daemon.connectedClients
-        where client.browser != .safari
-            && settings.bookmarkParticipatingBrowsers.contains(client.browser)
-            && client.id != excludedId
-            && (onlyClientId == nil || client.id == onlyClientId)
-            && (browsers?.contains(client.browser) ?? true) {
-            guard mayWriteBookmarks(to: client) else { continue }
-            var batch = items
-            // Merge with a batch still held or not yet answered, so it is not
-            // superseded and lost.
-            let previousKey = Self.messageRecordKey(client.id, Self.removalBatchCategory)
-            if pendingBrowserWrites["to:rm:" + client.id] != nil || unacknowledgedRemovalBatches.contains(client.id),
-               let previous = lastBookmarkMessageByClient[previousKey], case .bookmarks(let earlier) = previous.payload {
-                batch = earlier + items.filter { item in !earlier.contains { $0.id == item.id } }
-            }
-            var message = WSMessage(type: .sync, site: "*", category: Self.removalBatchCategory, payload: .bookmarks(batch),
-                                    messageId: UUID().uuidString, timestamp: Date().timeIntervalSince1970)
-            message.targetBookmarkFolder = settings.bookmarkFolder(for: client.browser)
-            recordSentBookmarkMessage(message, to: client.id)
-            unacknowledgedRemovalBatches.insert(client.id)
-            armRemovalBatchTimer(for: client.id)
-            daemon.sendWSMessage(message, to: client)
-        }
-    }
-
     static let removalBatchCategory = "bookmarks_removed_batch"
-    static let bookmarkPlanCapability = "bookmarkPlan"
-
+    static let bookmarkPlanCapability = "bookmarkExecutorV2"
     private var notifiedOutdatedExtensions = Set<String>()
     private lazy var lastSettingsFingerprintSeen = bookmarkSettingsFingerprint
 
-    /// Bookmark writes go only to extensions that dry-run them and hold large
-    /// changes for review. An older extension would write anything it gets
-    /// unreviewed, so it receives nothing until it is updated (said once).
+    /// Bookmark writes go only to thin executors that provide native snapshots,
+    /// validate input tokens, replay app-planned operations and verify results.
     /// Safari is written natively; its extension never applies bookmarks.
-    func mayWriteBookmarks(to client: ConnectedClient) -> Bool {
+    func mayWriteBookmarks(to client: ConnectedClient, explicitRestore: Bool = false) -> Bool {
         if client.browser == .safari { return false }
+        guard BookmarkWritePolicy.allowsWrite(to: client.browser, settings: settings, explicitRestore: explicitRestore) else {
+            log("Bookmark write to [\(client.id)] refused: sync is off, the browser is not participating, or it is the read-only one-way source.")
+            return false
+        }
         if client.capabilities.contains(Self.bookmarkPlanCapability) { return true }
         if notifiedOutdatedExtensions.insert(client.id).inserted {
-            log("Bookmark sync to [\(client.id)] is paused: its extension is outdated and cannot review large changes.")
+            log("Bookmark sync to [\(client.id)] is paused: its extension is outdated and cannot review bookmark plans.")
             AppState.shared.notificationService.notifyOutdatedBookmarkExtension(browserName: Self.displayName(forClient: client.id))
         }
         return false
@@ -1267,17 +1345,32 @@ final class SyncService: ObservableObject {
         bookmarkCounts["safari"] = snapshot.count
     }
 
-    /// A backup restore into Safari, reviewed like any other large write.
-    /// Returns false if it is held for review.
+    /// A backup restore into Safari. A caller that already presented an
+    /// explicit restore confirmation may bypass duplicate Safe Mode review.
     @discardableResult
-    func applyRestoreToSafari(_ bookmarks: [SyncBookmark], replacing: Bool) -> Bool {
+    func applyRestoreToSafari(_ bookmarks: [SyncBookmark], replacing: Bool, skipDuplicateReview: Bool = false) -> Bool {
+        guard BookmarkWritePolicy.allowsWrite(to: .safari, settings: settings, explicitRestore: true) else {
+            log("Safari restore refused by the final bookmark write policy.")
+            return false
+        }
         // Starting a restore is a new, explicit request: an earlier "Keep"
         // on a restore must not silently skip it.
         rejectedSafariWriteSignatures.removeValue(forKey: Self.restoreReviewKey)
         recordInternalWrite()
-        let count = safariBookmarks.applyBookmarks(bookmarks, from: "Backup Restore", isFullMirror: replacing, guardLargeChanges: true)
+        let count = safariBookmarks.applyBookmarks(
+            bookmarks,
+            from: "Backup Restore",
+            isFullMirror: replacing,
+            guardLargeChanges: !skipDuplicateReview,
+            bypassSafeModeReview: skipDuplicateReview,
+            explicitRestore: true
+        )
         if count == SafariBookmarkService.blockedLargeChange, let held = safariBookmarks.lastBlockedWrite {
             holdLargeSafariWrite(PendingSafariWrite(sourceName: "Backup Restore", held: held, restore: (bookmarks, replacing)), clientId: Self.restoreReviewKey)
+            return false
+        }
+        guard count >= 0 else {
+            log("Safari restore failed or was refused; it was not reported as successful.")
             return false
         }
         refreshSafariSnapshot()
@@ -1289,11 +1382,68 @@ final class SyncService: ObservableObject {
     /// held by its extension can be reviewed and approved.
     func broadcastBookmarkSync(_ message: WSMessage) {
         guard let daemon else { return }
+        let explicitRestore = message.isExplicitDeletedBookmarkRestore == true || message.isExplicitBookmarkRestore == true
         // Same recipients and content as the plain broadcast it replaces.
-        for client in daemon.connectedClients where settings.bookmarkParticipatingBrowsers.contains(client.browser) && mayWriteBookmarks(to: client) {
+        for client in daemon.connectedClients where settings.bookmarkParticipatingBrowsers.contains(client.browser) && mayWriteBookmarks(to: client, explicitRestore: explicitRestore) {
             recordSentBookmarkMessage(message, to: client.id)
             daemon.sendWSMessage(message, to: client)
         }
+    }
+
+    /// Restores trash items only to the browsers in which the deletion was
+    /// observed. The explicit user action bypasses duplicate Safe Mode review.
+    /// Returns true only when every target was synchronously verified; an
+    /// extension dispatch remains in the trash until its result is confirmed.
+    @discardableResult
+    func restoreDeletedBookmarks(_ bookmarks: [SyncBookmark], to targets: Set<Browser>) -> Bool {
+        guard !bookmarks.isEmpty, !targets.isEmpty else { return false }
+        var verified = true
+
+        if targets.contains(.safari) {
+            guard BookmarkWritePolicy.allowsWrite(to: .safari, settings: settings, explicitRestore: true),
+                  SandboxAccessManager.shared.hasSafariAccess else { return false }
+            var current = safariBookmarks.readBookmarks()
+            current.append(contentsOf: bookmarks)
+            recordInternalWrite()
+            let safariVerified = applyRestoreToSafari(current, replacing: false, skipDuplicateReview: true)
+            if safariVerified {
+                backupService?.markDeletedBookmarksRestored(ids: Set(bookmarks.map(\.id)), from: .safari)
+            }
+            verified = safariVerified && verified
+        }
+
+        let payload = bookmarks.map { bookmark in
+            Bookmark(
+                id: bookmark.id,
+                title: bookmark.title,
+                url: bookmark.url,
+                parentId: bookmark.parentId,
+                isFolder: bookmark.isFolder,
+                inBookmarksBar: bookmark.inBookmarksBar,
+                dateAdded: Date(),
+                sourceBrowser: .safari
+            )
+        }
+        for browser in targets where browser != .safari {
+            let message = WSMessage(
+                type: .sync,
+                site: "*",
+                category: SyncCategory.bookmarks.rawValue,
+                payload: .bookmarks(payload),
+                messageId: UUID().uuidString,
+                timestamp: Date().timeIntervalSince1970,
+                isFullMirror: false,
+                isExplicitDeletedBookmarkRestore: true
+            )
+            if let messageId = message.messageId {
+                pendingDeletedRestoreByMessageId[messageId] = (Set(bookmarks.map(\.id)), browser)
+            }
+            sendBookmarkMessage(message, to: browser)
+            // Extension writes are asynchronous and may wait for Safe Mode
+            // review. Do not remove the trash entry before verified success.
+            verified = false
+        }
+        return verified
     }
 
     /// Whether Safari's tree may be sent to this browser right now.
@@ -1313,65 +1463,15 @@ final class SyncService: ObservableObject {
         log("Wrote \(count) bookmarks into Safari natively (App Store)")
         // Two-way: pushes deferred during the review (e.g. Safari edits made
         // meanwhile) are delivered now, from Safari's new state.
-        defer { pushFinalSafariBookmarksToBookmarkParticipantsIfNeeded() }
         refreshSafariSnapshot()
-    }
-
-    /// Called when the user taps "Apply Deletions" on the burst-deletion warning.
-    func forceApplyPendingBookmarkRemovalBurst(from clientId: String) {
-        guard let items = pendingBookmarkRemovalBursts.removeValue(forKey: clientId) else { return }
-        log("User approved \(items.count) buffered bookmark deletions from [\(clientId)].")
-        applyBookmarkRemovals(removalsInsideSyncFolder(items, clientId: clientId), clientId: clientId)
-    }
-
-    /// `items` are already limited to the source's sync folder.
-    private func applyBookmarkRemovals(_ items: [Bookmark], clientId: String, safariAlreadyWritten: Bool = false) {
-        let eligible = items
-        guard !eligible.isEmpty else { return }
-        backupService?.addDeletedBookmarks(eligible.map { bm in
-            DeletedBookmark(id: bm.id, title: bm.title, url: bm.url ?? nil, parentId: bm.parentId, isFolder: bm.isFolder,
-                            deletedAt: Date(), sourceBrowser: clientId, children: nil)
-        })
-        // Safari is written only when it takes part in bookmark sync.
-        let safariParticipates = settings.bookmarkParticipatingBrowsers.contains(.safari) && SandboxAccessManager.shared.hasSafariAccess
-        if !safariAlreadyWritten && safariParticipates {
-            prepareSafariForIncomingBookmarkMutation()
-            for bm in eligible {
-                safariBookmarks.removeBookmark(id: bm.id, title: bm.title, url: bm.url ?? nil)
-            }
-            log("Removed \(eligible.count) deleted items from Safari (triggered by [\(clientId)])")
-        }
-        if safariAlreadyWritten || safariParticipates { refreshSafariSnapshot() }
-
-        if isSyncing {
-            currentManualSyncStats.bookmarkSourceBrowserIds.insert(clientId.components(separatedBy: "-").first ?? clientId)
-        } else if AppState.shared.settingsService.general.notifySyncComplete {
-            var deletionStats = SyncStats()
-            deletionStats.bookmarksDeleted = eligible.filter { !$0.isFolder }.count
-            deletionStats.bookmarkFoldersDeleted = eligible.filter(\.isFolder).count
-            deletionStats.bookmarkSourceBrowserIds.insert(clientId.components(separatedBy: "-").first ?? clientId)
-            AppState.shared.notificationService.notifyAutoSyncComplete(stats: deletionStats, categories: [.bookmarks])
-        }
-
-        let isPro = AppState.shared.purchaseService.isProUnlocked
-        let shouldSync = (isPro && settings.bookmarkAutoSync && settings.enabledCategories.contains(.bookmarks)) || isSyncing
-        guard shouldSync else { return }
-        // One batch per browser; each extension reviews it if it is large.
-        // NOTE: never saved to GlobalStateStore — point-in-time events.
-        sendBookmarkRemovalBatch(eligible, excluding: clientId)
-        // Request a fresh sync from all clients to update counts and snapshots accurately.
-        Task {
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            let req = WSMessage(type: .sync, site: "*", category: "bookmarks", payload: nil, messageId: UUID().uuidString, timestamp: Date().timeIntervalSince1970)
-            await MainActor.run {
-                self.daemon?.broadcast(req, participatingBrowsers: self.settings.bookmarkParticipatingBrowsers)
-            }
-        }
+        // Safari's new state reaches the other browsers through a session.
+        scheduleBookmarkSyncSession()
     }
 
     private func sendBookmarkMessage(_ message: WSMessage, to browser: Browser, excluding excludedId: String? = nil) {
         guard let daemon else { return }
-        for client in daemon.connectedClients where client.browser == browser && client.id != excludedId && mayWriteBookmarks(to: client) {
+        let explicitRestore = message.isExplicitDeletedBookmarkRestore == true || message.isExplicitBookmarkRestore == true
+        for client in daemon.connectedClients where client.browser == browser && client.id != excludedId && mayWriteBookmarks(to: client, explicitRestore: explicitRestore) {
             // Pushing Safari's tree now would make that browser silently undo
             // the change the user is reviewing, and a later "Apply" would then
             // swap the two browsers' layouts. Deferred until the decision.
@@ -1401,112 +1501,6 @@ final class SyncService: ObservableObject {
         }
     }
 
-    private func pushFinalSafariBookmarksToBookmarkParticipantsIfNeeded() {
-        guard settings.bookmarkSyncStrategy == .twoWayMerge,
-              settings.bookmarkParticipatingBrowsers.contains(.safari) else {
-            return
-        }
-
-        var safariBookmarksToPush = safariBookmarks.readBookmarks().map {
-            Bookmark(
-                id: $0.id,
-                title: $0.title,
-                url: $0.url.flatMap { $0 },
-                parentId: $0.parentId,
-                isFolder: $0.isFolder,
-                sortIndex: $0.sortIndex,
-                inBookmarksBar: $0.inBookmarksBar,
-                dateAdded: Date(),
-                sourceBrowser: .safari
-            )
-        }
-
-        if let dedupedBookmarks = BookmarkTreeMerger.deduplicatedBookmarksInFolder(
-            tree: safariBookmarksToPush,
-            folderPath: settings.bookmarkFolder(for: .safari)
-        ), dedupedBookmarks.count != safariBookmarksToPush.count {
-            let syncBookmarks = dedupedBookmarks.compactMap { bookmark -> SyncBookmark? in
-                let url = bookmark.url.flatMap { $0 }
-                if !bookmark.isFolder && url == nil { return nil }
-                return SyncBookmark(
-                    id: bookmark.id,
-                    title: bookmark.title,
-                    url: url,
-                    parentId: bookmark.parentId,
-                    isFolder: bookmark.isFolder,
-                    sortIndex: bookmark.sortIndex,
-                    inBookmarksBar: bookmark.inBookmarksBar ?? false,
-                    dateAdded: bookmark.dateAdded
-                )
-            }
-            let removedCount = safariBookmarksToPush.count - dedupedBookmarks.count
-            let echoGuardBefore = (network: lastNetworkSyncTime, backup: suppressSafariPreSyncBackupUntil)
-            prepareSafariForIncomingBookmarkMutation()
-            recordInternalWrite()
-            let writeCount = safariBookmarks.applyBookmarks(syncBookmarks, from: "safari", isFullMirror: true, guardLargeChanges: true)
-            if writeCount == SafariBookmarkService.blockedLargeChange, let held = safariBookmarks.lastBlockedWrite {
-                lastNetworkSyncTime = echoGuardBefore.network
-                suppressSafariPreSyncBackupUntil = echoGuardBefore.backup
-                // Deduplication is still a mass removal. Unless the user already
-                // approved exactly this one, Safari stays as is and its current,
-                // unchanged tree is what gets pushed this round.
-                if holdLargeSafariWrite(PendingSafariWrite(sourceName: "safari", held: held), clientId: "Safari") {
-                    // The approved deduplication was written and its result
-                    // already pushed by finishApprovedSafariWrite.
-                    return
-                }
-            }
-            if writeCount == SafariBookmarkService.blockedLargeChange {
-                // Held for review; nothing to do this round.
-            } else if writeCount >= 0 {
-                safariBookmarksToPush = safariBookmarks.readBookmarks().map {
-                    Bookmark(
-                        id: $0.id,
-                        title: $0.title,
-                        url: $0.url.flatMap { $0 },
-                        parentId: $0.parentId,
-                        isFolder: $0.isFolder,
-                        inBookmarksBar: $0.inBookmarksBar,
-                        dateAdded: Date(),
-                        sourceBrowser: .safari
-                    )
-                }
-                log("Removed \(removedCount) duplicate Safari bookmarks inside the selected sync folder before final convergence.")
-            } else {
-                safariBookmarksToPush = dedupedBookmarks
-                log("Prepared duplicate-free Safari bookmark payload, but Safari native write did not complete.")
-            }
-            if writeCount >= 0 {
-                clearPendingSafariWrite(for: "Safari")
-                rejectedSafariWriteSignatures.removeValue(forKey: "Safari")
-            }
-        } else {
-            // Nothing to deduplicate any more; a held deduplication is obsolete.
-            clearPendingSafariWrite(for: "Safari")
-        }
-
-        guard !safariBookmarksToPush.isEmpty,
-              let adjustedBookmarks = folderAdjustedBookmarksForSource(safariBookmarksToPush, browser: .safari) else {
-            return
-        }
-
-        var message = WSMessage(
-            type: .sync,
-            browser: Browser.safari.rawValue,
-            site: "*",
-            category: SyncCategory.bookmarks.rawValue,
-            payload: .bookmarks(adjustedBookmarks),
-            messageId: UUID().uuidString,
-            timestamp: Date().timeIntervalSince1970
-        )
-        message.isFullMirror = false
-
-        for browser in settings.bookmarkParticipatingBrowsers where browser != .safari {
-            sendBookmarkMessage(message, to: browser)
-        }
-        log("Pushed final Safari bookmark state to non-Safari participants (\(adjustedBookmarks.count) bookmarks)")
-    }
-
     private func snapshotForClient(_ clientId: String) -> [Bookmark] {
         let browserId = clientId.components(separatedBy: "-").first ?? clientId
         return backupService?.getSnapshot(sourceBrowser: clientId)
@@ -1521,6 +1515,15 @@ final class SyncService: ObservableObject {
             backupService?.saveSnapshot(bookmarks: bookmarks, sourceBrowser: browserId)
         }
     }
+
+    /// Persisted history is the only previous/current state used for activity
+    /// detection. Save first, then compare the newest two records.
+    private func latestSnapshotDelta(for clientId: String) -> BookmarkSnapshotDelta? {
+        guard let snapshots = backupService?.getRecentSnapshots(sourceBrowser: clientId, limit: 2),
+              snapshots.count == 2 else { return nil }
+        return BookmarkSnapshotDiffer.diff(older: snapshots[0], newer: snapshots[1])
+    }
+
 
     /// A browser can briefly report an empty tree while its bookmark database is
     /// unavailable. Treating that as a full snapshot would erase every one-way
@@ -1607,48 +1610,17 @@ final class SyncService: ObservableObject {
         }
     }
 
-    private var pendingSafariRemovalsURL: URL {
-        dataDir.appendingPathComponent("pending-safari-bookmark-removals.json")
-    }
-
-    private func loadPendingSafariRemovals() {
-        guard let data = try? Data(contentsOf: pendingSafariRemovalsURL),
-              let saved = try? JSONDecoder().decode([String: [Bookmark]].self, from: data) else { return }
-        pendingSafariRemovals = saved
-    }
-
-    private func savePendingSafariRemovals() {
-        guard let data = try? JSONEncoder().encode(pendingSafariRemovals) else { return }
-        do { try data.write(to: pendingSafariRemovalsURL, options: .atomic) }
-        catch { log("Could not save pending Safari bookmark removals: \(error.localizedDescription)") }
-    }
-
-    func deliverPendingSafariRemovals(to clientId: String) -> Bool {
-        let browserId = clientId.components(separatedBy: "-").first ?? clientId
-        guard let browser = Browser(rawValue: browserId),
-              let removals = pendingSafariRemovals[browserId], !removals.isEmpty else { return false }
-        // A user may have restored a bookmark in Safari while the target was offline.
-        // A fresh nonempty read prevents replaying that now-stale removal.
-        let currentSafari = safariBookmarks.readBookmarks()
-        guard !currentSafari.isEmpty else {
-            log("Deferred pending Safari removals for [\(clientId)]: Safari bookmark read was empty.")
-            return false
-        }
-        let toDeliver = removals.filter { removed in
-            !currentSafari.contains { current in
-                current.id == removed.id ||
-                (removed.isFolder && current.isFolder && current.title.caseInsensitiveCompare(removed.title) == .orderedSame) ||
-                (!removed.isFolder && current.url.flatMap { $0 }?.lowercased() == removed.url.flatMap { $0 }?.lowercased())
+    /// Earlier versions queued undelivered deletions for offline browsers and
+    /// replayed them as standalone removal batches. Missed changes now stay
+    /// pending against the per-pair baselines, so the old queues are removed
+    /// once instead of being re-sent (and refused) on every connection.
+    private func removeLegacyRemovalQueues() {
+        for name in ["pending-browser-bookmark-removals.json", "pending-safari-bookmark-removals.json"] {
+            let url = dataDir.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: url.path) {
+                try? FileManager.default.removeItem(at: url)
             }
         }
-        // Kept until the browser's extension can take them.
-        guard let client = daemon?.connectedClients.first(where: { $0.id == clientId }), mayWriteBookmarks(to: client) else { return false }
-        // One batch, reviewed by the browser's extension if it is large.
-        sendBookmarkRemovalBatch(toDeliver, browsers: [browser])
-        pendingSafariRemovals.removeValue(forKey: browserId)
-        savePendingSafariRemovals()
-        log("Delivered \(toDeliver.count) pending Safari bookmark removals to [\(clientId)]")
-        return !toDeliver.isEmpty
     }
 
     private func loadBookmarkCountsFromDisk() {
@@ -1740,6 +1712,9 @@ final class SyncService: ObservableObject {
 
     func syncNow(categories: Set<SyncCategory>? = nil) async -> SyncStats {
         guard !isSyncing else { return SyncStats() }
+        let syncID = UUID()
+        activeManualSyncID = syncID
+        lastManualSyncWasCancelled = false
         isSyncing = true
         currentManualSyncStats = SyncStats()
         
@@ -1756,7 +1731,7 @@ final class SyncService: ObservableObject {
             log("Cleared earlier decisions to keep Safari unchanged; large changes will be reviewed again.")
         }
         // Clean up any mobile bookmark contamination in Safari before syncing
-        if targetCategories.contains(.bookmarks) {
+        if targetCategories.contains(.bookmarks), safariMutationIsAuthorized {
             prepareSafariForIncomingBookmarkMutation()
             runSafariCleanup(safariBookmarks.previewMobileContaminationCleanup(), key: Self.mobileCleanupKey)
         }
@@ -1765,6 +1740,7 @@ final class SyncService: ObservableObject {
         if !preSyncSafariBookmarks.isEmpty { bookmarkCounts["safari"] = preSyncSafariBookmarks.count }
         for category in SyncCategory.allCases where targetCategories.contains(category) {
             await syncCategory(category)
+            guard manualSyncIsActive(syncID) else { return SyncStats() }
         }
         
         // Wait for clients to respond before ending manual sync window
@@ -1774,12 +1750,18 @@ final class SyncService: ObservableObject {
             try? await Task.sleep(nanoseconds: 8_000_000_000)
         }
 
+        guard manualSyncIsActive(syncID) else { return SyncStats() }
+
         if targetCategories.contains(.bookmarks) {
-            pushFinalSafariBookmarksToBookmarkParticipantsIfNeeded()
+            // Every browser's snapshot has been persisted. One session now
+            // detects all local changes against the per-target baselines,
+            // plans every target together and opens one review.
+            startBookmarkSyncSession(manual: true)
         }
 
         lastSyncDate = Date()
         isSyncing = false
+        activeManualSyncID = nil
         if targetCategories.contains(.bookmarks) {
             let postSyncSafariBookmarks = safariBookmarks.readBookmarks()
             currentManualSyncStats.bookmarks = postSyncSafariBookmarks.filter { !$0.isFolder }.count
@@ -1921,126 +1903,25 @@ final class SyncService: ObservableObject {
             if shouldPushSafari {
                 let safariBms = safariBookmarks.readBookmarks()
                 if !safariBms.isEmpty {
-                    // Check for deletions comparing to the last hidden snapshot.
-                    // IMPORTANT: We compare by URL (for leaves) and title (for folders), NOT by UUID.
-                    // Safari's Bookmarks.plist may regenerate UUIDs when rewritten, so UUID mismatches
-                    // do NOT indicate a real deletion. If the URL/title still exists in Safari, it was NOT deleted.
-                    if let lastSafariBms = backupService?.getSnapshot(sourceBrowser: "safari") {
-                        let currentIds = Set(safariBms.map { $0.id })
-                        let currentUrls = Set(safariBms.compactMap { $0.url.flatMap { $0 } }.map { $0.lowercased() })
-                        let currentFolderTitles = Set(safariBms.filter { $0.isFolder }.map { $0.title.lowercased() })
-                        
-                        let deletedBms = lastSafariBms.filter { bm in
-                            // Still present by ID → not deleted
-                            if currentIds.contains(bm.id) { return false }
-                            // Leaf: still present by URL → UUID drift, not a real deletion
-                            if let urlOpt = bm.url, let url = urlOpt, currentUrls.contains(url.lowercased()) { return false }
-                            // Folder: still present by title → UUID drift, not a real deletion
-                            if bm.isFolder && currentFolderTitles.contains(bm.title.lowercased()) { return false }
-                            // Truly gone from Safari
-                            return true
-                        }
-                        
-                        if !deletedBms.isEmpty {
-                            log("Detected \(deletedBms.count) bookmark deletions in Safari, adding to trash...")
-                            
-                            let deletedItems = buildDeletedBookmarkForest(from: deletedBms, sourceBrowser: "Safari")
-                            backupService?.addDeletedBookmarks(deletedItems)
-
-                            if strategy == .twoWayMerge {
-                                // Browsers whose extension cannot take removal batches
-                                // are treated as offline: their removals wait.
-                                let online = Set(daemon?.connectedClients.filter { mayWriteBookmarks(to: $0) }.map(\.browser) ?? [])
-                                for browser in settings.bookmarkParticipatingBrowsers where browser != .safari && !online.contains(browser) {
-                                    var pending = pendingSafariRemovals[browser.rawValue] ?? []
-                                    for bookmark in deletedBms where !pending.contains(where: { $0.id == bookmark.id }) {
-                                        pending.append(bookmark)
-                                    }
-                                    pendingSafariRemovals[browser.rawValue] = pending
-                                }
-                                savePendingSafariRemovals()
-                            }
-                            
-                            // One batch per browser: each extension dry-runs it
-                            // (subtrees included) and holds a large one for review.
-                            // NOTE: never saved to GlobalStateStore — point-in-time events.
-                            sendBookmarkRemovalBatch(deletedBms)
-                            if self.isSyncing {
-                                self.currentManualSyncStats.bookmarksDeleted += deletedBms.filter { !$0.isFolder }.count
-                                self.currentManualSyncStats.bookmarkFoldersDeleted += deletedBms.filter(\.isFolder).count
-                                self.currentManualSyncStats.bookmarkSourceBrowserIds.insert(Browser.safari.id)
-                            } else if AppState.shared.settingsService.general.notifySyncComplete {
-                                var stats = SyncStats()
-                                stats.bookmarksDeleted = deletedBms.filter { !$0.isFolder }.count
-                                stats.bookmarkFoldersDeleted = deletedBms.filter(\.isFolder).count
-                                stats.bookmarkSourceBrowserIds.insert(Browser.safari.id)
-                                AppState.shared.notificationService.notifyAutoSyncComplete(stats: stats, categories: [.bookmarks])
-                            }
-                        }
-                    }
-
                     let rawBookmarks = safariBms.map { b in
                         Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
                     }
-                    
-                    if let adjustedBookmarks = folderAdjustedBookmarksForSource(rawBookmarks, browser: .safari),
+                    if let bookmarks = folderAdjustedBookmarksForSource(rawBookmarks, browser: .safari),
                        let backupBookmarks = backupBookmarksForSource(rawBookmarks, browser: .safari) {
-                        let bookmarks = adjustedBookmarks
-
-                        if !isSyncing, let previous = backupService?.getSnapshot(sourceBrowser: "safari") {
-                            var stats = SyncStats()
-                            populateAutomaticBookmarkChangeStats(previous: previous, current: bookmarks, stats: &stats)
-                            if (stats.bookmarksAdded > 0 || stats.bookmarksModified > 0 ||
-                                stats.bookmarkFoldersAdded > 0 || stats.bookmarkFoldersModified > 0),
-                               AppState.shared.settingsService.general.notifySyncComplete {
-                                stats.bookmarkSourceBrowserIds.insert(Browser.safari.id)
-                                AppState.shared.notificationService.notifyAutoSyncComplete(stats: stats, categories: [.bookmarks])
-                            }
-                        }
-
-                        if isSyncing, let previous = backupService?.getSnapshot(sourceBrowser: "safari") {
-                            let previousById = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0) })
-                            let changed = previousById.count != bookmarks.count || bookmarks.contains { item in
-                                guard let old = previousById[item.id] else { return true }
-                                return old.title != item.title || old.url != item.url || old.parentId != item.parentId
-                            }
-                            if changed { currentManualSyncStats.bookmarkSourceBrowserIds.insert(Browser.safari.id) }
-                        }
-
                         backupService?.savePreSyncBackup(
                             bookmarks: backupBookmarks,
                             sourceBrowser: "safari",
                             folderPath: settings.bookmarkFolder(for: .safari)
                         )
+                        // Safari's observation is persisted like any other
+                        // browser's. Changes are derived later, together
+                        // with every other browser, by the sync session.
                         backupService?.saveSnapshot(bookmarks: bookmarks, sourceBrowser: "safari")
                         bookmarkCounts["safari"] = bookmarks.count
-                        
-                        var pushMsg = WSMessage(
-                            type: .sync,
-                            browser: Browser.safari.rawValue,
-                            site: "*",
-                            category: category.rawValue,
-                            payload: .bookmarks(bookmarks),
-                            messageId: UUID().uuidString,
-                            timestamp: Date().timeIntervalSince1970
-                        )
-                        pushMsg.isFullMirror = (strategy == .oneWay) // Root selection keeps the old full mirror behavior; targeted folders are handled per receiver.
-                        for client in daemon?.connectedClients ?? [] where client.browser != .safari && settings.bookmarkParticipatingBrowsers.contains(client.browser) && !isSafariPushDeferred(to: client.id) {
-                            recentSafariPushByClient[client.id] = (bookmarks, Date())
-                        }
-                        broadcastBookmarkMessage(pushMsg)
-                        log("Pushed \(bookmarks.count) Safari bookmarks to clients")
-                        
-                        // After pushing, update expected counts for all non-Safari receiving browsers
-                        // so the UI reflects what was just sent (avoids stale counts after sync)
-                        let targetDir = dataDir.appendingPathComponent("bookmarks")
-                        for browser in settings.bookmarkParticipatingBrowsers where browser.id != "safari" && !isSafariPushDeferred(to: "\(browser.id)-main") {
-                            bookmarkCounts[browser.id] = bookmarks.count
-                            // Also persist this pushed state so it survives app restart
-                            save(bookmarks, to: targetDir.appendingPathComponent("\(browser.id)-main.json"))
-                        }
+                        if !isSyncing { scheduleBookmarkSyncSession() }
+                        log("Recorded Safari bookmark snapshot (\(bookmarks.count) items).")
                     } else {
-                        log("Skipped Safari bookmark push because its selected sync folder is missing; continuing with other browsers.")
+                        log("Skipped Safari bookmark observation because its selected sync folder is missing; continuing with other browsers.")
                     }
                 } else {
                     log("No Safari bookmarks found to sync")
@@ -2111,8 +1992,21 @@ final class SyncService: ObservableObject {
 
     func receive(message: WSMessage, from clientId: String) {
         guard message.type == .sync, let category = message.category else { return }
+
+        if (category == "bookmarks" || category == "bookmark_changed" || category == "bookmarks_removed"),
+           let until = ignoreBookmarkObservationsUntil {
+            if until > Date() {
+                log("Ignored late bookmark observation from [\(clientId)] after this manual sync was cancelled.")
+                return
+            }
+            ignoreBookmarkObservationsUntil = nil
+        }
         
         var filteredMessage = message
+        if category == "bookmark_plan_context" {
+            handleBookmarkPlanContext(message, clientId: clientId)
+            return
+        }
         // A per-site browserData pull is a repair operation: the requester may
         // have lost a cookie while the source still has the same version. Keep
         // the requester before conflict filtering so an unchanged snapshot can
@@ -2130,13 +2024,6 @@ final class SyncService: ObservableObject {
         }
 
         if category == "bookmark_folder_missing" {
-            // Only the removal batch this answers (a full sync's report, or one
-            // without an ID from an older extension, concerns no batch here).
-            if case .raw(let raw)? = message.payload,
-               let answered = raw["messageId"]?.value as? String,
-               answered == lastBookmarkMessageByClient["rm:" + clientId]?.messageId {
-                abandonRemovalBatch(for: clientId, reason: "sync folder missing")
-            }
             let browserId = clientId.components(separatedBy: "-").first ?? clientId
             if let browser = Browser(rawValue: browserId),
                case .raw(let raw) = message.payload,
@@ -2148,6 +2035,14 @@ final class SyncService: ObservableObject {
 
         if category == "bookmark_changed" {
             handleIncomingBookmarkChangeSignal(clientId: clientId)
+            return
+        }
+
+        if category == "bookmark_incremental" {
+            // Legacy merge payloads bypass the scoped native planner; they are
+            // never written anywhere. Request a full observation instead.
+            log("Ignored a legacy incremental bookmark payload from [\(clientId)]; requesting a full snapshot.")
+            requestFreshBookmarkSnapshot(for: clientId)
             return
         }
 
@@ -2187,8 +2082,9 @@ final class SyncService: ObservableObject {
         let strategy = settings.bookmarkSyncStrategy
         let sourceBrowser = settings.bookmarkSourceBrowser
         let isBookmarkCategory = (category == "bookmarks" || category == "bookmark_incremental" || category == "bookmarks_removed")
+        let isOneWayTargetObservation = strategy == .oneWay && !isClient(clientId, from: sourceBrowser)
 
-        if isBookmarkCategory && strategy == .oneWay && !isClient(clientId, from: sourceBrowser) {
+        if isBookmarkCategory && isOneWayTargetObservation && category != "bookmarks" {
             log("Ignored \(category) from [\(clientId)] due to one-way sync strategy (\(sourceBrowser.displayName) is primary)")
             
             // Even though we ignore it for syncing, we MUST update this client's local snapshot/count
@@ -2213,11 +2109,6 @@ final class SyncService: ObservableObject {
             }
             return
         }
-        if strategy == .oneWay && category == "bookmarks" {
-            // In one-way sync, the target should exactly mirror the source.
-            // Setting isFullMirror = true ensures the target prunes local items not present in the payload.
-            filteredMessage.isFullMirror = true
-        }
         if category == "bookmark_backup", case .bookmarks(let bms) = filteredMessage.payload {
             // Browser extensions send this immediately before mutating their
             // local tree. Keep it both as the deletion-detection snapshot and
@@ -2235,7 +2126,6 @@ final class SyncService: ObservableObject {
                     ? "Saved pre-write bookmark backup from [\(clientId)] with \(backupBookmarks.count) items; backup is not broadcast as sync data."
                     : "Skipped pre-write bookmark backup from [\(clientId)] because it is empty or unchanged from that browser's previous backup.")
             }
-            saveSnapshotAliases(bookmarks: bms, clientId: clientId)
             bookmarkCounts[browserId] = bms.count
             return
         }
@@ -2259,28 +2149,75 @@ final class SyncService: ObservableObject {
                 return
             }
 
-            // A full snapshot is state, not deletion authority.  In particular, do not
-            // filter it through local deletion tombstones before applying it: Chrome
-            // legitimately echoes Safari's tree after a native write, but Safari UUIDs
-            // differ from Chrome's.  Filtering that echo can remove its parent folders
-            // and leave otherwise valid children to be recreated at a browser root.
-            // Explicit `bookmarks_removed` messages below remain the only deletion path.
+            // Normalize the complete observation to the configured source
+            // scope before persisting it. The observation itself is never a
+            // plan; the newest two persisted observations are diffed below.
             guard let sourceAdjustedBookmarks = folderAdjustedBookmarksForSource(bms, browser: sourceBrowserForFolder) else {
                 return
             }
-            let previousForDeletion = BookmarkTreeMerger.extractExistingSubtreeAsRoot(
-                sourceTree: preSyncAutoBookmarks,
-                folderPath: settings.bookmarkFolder(for: sourceBrowserForFolder)
-            ) ?? preSyncAutoBookmarks
-            processDeletedBookmarksFromFullSnapshot(previous: previousForDeletion, current: sourceAdjustedBookmarks, from: clientId)
-            saveSnapshotAliases(bookmarks: bms, clientId: clientId)
-            filteredMessage.payload = .bookmarks(sourceAdjustedBookmarks)
+            // Record the source-side state produced by this local operation
+            // before it is dispatched to any target. Target-side pre-write
+            // backups are captured independently immediately before replay.
+            if let sourceBackup = backupBookmarksForSource(bms, browser: sourceBrowserForFolder) {
+                let saved = backupService?.savePreSyncBackup(
+                    bookmarks: sourceBackup,
+                    sourceBrowser: clientId,
+                    folderPath: settings.bookmarkFolder(for: sourceBrowserForFolder)
+                ) ?? false
+                if saved {
+                    log("Saved source operation snapshot from [\(clientId)] before bookmark dispatch.")
+                }
+            }
+            saveSnapshotAliases(bookmarks: sourceAdjustedBookmarks, clientId: clientId)
+            save(sourceAdjustedBookmarks, to: dataDir.appendingPathComponent("bookmarks").appendingPathComponent("\(clientId).json"))
+            bookmarkCounts[browserId] = sourceAdjustedBookmarks.count
+
+            // The post-write tree a sync session asked for only moves that
+            // session's baselines; it is not a new local change.
+            if let browser, acceptSessionFreshSnapshot(from: browser) {
+                log("Recorded the post-write bookmark tree from [\(clientId)].")
+                return
+            }
+
+            if isOneWayTargetObservation {
+                let snapshotDelta = latestSnapshotDelta(for: clientId)
+                // The target's delta is evidence of drift, never a source of
+                // writes. Reconcile this one target against the latest saved
+                // source snapshot; the native planner will compare that state
+                // with the target's current tree and review the actual diff.
+                guard let snapshotDelta, !snapshotDelta.isEmpty,
+                      let target = browser,
+                      !snapshotForClient(sourceBrowser.rawValue).isEmpty else {
+                    log("Recorded one-way target snapshot from [\(clientId)]; no source-driven correction was needed.")
+                    return
+                }
+                var correction = WSMessage(
+                    type: .sync,
+                    browser: sourceBrowser.rawValue,
+                    site: "*",
+                    category: SyncCategory.bookmarks.rawValue,
+                    payload: .bookmarks(snapshotForClient(sourceBrowser.rawValue)),
+                    messageId: UUID().uuidString,
+                    timestamp: Date().timeIntervalSince1970
+                )
+                correction.isFullMirror = true
+                sendBookmarkMessage(correction, to: target)
+                log("Calculated one-way correction for [\(clientId)] from the latest \(sourceBrowser.displayName) snapshot.")
+                return
+            }
+
+            // Snapshots are observations. Changes are detected by comparing
+            // each browser's newest snapshot with its persisted per-target
+            // sync baseline, for all browsers together, in one session.
+            if !isSyncing { scheduleBookmarkSyncSession() }
+            log("Recorded bookmark snapshot from [\(clientId)] (\(sourceAdjustedBookmarks.count) items).")
+            return
         }
 
         if category == "bookmarks_removed" {
-            if case .bookmarksRemoved(let bm) = filteredMessage.payload {
-                handleIncomingBookmarkRemoval(bm, clientId: clientId)
-            }
+            // Extension callbacks wake the app only. The persisted snapshot
+            // delta above is the deletion authority.
+            handleIncomingBookmarkChangeSignal(clientId: clientId)
             return
         }
 
@@ -2407,11 +2344,8 @@ final class SyncService: ObservableObject {
                     if let source = Browser(rawValue: clientId.components(separatedBy: "-").first ?? clientId) {
                         autoStats.bookmarkSourceBrowserIds.insert(source.id)
                     }
-                    // A full tree is a state refresh, not an event log. It is
-                    // used for content/order sync but must never manufacture
-                    // add/delete notifications from transient differences.
-                    // It can still safely report an actual rename, move, or
-                    // reordering of a bookmark that exists in both snapshots.
+                    // Notifications summarize the accepted snapshot delta,
+                    // not an inferred difference between unrelated browsers.
                     populateAutomaticBookmarkChangeStats(
                         previous: preSyncAutoBookmarks,
                         current: bookmarks,
@@ -2502,13 +2436,14 @@ final class SyncService: ObservableObject {
                         daemon?.broadcast(filteredMessage, excluding: clientId)
                     }
                 } else if isBookmarkCategory {
-                    if currentMessageSafariWriteWasHeld || isAwaitingReview(of: clientId) {
-                        // Safari's write of this tree awaits review (or was
-                        // refused); other browsers must not receive it either.
-                        log("Did not forward bookmarks from [\(clientId)] to other browsers while the change awaits review.")
-                    } else {
-                        broadcastBookmarkMessage(filteredMessage, excluding: clientId)
-                    }
+                    // A Safari-native write may be held for review, but that
+                    // must not turn Safari into the sole target.  The same
+                    // source delta still needs an app-generated plan for every
+                    // other participating browser (for example Edge -> both
+                    // Safari and Chrome).  Each target remains independently
+                    // staged and cannot execute until the aggregate review is
+                    // applied.
+                    broadcastBookmarkMessage(filteredMessage, excluding: clientId)
                 } else {
                     daemon?.broadcast(filteredMessage, excluding: clientId)
                 }
@@ -2522,6 +2457,263 @@ final class SyncService: ObservableObject {
                 log("Automatic sync is disabled. Received data but did not broadcast.")
             }
         }
+    }
+
+    private func presentBookmarkConflicts(_ pending: PendingBookmarkConflictResolution) {
+        // Conflicts belong to the aggregate bookmark-review window.  They are
+        // not serial system alerts: all affected browsers and all choices are
+        // visible together with the rest of this sync plan.
+        guard pendingBookmarkConflictResolution == nil else { return }
+        var pending = pending
+        let source = pending.input.message.browser.flatMap(Browser.init(rawValue:))
+        let currentTarget = pending.input.browser
+        pending.propagationTargets = settings.bookmarkParticipatingBrowsers
+            .filter { browser in
+                browser != currentTarget
+                    && browser != .safari
+                    && source.map { $0 != browser } != false
+            }
+            .sorted { $0.rawValue < $1.rawValue }
+        pendingBookmarkConflictResolution = pending
+        presentPendingBookmarkConflictReview()
+    }
+
+    private func presentPendingBookmarkConflictReview() {
+        guard BookmarkChangeReviewWindowController.shared.presentedClientId == nil,
+              pendingBookmarkConflictResolution != nil else { return }
+        BookmarkChangeReviewWindowController.shared.present(
+            clientId: pendingBookmarkConflictRouteID,
+            reviewRoutes: pendingReviewRoutes,
+            onApplySelected: { [weak self] selection, conflicts in
+                self?.applySelectedPendingBookmarkReviews(selection, conflictResolutions: conflicts)
+            },
+            onCancel: { [weak self] in self?.cancelPendingBookmarkReview() }
+        )
+    }
+
+    /// The choices in the aggregate review are the explicit confirmation for
+    /// these exact operations.  Dispatch only the freshly replanned result;
+    /// the extension still validates the current token and verifies the write.
+    private func applyPendingBookmarkConflictResolutions(
+        _ resolutions: [String: BookmarkConflictResolution],
+        propagationTargets: Set<Browser>
+    ) {
+        guard let pending = pendingBookmarkConflictResolution else { return }
+        guard pending.conflicts.allSatisfy({ resolutions[$0.id] != nil }) else { return }
+        pendingBookmarkConflictResolution = nil
+        let plan = NativeBookmarkPlanner.makePlan(
+            desired: pending.desired,
+            context: pending.context,
+            fullMirror: pending.input.message.isFullMirror == true,
+            conflictResolutions: resolutions
+        )
+        guard plan.validationError == nil, plan.conflicts.isEmpty else {
+            log("Bookmark conflict choices were discarded because the source or target changed.")
+            return
+        }
+        if !plan.operations.isEmpty {
+            var message = pending.input.message
+            message.category = "bookmark_apply_plan"
+            message.payload = .raw([
+                "inputToken": AnyCodable(plan.inputToken),
+                "operations": AnyCodable(plan.operations.map { op in
+                    ["type": op.kind.rawValue, "id": op.id, "sourceId": op.sourceId as Any, "parentId": op.parentId as Any,
+                     "index": op.index as Any, "title": op.title as Any, "url": op.url as Any]
+                })
+            ])
+            guard let client = daemon?.connectedClients.first(where: { $0.id == pending.input.clientId }) else {
+                log("Bookmark conflict was resolved, but the target browser disconnected before dispatch. Nothing was written.")
+                return
+            }
+            if let messageId = message.messageId { dispatchedNativePlans[messageId] = plan.operations }
+            daemon?.sendWSMessage(message, to: client)
+            log("Dispatched \(plan.operations.count) user-confirmed bookmark conflict resolution operation(s) to [\(pending.input.clientId)].")
+        } else {
+            log("Bookmark conflict required no write into [\(pending.input.clientId)].")
+        }
+        stageResolvedConflictForRemainingTargets(
+            pending,
+            resolutions: resolutions,
+            propagationTargets: propagationTargets
+        )
+    }
+
+    /// A two-sided conflict is not the whole sync scope. Once the user has
+    /// selected its result, every other participating writable browser must
+    /// receive a plan as well. In particular, a browser that lacks the item
+    /// (for example Edge) receives an add plan instead of being omitted.
+    private func stageResolvedConflictForRemainingTargets(
+        _ pending: PendingBookmarkConflictResolution,
+        resolutions: [String: BookmarkConflictResolution],
+        propagationTargets: Set<Browser>
+    ) {
+        var desired: [Bookmark] = []
+        var seen = Set<String>()
+        for conflict in pending.conflicts {
+            let candidates: [Bookmark]
+            switch resolutions[conflict.id] {
+            case .source?: candidates = [conflict.source]
+            case .target?: candidates = [conflict.target]
+            case .both?: candidates = [conflict.source, conflict.target]
+            case nil: return
+            }
+            for candidate in candidates {
+                let snapshot = snapshotForClient(candidate.sourceBrowser.rawValue)
+                for node in BookmarkAggregatePlanner.portableChain(of: candidate, in: snapshot)
+                    where seen.insert("\(candidate.sourceBrowser.rawValue)|\(node.id)").inserted {
+                    desired.append(node)
+                }
+            }
+        }
+        guard !desired.isEmpty else { return }
+
+        for browser in pending.propagationTargets where propagationTargets.contains(browser) {
+            guard let client = daemon?.connectedClients.first(where: { $0.browser == browser }),
+                  mayWriteBookmarks(to: client) else { continue }
+            var message = WSMessage(
+                type: .sync,
+                browser: pending.input.message.browser,
+                site: "*",
+                category: SyncCategory.bookmarks.rawValue,
+                payload: .bookmarks(desired),
+                messageId: UUID().uuidString,
+                timestamp: Date().timeIntervalSince1970
+            )
+            message.isFullMirror = false
+            message.targetBookmarkFolder = settings.bookmarkFolder(for: browser)
+            _ = stageBrowserBookmarkMutation(message, to: client)
+            log("Queued the user-resolved bookmark result for planning into [\(browser.displayName)].")
+        }
+    }
+
+    private func handleBookmarkPlanContext(_ message: WSMessage, clientId: String) {
+        if case .raw(let raw)? = message.payload, let requestId = raw["requestId"]?.value as? String,
+           acceptSessionBookmarkContext(raw, requestId: requestId, clientId: clientId) {
+            return
+        }
+        guard case .raw(let raw)? = message.payload,
+              let requestId = raw["requestId"]?.value as? String,
+              let input = pendingNativePlanInputs.removeValue(forKey: requestId),
+              input.clientId == clientId else { return }
+        guard let token = raw["inputToken"]?.value as? String else {
+            log("App refused bookmark planning for [\(clientId)]: \((raw["error"]?.value as? String) ?? "the extension did not provide a valid current-tree token"). Nothing was written.")
+            return
+        }
+
+        func dictionary(_ value: Any?) -> [String: Any] {
+            if let value = value as? [String: Any] { return value }
+            if let value = value as? [String: AnyCodable] { return value.mapValues(\.value) }
+            return [:]
+        }
+        func array(_ value: Any?) -> [Any] {
+            if let value = value as? [Any] { return value }
+            if let value = value as? [AnyCodable] { return value.map(\.value) }
+            return []
+        }
+        let nodes: [Bookmark] = array(raw["nodes"]?.value).compactMap { item in
+            let node = dictionary(item)
+            guard let id = node["id"] as? String else { return nil }
+            let url = node["url"] as? String
+            return Bookmark(id: id, title: node["title"] as? String ?? "", url: url,
+                            parentId: node["parentId"] as? String,
+                            isFolder: (node["isFolder"] as? Bool) ?? (url == nil),
+                            sortIndex: node["sortIndex"] as? Int, dateAdded: nil,
+                            sourceBrowser: input.browser)
+        }
+        let roots = dictionary(raw["rootIds"]?.value).compactMapValues { $0 as? String }
+        let mapping = dictionary(raw["sourceToNativeIds"]?.value).compactMapValues { $0 as? String }
+        let context = BookmarkNativeTreeContext(inputToken: token, browser: input.browser, nodes: nodes,
+                                                rootIds: roots, sourceToNativeIds: mapping,
+                                                scopeRootId: raw["scopeRootId"]?.value as? String)
+        _ = backupService?.savePreSyncBackup(
+            bookmarks: nodes,
+            sourceBrowser: clientId,
+            folderPath: settings.bookmarkFolder(for: input.browser)
+        )
+        guard case .bookmarks(let desired)? = input.message.payload else { return }
+        let plan = input.message.category == Self.removalBatchCategory
+            ? NativeBookmarkPlanner.makeRemovalPlan(removals: desired, context: context)
+            : NativeBookmarkPlanner.makePlan(desired: desired, context: context, fullMirror: input.message.isFullMirror == true)
+        guard plan.validationError == nil else {
+            log("App refused bookmark planning for [\(clientId)]: \(plan.validationError ?? "invalid target scope").")
+            return
+        }
+        if !plan.conflicts.isEmpty {
+            presentBookmarkConflicts(
+                PendingBookmarkConflictResolution(input: input, context: context, desired: desired, conflicts: plan.conflicts)
+            )
+            return
+        }
+        if input.conflictOnly {
+            log("Discarded stable bookmark-divergence check for [\(clientId)]: its live tree no longer has the expected conflict. Nothing was written.")
+            return
+        }
+        guard !plan.operations.isEmpty else {
+            if input.message.isExplicitDeletedBookmarkRestore == true,
+               let messageId = input.message.messageId,
+               let restore = pendingDeletedRestoreByMessageId.removeValue(forKey: messageId) {
+                // The fresh native tree already contains the requested item.
+                // Treat that independently observed state as verified success
+                // and clear only this browser's trash marker.
+                backupService?.markDeletedBookmarksRestored(ids: restore.ids, from: restore.browser)
+                log("Recently Deleted restore into [\(clientId)] required no write because the current target snapshot already contains it.")
+            }
+            log("App bookmark plan for [\(clientId)] has no changes; nothing was dispatched.")
+            return
+        }
+        let impact = SafariBookmarkService.WriteImpact(
+            added: plan.impact.added, removed: plan.impact.removed, moved: plan.impact.moved,
+            modified: plan.impact.modified, total: plan.impact.total,
+            signature: plan.impact.signature, destructiveSignature: plan.impact.destructiveSignature
+        )
+        func reviewNode(_ change: NativeBookmarkChange) -> BookmarkReviewNode {
+            let kind: BookmarkReviewNode.Change
+            switch change.kind {
+            case .added: kind = .added
+            case .removed: kind = .removed
+            case .moved: kind = .moved
+            case .modified: kind = .modified
+            }
+            return BookmarkReviewNode(id: change.id, title: change.title, url: change.url,
+                                      isFolder: change.isFolder, change: kind, children: [],
+                                      containingPath: change.containingPath)
+        }
+        let preview = BookmarkChangePreview(
+            before: plan.changes.filter { $0.kind != .added }.map(reviewNode),
+            after: plan.changes.filter { $0.kind != .removed }.map(reviewNode)
+        )
+        guard hasReviewableChanges(preview) else {
+            log("Rejected an inconsistent native bookmark plan into [\(clientId)]: its operations had no reviewable rows. Nothing was dispatched.")
+            return
+        }
+        var plannedMessage = input.message
+        plannedMessage.category = "bookmark_apply_plan"
+        plannedMessage.payload = .raw([
+            "inputToken": AnyCodable(plan.inputToken),
+            "operations": AnyCodable(plan.operations.map { op in
+                ["type": op.kind.rawValue, "id": op.id, "sourceId": op.sourceId as Any, "parentId": op.parentId as Any,
+                 "index": op.index as Any, "title": op.title as Any, "url": op.url as Any]
+            })
+        ])
+        let key = "to:" + clientId
+        let isExplicitRestore = input.message.isExplicitDeletedBookmarkRestore == true
+            || input.message.isExplicitBookmarkRestore == true
+        if isExplicitRestore || (!settings.bookmarkSafeMode && !impact.requiresConfirmation) {
+            if let client = daemon?.connectedClients.first(where: { $0.id == clientId }) {
+                if let messageId = plannedMessage.messageId { dispatchedNativePlans[messageId] = plan.operations }
+                daemon?.sendWSMessage(plannedMessage, to: client)
+                if isExplicitRestore {
+                    log("App dispatched the user-confirmed bookmark restore to [\(clientId)] without a duplicate review; final authorization and result verification remain required.")
+                } else {
+                    log("App dispatched a non-empty bookmark plan to [\(clientId)] after native planning; Safe Mode is off and the threshold does not require review.")
+                }
+            }
+            return
+        }
+        pendingBrowserWrites[key] = PendingBrowserWrite(message: plannedMessage, impact: impact,
+                                                        preview: preview, settingsFingerprint: bookmarkSettingsFingerprint,
+                                                        nativeOperations: plan.operations)
+        presentPendingBrowserWrite(key: key)
     }
 
     private func filterStorageItems(_ items: [StorageItem], clientId: String, policy: WebsiteListPolicy) -> [StorageItem] {
@@ -2718,27 +2910,11 @@ final class SyncService: ObservableObject {
         return roots
     }
 
-    private func processDeletedBookmarksFromFullSnapshot(previous: [Bookmark], current: [Bookmark], from clientId: String) {
-        guard !clientId.lowercased().contains("safari"),
-              !previous.isEmpty,
-              !current.isEmpty else { return }
-        // A complete tree is not a deletion event. Browsers can briefly omit
-        // entries while moving/reordering them, and browser-owned roots are
-        // represented differently across snapshots. Inferring deletion here
-        // previously turned a harmless move into a destructive broadcast.
-        // Explicit `bookmarks_removed` events are the sole deletion authority.
-        log("Ignored possible deletions from [\(clientId)] full snapshot; waiting for an explicit bookmarks_removed event.")
-    }
-
     private func bookmarkURL(_ bookmark: Bookmark) -> String? {
         bookmark.url.flatMap { $0 }
     }
 
-    /// Full bookmark trees are state refreshes, not event logs. They may omit
-    /// a root or briefly differ while a browser is writing, so automatic
-    /// notifications may only report safe updates to a bookmark found in both
-    /// snapshots. Explicit `bookmarks_removed` messages remain the sole
-    /// source of deletion notifications.
+    /// Summarize an accepted source snapshot change for automatic-sync UI.
     private func populateAutomaticBookmarkChangeStats(
         previous: [Bookmark], current: [Bookmark], stats: inout SyncStats,
         ignoringSafariEchoFor clientId: String? = nil
@@ -2905,13 +3081,9 @@ final class SyncService: ObservableObject {
         )
         let previousParentPaths = parentPaths(in: previous)
         let currentParentPaths = parentPaths(in: current)
-        let reorderedBookmarks = reorderedKeys(
-            previous: previous,
-            current: current,
-            previousParents: previousParentPaths,
-            currentParents: currentParentPaths,
-            key: { bookmarkURL($0)?.lowercased() }
-        )
+        // Sibling order is browser-owned presentation state. It is neither a
+        // synchronization operation nor an automatic-sync notification.
+        let reorderedBookmarks: Set<String> = []
         // A newly present URL is non-destructive and can be reported safely.
         // Missing URLs are intentionally *not* inferred as removals here: a
         // browser may expose a transient or partial tree while it is writing.
@@ -2950,13 +3122,7 @@ final class SyncService: ObservableObject {
             else { return }
             count += 1
         }
-        let reorderedFolders = reorderedKeys(
-            previous: Array(previousFolders.values),
-            current: Array(currentFolders.values),
-            previousParents: previousParentPaths,
-            currentParents: currentParentPaths,
-            key: { $0.id }
-        )
+        let reorderedFolders: Set<String> = []
         stats.bookmarkFoldersModified = Set(currentFolders.keys).intersection(previousFolders.keys).reduce(into: 0) { count, id in
             guard let old = previousFolders[id], let new = currentFolders[id] else { return }
             let reordered = reorderedFolders.contains(id)
@@ -2978,20 +3144,32 @@ final class SyncService: ObservableObject {
     private func sanitizeIncomingBookmarksForSafari(_ bookmarks: [Bookmark], from clientId: String) -> [Bookmark] {
         guard !clientId.lowercased().contains("safari") else { return bookmarks }
 
+        let browserId = clientId.components(separatedBy: "-").first ?? clientId
+        let browser = Browser(rawValue: browserId)
+
         // A bookmark the user manually restored still matches its old tombstone
         // (matched by URL/title, not id) for up to 24h, which would otherwise
         // silently strip it back out of every incoming sync as "still deleted".
-        backupService?.resurrectDeletedBookmarks(seenIn: bookmarks)
+        if let browser {
+            backupService?.resurrectDeletedBookmarks(seenIn: bookmarks, browser: browser)
+        }
 
         let rootIds = Set(["0", "1", "2", "3"])
         let bookmarksById = Dictionary(bookmarks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let childrenByParent = Dictionary(grouping: bookmarks, by: { $0.parentId ?? "" })
-        let browserId = clientId.components(separatedBy: "-").first ?? clientId
-        let browser = Browser(rawValue: browserId)
         let selectedFolderIds: Set<String> = {
             guard let browser, let folder = settings.bookmarkFolder(for: browser) else { return [] }
             return BookmarkTreeMerger.idsInFolderIncludingRoot(tree: bookmarks, folderPath: folder)
         }()
+        // Only the selected folder node itself is structural scope. Its
+        // descendants are data and must still be filtered by newer deletion
+        // tombstones. Treating every descendant as a scope node resurrected
+        // stale copies from another browser after the user deleted them.
+        let selectedFolderRootIds = Set(selectedFolderIds.filter { id in
+            guard let bookmark = bookmarksById[id] else { return false }
+            guard let parentId = bookmark.parentId else { return true }
+            return !selectedFolderIds.contains(parentId)
+        })
 
         func deletedSignatures(from items: [DeletedBookmark]) -> (folders: Set<String>, urls: Set<String>) {
             var folderSignatures = Set<String>()
@@ -3030,12 +3208,12 @@ final class SyncService: ObservableObject {
         func shouldDropNode(_ bookmark: Bookmark) -> Bool {
             if rootIds.contains(bookmark.id) { return true }
             if isBrowserMobileRoot(bookmark) { return true }
-            if !selectedFolderIds.contains(bookmark.id), isDeletedByTombstone(bookmark) { return true }
+            if !selectedFolderRootIds.contains(bookmark.id), isDeletedByTombstone(bookmark) { return true }
             return false
         }
 
         func shouldDropDescendants(of bookmark: Bookmark) -> Bool {
-            if selectedFolderIds.contains(bookmark.id) { return false }
+            if selectedFolderRootIds.contains(bookmark.id) { return false }
             return bookmark.id == "0" ||
             bookmark.id == "3" ||
             isBrowserMobileRoot(bookmark) ||
@@ -3074,101 +3252,8 @@ final class SyncService: ObservableObject {
                 let browserId = clientId.components(separatedBy: "-").first ?? clientId
                 bookmarkCounts[browserId] = bookmarks.count
             }
-            let isPro = AppState.shared.purchaseService.isProUnlocked
-            let shouldSyncToSafari = ((isPro && settings.bookmarkAutoSync && settings.enabledCategories.contains(.bookmarks)) || isSyncing)
-            
-            // Also write natively into Safari if the source is a Chromium browser, AND the category is an actual sync (not a backup)
-            if shouldSyncToSafari && category != "bookmark_backup" && !clientId.lowercased().contains("safari") && settings.bookmarkParticipatingBrowsers.contains(.safari) {
-                // Safari writes are gated by the security-scoped bookmark
-                // that the user granted via requestSafariAccess(). applyBookmarks() and
-                // readBookmarks() both call withSafariAccess internally.
-                if SandboxAccessManager.shared.hasSafariAccess, isAwaitingReview(of: clientId) {
-                    // Its tree still shows what is under review; neither Safari
-                    // nor the other browsers take it until the user decides.
-                    currentMessageSafariWriteWasHeld = true
-                    log("Did not merge bookmarks from [\(clientId)] while a change to it awaits review.")
-                } else if SandboxAccessManager.shared.hasSafariAccess {
-                    let strategy = settings.bookmarkSyncStrategy
-                    let sourceBrowser = settings.bookmarkSourceBrowser
-                    if !(strategy == .oneWay && sourceBrowser == .safari) {
-                        var finalSyncBookmarks: [SyncBookmark] = []
-                        var finalIsFullMirror = isFullMirror
-                        
-                        let sourceBrowserId = clientId.components(separatedBy: "-").first ?? clientId
-                        let targetPreparedBookmarks = Browser(rawValue: sourceBrowserId).map {
-                            bookmarksPreparedForTarget(bookmarks, sourceBrowser: $0, targetBrowser: .safari)
-                        } ?? bookmarks
-
-                        if let targetFolder = settings.bookmarkFolder(for: .safari) {
-                            let safariTargetBms = safariBookmarks.readBookmarks().map { b in
-                                Bookmark(id: b.id, title: b.title, url: b.url.flatMap { $0 }, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
-                            }
-                            let mergedBookmarks = strategy == .oneWay
-                                ? BookmarkTreeMerger.replaceExistingFolderContents(sourceTree: targetPreparedBookmarks, targetTree: safariTargetBms, targetFolderPath: targetFolder)
-                                : BookmarkTreeMerger.mergeIntoExistingFolder(sourceTree: targetPreparedBookmarks, targetTree: safariTargetBms, targetFolderPath: targetFolder)
-                            guard let finalBookmarksToSend = mergedBookmarks else {
-                                markMissingBookmarkFolder(.safari, folder: targetFolder)
-                                return
-                            }
-                            finalIsFullMirror = strategy == .oneWay
-                            finalSyncBookmarks = finalBookmarksToSend.compactMap { b -> SyncBookmark? in
-                                let urlStr: String?
-                                if let urlOpt = b.url { urlStr = urlOpt } else { urlStr = nil }
-                                if !b.isFolder && urlStr == nil { return nil }
-                                return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar ?? false, dateAdded: b.dateAdded)
-                            }
-                    } else {
-                        finalSyncBookmarks = targetPreparedBookmarks.compactMap { b -> SyncBookmark? in
-                                let urlStr: String?
-                                if let urlOpt = b.url { urlStr = urlOpt } else { urlStr = nil }
-                                if !b.isFolder && urlStr == nil { return nil }
-                                return SyncBookmark(id: b.id, title: b.title, url: urlStr, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar ?? false, dateAdded: b.dateAdded)
-                            }
-                        }
-                        
-                        let safariBeforeWrite = isSyncing ? safariBookmarks.readBookmarks() : []
-                        let echoGuardBefore = (network: lastNetworkSyncTime, backup: suppressSafariPreSyncBackupUntil)
-                        prepareSafariForIncomingBookmarkMutation()
-                        let sourceName = clientId.components(separatedBy: "-").first ?? clientId
-                        self.lastNetworkSyncTime = Date()
-                        let count = safariBookmarks.applyBookmarks(finalSyncBookmarks, from: sourceName, isFullMirror: finalIsFullMirror, guardLargeChanges: true)
-                        if count == SafariBookmarkService.blockedLargeChange, let held = safariBookmarks.lastBlockedWrite {
-                            // Nothing was written: genuine Safari edits must not be
-                            // mistaken for echoes, nor pre-sync backups suppressed.
-                            lastNetworkSyncTime = echoGuardBefore.network
-                            suppressSafariPreSyncBackupUntil = echoGuardBefore.backup
-                            currentMessageSafariWriteWasHeld = !holdLargeSafariWrite(PendingSafariWrite(sourceName: sourceName, held: held), clientId: clientId)
-                            return
-                        }
-                        clearPendingSafariWrite(for: clientId)
-                        // Only an actual write shows the browser is back in line; a
-                        // no-op (nothing new to add) says nothing about the refusal.
-                        if count > 0, rejectedSafariWriteSignatures.removeValue(forKey: clientId) != nil {
-                            // The browser no longer implies the refused change.
-                            log("Bookmark sync from [\(clientId)] is back in line with Safari; the earlier decision to keep Safari unchanged no longer applies.")
-                        }
-                        if count >= 0 {
-                            log("Wrote \(count) bookmarks into Safari natively (App Store)")
-                            let freshSafariBms = safariBookmarks.readBookmarks()
-                            if isSyncing {
-                                let beforeById = Dictionary(uniqueKeysWithValues: safariBeforeWrite.map { ($0.id, $0) })
-                                let afterById = Dictionary(uniqueKeysWithValues: freshSafariBms.map { ($0.id, $0) })
-                                let changed = beforeById.count != afterById.count || afterById.contains { id, item in
-                                    guard let previous = beforeById[id] else { return true }
-                                    return previous.title != item.title || previous.url != item.url || previous.parentId != item.parentId
-                                }
-                                if changed { currentManualSyncStats.bookmarkSourceBrowserIds.insert(sourceName) }
-                            }
-                            if !freshSafariBms.isEmpty {
-                                // Same folder-adjusted form Safari sync diffs against.
-                                refreshSafariSnapshot()
-                            }
-                        }
-                    }
-                } else {
-                    log("Skipping Safari bookmark write: no folder access granted yet")
-                }
-            }
+            // Bookmark payloads are observations only. Safari is written
+            // exclusively by sync sessions (scoped native plan + verification).
         case .history(let entries):
             let histDir = dataDir.appendingPathComponent("history")
             save(entries, to: histDir.appendingPathComponent("\(clientId).json"))
@@ -3355,6 +3440,775 @@ final class SyncService: ObservableObject {
     
     func recordInternalWrite() {
         self.lastNetworkSyncTime = Date()
+    }
+}
+
+// MARK: - Aggregate bookmark sync sessions
+
+extension SyncService {
+    /// Automatic triggers (a new snapshot from any browser) are coalesced so
+    /// that changes made in several browsers land in one session.
+    func scheduleBookmarkSyncSession(after delay: TimeInterval = 2) {
+        let isPro = AppState.shared.purchaseService.isProUnlocked
+        guard isPro, settings.bookmarkAutoSync, settings.enabledCategories.contains(.bookmarks) else { return }
+        if bookmarkSyncSession != nil {
+            bookmarkSessionNeedsRerun = true
+            return
+        }
+        bookmarkSessionScheduleTask?.cancel()
+        bookmarkSessionScheduleTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await MainActor.run { self?.startBookmarkSyncSession(manual: false) }
+        }
+    }
+
+    /// Detects every participant's local changes, collects one current native
+    /// tree per writable target and plans all of them together.
+    func startBookmarkSyncSession(manual: Bool) {
+        guard settings.enabledCategories.contains(.bookmarks) else { return }
+        bookmarkSessionScheduleTask?.cancel()
+        if let existing = bookmarkSyncSession {
+            guard manual, existing.phase == .collecting || existing.phase == .reviewing else {
+                bookmarkSessionNeedsRerun = true
+                return
+            }
+            // A manual sync recomputes everything from the persisted
+            // baselines; the stale review is discarded, not remembered.
+            discardBookmarkSyncSession(reason: "a new manual sync started")
+        }
+        bookmarkSessionNeedsRerun = false
+
+        let participants = settings.bookmarkParticipatingBrowsers.sorted { $0.rawValue < $1.rawValue }
+        guard participants.count > 1 else { return }
+        var session = BookmarkSyncSession(manual: manual, settingsFingerprint: bookmarkSettingsFingerprint)
+        for browser in participants {
+            if let latest = backupService?.getRecentSnapshots(sourceBrowser: browser.rawValue, limit: 1).last {
+                session.observed[browser] = latest.bookmarks
+            }
+        }
+        let sources = participants.filter { browser in
+            settings.bookmarkSyncStrategy == .twoWayMerge || browser == settings.bookmarkSourceBrowser
+        }
+        let targets = participants.filter { BookmarkWritePolicy.allowsWrite(to: $0, settings: settings) }
+        for source in sources {
+            guard let current = session.observed[source] else { continue }
+            for target in targets where target != source {
+                let baseline = syncBaseline(source: source, target: target, current: current)
+                let delta = BookmarkSnapshotDiffer.ignoringIdentityDrift(BookmarkSnapshotDiffer.diff(
+                    older: BookmarkSnapshotRecord(id: "baseline", capturedAt: .distantPast, sourceBrowser: source.rawValue, bookmarks: baseline),
+                    newer: BookmarkSnapshotRecord(id: "current", capturedAt: Date(), sourceBrowser: source.rawValue, bookmarks: current)
+                ))
+                if !delta.isEmpty {
+                    session.deltas[BookmarkSyncSession.pairKey(source, target)] = delta
+                    session.baselines[BookmarkSyncSession.pairKey(source, target)] = baseline
+                }
+            }
+        }
+
+        var stable: [BookmarkSyncConflict] = []
+        if settings.bookmarkSyncStrategy == .twoWayMerge {
+            // A bookmark with a pending change (for example a rename not yet
+            // synchronized) naturally differs between browsers; that is an
+            // ordinary change, not a stable conflict.
+            let pending = pendingBookmarkURLs(session)
+            stable = BookmarkAggregatePlanner.stableConflicts(snapshots: session.observed).filter { conflict in
+                [conflict.first.bookmark, conflict.second.bookmark].allSatisfy { node in
+                    BookmarkSyncConflict.canonicalURL(node.url).map { !pending.contains($0) } ?? true
+                }
+            }
+        }
+        session.conflicts = stable
+        // Even without a detected change, the live trees are collected:
+        // reconciliation recovers differences whose snapshots were missed.
+
+        // Every writable target is read: a conflict choice can require a write
+        // into a browser that received no ordinary change in this session.
+        for target in targets {
+            if target == .safari {
+                guard SandboxAccessManager.shared.hasSafariAccess else {
+                    log("Bookmark sync skipped Safari as a target: no folder access granted yet.")
+                    continue
+                }
+                let read = safariBookmarks.nativePlanContext(folderPath: settings.bookmarkFolder(for: .safari))
+                if let context = read.context {
+                    session.contexts[.safari] = context
+                } else {
+                    if let folder = settings.bookmarkFolder(for: .safari), !folder.isEmpty { markMissingBookmarkFolder(.safari, folder: folder) }
+                    log("Bookmark sync skipped Safari as a target: \(read.error ?? "its tree is unavailable"). Nothing will be written there.")
+                }
+                continue
+            }
+            guard let client = daemon?.connectedClients.first(where: { $0.browser == target }), mayWriteBookmarks(to: client) else {
+                log("Bookmark sync skipped \(target.displayName) as a target: it is not connected with a current extension. Its changes stay pending.")
+                continue
+            }
+            let requestId = UUID().uuidString
+            session.awaitingContexts[requestId] = target
+            session.clientIds[target] = client.id
+            let request = WSMessage(type: .pull, site: requestId, category: "bookmark_plan_context",
+                                    payload: .raw(["requestId": AnyCodable(requestId),
+                                                   "targetFolder": AnyCodable(settings.bookmarkFolder(for: target) ?? NSNull())]),
+                                    messageId: UUID().uuidString, timestamp: Date().timeIntervalSince1970)
+            daemon?.sendBookmarkControlMessage(request, to: client)
+        }
+        bookmarkSyncSession = session
+        log("Bookmark sync detected \(session.deltas.count) changed source→target pair(s) and \(stable.count) existing conflict(s); collecting \(session.awaitingContexts.count) browser tree(s).")
+        if session.awaitingContexts.isEmpty {
+            planBookmarkSyncSession()
+        } else {
+            let id = session.id
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                await MainActor.run {
+                    guard let self, var session = self.bookmarkSyncSession, session.id == id, session.phase == .collecting,
+                          !session.awaitingContexts.isEmpty else { return }
+                    let missing = Set(session.awaitingContexts.values).map(\.displayName).sorted().joined(separator: ", ")
+                    session.awaitingContexts.removeAll()
+                    self.bookmarkSyncSession = session
+                    self.log("Bookmark sync continued without \(missing): no current tree arrived in time. Changes for it stay pending.")
+                    self.planBookmarkSyncSession()
+                }
+            }
+        }
+    }
+
+    /// Returns true when the context answered the current session.
+    func acceptSessionBookmarkContext(_ raw: [String: AnyCodable], requestId: String, clientId: String) -> Bool {
+        guard var session = bookmarkSyncSession, let target = session.awaitingContexts[requestId] else { return false }
+        session.awaitingContexts.removeValue(forKey: requestId)
+        if session.clientIds[target] == clientId, let context = nativeTreeContext(from: raw, browser: target) {
+            session.contexts[target] = context
+            _ = backupService?.savePreSyncBackup(bookmarks: context.nodes, sourceBrowser: clientId,
+                                                 folderPath: settings.bookmarkFolder(for: target))
+        } else {
+            log("Bookmark sync skipped [\(clientId)] as a target: \((raw["error"]?.value as? String) ?? "it returned no valid current tree"). Nothing will be written there.")
+            if let folder = settings.bookmarkFolder(for: target), !folder.isEmpty, raw["error"] != nil {
+                markMissingBookmarkFolder(target, folder: folder)
+            }
+        }
+        bookmarkSyncSession = session
+        if session.phase == .collecting && session.awaitingContexts.isEmpty { planBookmarkSyncSession() }
+        return true
+    }
+
+    func nativeTreeContext(from raw: [String: AnyCodable], browser: Browser) -> BookmarkNativeTreeContext? {
+        guard let token = raw["inputToken"]?.value as? String else { return nil }
+        func dictionary(_ value: Any?) -> [String: Any] {
+            if let value = value as? [String: Any] { return value }
+            if let value = value as? [String: AnyCodable] { return value.mapValues(\.value) }
+            return [:]
+        }
+        func array(_ value: Any?) -> [Any] {
+            if let value = value as? [Any] { return value }
+            if let value = value as? [AnyCodable] { return value.map(\.value) }
+            return []
+        }
+        let nodes: [Bookmark] = array(raw["nodes"]?.value).compactMap { item in
+            let node = dictionary(item)
+            guard let id = node["id"] as? String else { return nil }
+            let url = node["url"] as? String
+            return Bookmark(id: id, title: node["title"] as? String ?? "", url: url,
+                            parentId: node["parentId"] as? String,
+                            isFolder: (node["isFolder"] as? Bool) ?? (url == nil),
+                            sortIndex: node["sortIndex"] as? Int, dateAdded: nil,
+                            sourceBrowser: browser)
+        }
+        return BookmarkNativeTreeContext(
+            inputToken: token, browser: browser, nodes: nodes,
+            rootIds: dictionary(raw["rootIds"]?.value).compactMapValues { $0 as? String },
+            sourceToNativeIds: dictionary(raw["sourceToNativeIds"]?.value).compactMapValues { $0 as? String },
+            scopeRootId: raw["scopeRootId"]?.value as? String)
+    }
+
+    /// The prepared contribution of every source into `target`.
+    private func sessionContributions(_ session: BookmarkSyncSession, target: Browser) -> [BookmarkSourceContribution] {
+        session.observed.keys.sorted { $0.rawValue < $1.rawValue }.compactMap { source in
+            guard source != target, let current = session.observed[source] else { return nil }
+            let key = BookmarkSyncSession.pairKey(source, target)
+            let delta = session.deltas[key]
+            var payload = delta.map { BookmarkSnapshotDiffer.payload(for: $0, current: current) } ?? []
+            for node in session.reconciliation.additions[key] ?? [] where !payload.contains(where: { $0.id == node.id }) {
+                payload.append(node)
+            }
+            var removals = delta?.removed ?? []
+            for node in session.reconciliation.removals[key] ?? [] where !removals.contains(where: { $0.id == node.id }) {
+                removals.append(node)
+            }
+            guard !payload.isEmpty || !removals.isEmpty else { return nil }
+            return BookmarkSourceContribution(
+                source: source,
+                desired: bookmarksPreparedForTarget(payload, sourceBrowser: source, targetBrowser: target),
+                removals: removals)
+        }
+    }
+
+    private func planBookmarkSyncSession() {
+        guard var session = bookmarkSyncSession, session.phase == .collecting else { return }
+        guard session.settingsFingerprint == bookmarkSettingsFingerprint else {
+            discardBookmarkSyncSession(reason: "bookmark sync settings changed")
+            return
+        }
+        if settings.bookmarkSyncStrategy == .twoWayMerge {
+            session.reconciliation = reconcileLiveTrees(session)
+            if !session.reconciliation.isEmpty {
+                let added = session.reconciliation.additions.values.reduce(0) { $0 + $1.filter { !$0.isFolder }.count }
+                let removed = session.reconciliation.removals.values.reduce(0) { $0 + $1.count }
+                log("Reconciliation found \(added) missed addition(s) and \(removed) missed deletion(s) across browsers.")
+            }
+        }
+        recordDetectedBookmarkDeletions(session)
+        session.ignored = ignoredBookmarkChanges
+        var conflicts = session.conflicts
+        var plans: [Browser: BookmarkTargetPlan] = [:]
+        // Conflicts found in one target are excluded everywhere, so iterate
+        // until every target was planned against the complete conflict set.
+        for _ in 0..<4 {
+            plans = [:]
+            var found = false
+            for (target, context) in session.contexts {
+                let plan = BookmarkAggregatePlanner.plan(target: target, context: context,
+                                                         contributions: sessionContributions(session, target: target),
+                                                         conflicts: conflicts)
+                for conflict in plan.conflicts {
+                    if !conflicts.contains(where: { $0.id == conflict.id }) { found = true }
+                    BookmarkAggregatePlanner.append(conflict, to: &conflicts)
+                }
+                plans[target] = plan
+            }
+            if !found { break }
+        }
+        session.conflicts = conflicts
+        session.rawPlans = plans
+        session.plans = plans.mapValues { BookmarkIgnore.filtered($0, ignored: session.ignored) }
+        plans = session.plans
+        let activeConflicts = conflicts.filter { !session.ignored.contains(BookmarkIgnore.conflictKey($0.id)) }
+        for plan in plans.values {
+            for route in plan.routes where route.validationError != nil {
+                log("Bookmark plan \(route.source?.displayName ?? "?") → \(plan.target.displayName) was refused: \(route.validationError ?? ""). Those changes stay pending.")
+            }
+        }
+
+        let hasOperations = plans.values.contains { !$0.operations.isEmpty }
+        guard hasOperations || !activeConflicts.isEmpty else {
+            log("Bookmark sync: every browser already contains the detected changes; nothing needs to be written.")
+            session.phase = .applying
+            bookmarkSyncSession = session
+            completeBookmarkSessionWrites()
+            return
+        }
+        let needsReview = settings.bookmarkSafeMode || !activeConflicts.isEmpty || plans.contains { target, plan in
+            let destructive = plan.operations.filter { $0.kind != .create }.count
+            let total = session.contexts[target]?.nodes.count ?? 0
+            return destructive > max(8, total / 20)
+        }
+        if !needsReview {
+            session.phase = .applying
+            bookmarkSyncSession = session
+            log("Bookmark sync applies the plan directly: Safe Mode is off and no target crosses the large-change threshold.")
+            applyBookmarkSyncSession(selection: nil, choices: [:])
+            return
+        }
+        session.phase = .reviewing
+        bookmarkSyncSession = session
+        publishPendingReviews()
+        presentBookmarkSyncSessionReview(activate: true)
+        if !session.manual {
+            let totals = plans.values.flatMap(\.operations)
+            AppState.shared.notificationService.notifyBookmarkChangesAwaitingReview(
+                source: "BrowSync", target: plans.keys.map(\.displayName).sorted().joined(separator: ", "),
+                clientId: Self.bookmarkSessionReviewKey,
+                added: totals.filter { $0.kind == .create }.count,
+                removed: totals.filter { $0.kind == .removeTree }.count,
+                moved: totals.filter { $0.kind == .move }.count,
+                modified: totals.filter { $0.kind == .update }.count,
+                isLarge: !settings.bookmarkSafeMode && activeConflicts.isEmpty)
+        }
+    }
+
+    static func sessionRouteId(_ target: Browser) -> String {
+        "\(bookmarkSessionReviewKey)|\(target.rawValue)"
+    }
+
+    /// One group per target browser; changes from every source are listed
+    /// together. Conflicts form their own group because they span browsers.
+    var bookmarkSyncSessionRoutes: [BookmarkReviewRoute] {
+        guard let session = bookmarkSyncSession else { return [] }
+        func reviewNode(_ change: NativeBookmarkChange) -> BookmarkReviewNode {
+            let kind: BookmarkReviewNode.Change
+            switch change.kind {
+            case .added: kind = .added
+            case .removed: kind = .removed
+            case .moved: kind = .moved
+            case .modified: kind = .modified
+            }
+            return BookmarkReviewNode(id: change.id, title: change.title, url: change.url, isFolder: change.isFolder,
+                                      change: kind, children: [], containingPath: change.containingPath)
+        }
+        var routes: [BookmarkReviewRoute] = []
+        for target in session.plans.keys.sorted(by: { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }) {
+            guard let plan = session.plans[target] else { continue }
+            let changes = plan.routes.flatMap(\.changes)
+            let operations = plan.routes.flatMap(\.operations)
+            guard !operations.isEmpty, !changes.isEmpty else { continue }
+            let impact = SafariBookmarkService.WriteImpact(
+                added: operations.filter { $0.kind == .create }.count,
+                removed: operations.filter { $0.kind == .removeTree }.count,
+                moved: operations.filter { $0.kind == .move }.count,
+                modified: operations.filter { $0.kind == .update }.count,
+                total: session.contexts[target]?.nodes.count ?? 0,
+                signature: plan.routes.map(\.impact.signature).joined(separator: ","),
+                destructiveSignature: plan.routes.map(\.impact.destructiveSignature).joined(separator: ","))
+            var route = BookmarkReviewRoute(
+                id: Self.sessionRouteId(target), source: "", target: target.displayName, impact: impact,
+                preview: BookmarkChangePreview(before: changes.filter { $0.kind != .added }.map(reviewNode),
+                                               after: changes.filter { $0.kind != .removed }.map(reviewNode)))
+            route.targetBrowser = target
+            routes.append(route)
+        }
+        let conflicts = session.conflicts.filter { !session.ignored.contains(BookmarkIgnore.conflictKey($0.id)) }.map { conflict in
+            func label(_ side: BookmarkConflictSide) -> String { side.sortedBrowsers.map(\.displayName).joined(separator: ", ") }
+            var first = conflict.first.bookmark; first.sourceBrowser = conflict.first.sortedBrowsers.first ?? first.sourceBrowser
+            var second = conflict.second.bookmark; second.sourceBrowser = conflict.second.sortedBrowsers.first ?? second.sourceBrowser
+            return BookmarkConflict(id: conflict.id, source: first, target: second, reason: conflict.reason,
+                                    sourceLabel: label(conflict.first), targetLabel: label(conflict.second),
+                                    sourceBrowsers: conflict.first.sortedBrowsers, targetBrowsers: conflict.second.sortedBrowsers)
+        }
+        if !conflicts.isEmpty {
+            var group = BookmarkReviewRoute(
+                id: Self.bookmarkSessionConflictRouteId, source: "", target: "",
+                impact: .init(added: 0, removed: 0, moved: 0, modified: 0, total: 0, signature: "conflicts", destructiveSignature: ""),
+                preview: .init(before: [], after: []), conflicts: conflicts)
+            group.isConflictGroup = true
+            routes.insert(group, at: 0)
+        }
+        return routes
+    }
+
+    /// Ignores one review row: that exact change into that target is not
+    /// planned again until its content differs.
+    func ignoreBookmarkReviewRow(routeId: String, rowId: String) {
+        guard let session = bookmarkSyncSession,
+              let target = session.plans.keys.first(where: { Self.sessionRouteId($0) == routeId }),
+              let plan = session.plans[target] else { return }
+        var keys = Set<String>()
+        for route in plan.routes {
+            if let change = BookmarkIgnore.lastChanges(route)[rowId] {
+                keys.insert(BookmarkIgnore.changeKey(target: target, change: change))
+            }
+        }
+        guard !keys.isEmpty else { return }
+        ignoredBookmarkChanges.formUnion(keys)
+        log("Ignored a bookmark change into \(target.displayName); it will not be offered again unless it changes.")
+    }
+
+    func ignoreBookmarkConflict(id: String) {
+        guard bookmarkSyncSession?.conflicts.contains(where: { $0.id == id }) == true else { return }
+        ignoredBookmarkChanges.insert(BookmarkIgnore.conflictKey(id))
+        log("Ignored a bookmark conflict; it will not be offered again unless one of its versions changes.")
+    }
+
+    func clearIgnoredBookmarkChanges() {
+        guard !ignoredBookmarkChanges.isEmpty else { return }
+        ignoredBookmarkChanges.removeAll()
+        log("Cleared all ignored bookmark changes; the next sync offers them again.")
+    }
+
+    func presentBookmarkSyncSessionReview(activate: Bool = true) {
+        guard let session = bookmarkSyncSession, session.phase == .reviewing else { return }
+        let routes = bookmarkSyncSessionRoutes
+        guard !routes.isEmpty else {
+            discardBookmarkSyncSession(reason: "the plan has no reviewable rows")
+            return
+        }
+        BookmarkChangeReviewWindowController.shared.present(
+            clientId: Self.bookmarkSessionReviewKey,
+            reviewRoutes: routes,
+            activate: activate,
+            onApplySelected: { [weak self] selection, conflictChoices in
+                var choices: [String: BookmarkConflictResolution] = [:]
+                for perRoute in conflictChoices.values { choices.merge(perRoute) { current, _ in current } }
+                self?.applyBookmarkSyncSession(selection: selection, choices: choices)
+            },
+            onCancel: { [weak self] in self?.cancelBookmarkSyncSession() },
+            onIgnoreRow: { [weak self] routeId, rowId in self?.ignoreBookmarkReviewRow(routeId: routeId, rowId: rowId) },
+            onIgnoreConflict: { [weak self] id in self?.ignoreBookmarkConflict(id: id) }
+        )
+    }
+
+    func cancelBookmarkSyncSession() {
+        guard bookmarkSyncSession != nil else { return }
+        discardBookmarkSyncSession(reason: "the user cancelled this sync")
+        cancelActiveManualSyncIfNeededForSession()
+    }
+
+    func discardBookmarkSyncSession(reason: String) {
+        guard bookmarkSyncSession != nil else { return }
+        bookmarkSyncSession = nil
+        AppState.shared.notificationService.removeBookmarkReviewNotification(clientId: Self.bookmarkSessionReviewKey)
+        BookmarkChangeReviewWindowController.shared.dismiss(ifPresenting: Self.bookmarkSessionReviewKey)
+        publishPendingReviews()
+        log("Discarded the pending bookmark sync because \(reason). Nothing was remembered; the next sync recomputes every remaining difference.")
+    }
+
+    /// `selection` nil applies every operation (no review was needed).
+    private func applyBookmarkSyncSession(selection: [String: Set<String>]?, choices: [String: BookmarkConflictResolution]) {
+        guard var session = bookmarkSyncSession, session.phase == .reviewing || session.phase == .applying else { return }
+        guard session.settingsFingerprint == bookmarkSettingsFingerprint else {
+            discardBookmarkSyncSession(reason: "bookmark sync settings changed before it was applied")
+            return
+        }
+        // Conflicts ignored before or during this review need no choice.
+        let ignoredConflicts = Set(session.conflicts.map(\.id).filter {
+            ignoredBookmarkChanges.contains(BookmarkIgnore.conflictKey($0))
+        })
+        guard session.conflicts.allSatisfy({ choices[$0.id] != nil || ignoredConflicts.contains($0.id) }) else {
+            log("Bookmark sync was not applied: a conflict had no choice.")
+            return
+        }
+        session.phase = .applying
+        session.resolutionsApplied = !session.conflicts.isEmpty
+        AppState.shared.notificationService.removeBookmarkReviewNotification(clientId: Self.bookmarkSessionReviewKey)
+
+        for target in session.contexts.keys.sorted(by: { $0.rawValue < $1.rawValue }) {
+            guard let context = session.contexts[target], let display = session.plans[target] else { continue }
+            let rawPlan = BookmarkAggregatePlanner.plan(target: target, context: context,
+                                                        contributions: sessionContributions(session, target: target),
+                                                        conflicts: session.conflicts,
+                                                        resolutions: session.conflicts.isEmpty ? nil : choices,
+                                                        ignoredConflicts: ignoredConflicts)
+            let plan = BookmarkIgnore.filtered(rawPlan, ignored: session.ignored)
+            // The approval covers exactly the reviewed plan; recomputation
+            // must reproduce it before anything is dispatched.
+            guard plan.routes.map(\.operations) == display.routes.map(\.operations) else {
+                log("Bookmark plan for \(target.displayName) no longer matches what was reviewed; nothing was written there.")
+                continue
+            }
+            if let error = plan.resolution?.validationError {
+                log("Conflict choices could not be applied to \(target.displayName): \(error). Nothing was written there.")
+                continue
+            }
+            session.appliedPlans[target] = plan
+            session.appliedRawPlans[target] = rawPlan
+            var chosen: [BookmarkMutationOperation] = []
+            let selected = selection.map { $0[Self.sessionRouteId(target)] ?? [] }
+            for route in plan.routes {
+                chosen += route.operations.filter { selected?.contains($0.id) ?? true }
+            }
+            chosen += plan.resolution?.operations ?? []
+            // Sibling positions are not synchronized: an index computed in
+            // the source would shift other planned inserts into the same
+            // folder and make an otherwise correct write fail verification.
+            let operations = coalescedBookmarkOperations(BookmarkAggregatePlanner.pruneDependencies(chosen)).map { op -> BookmarkMutationOperation in
+                var op = op
+                op.index = nil
+                return op
+            }
+            if operations.count < chosen.count {
+                log("Left out \(chosen.count - operations.count) bookmark operation(s) for \(target.displayName) that depended on unselected rows.")
+            }
+            guard !operations.isEmpty else { continue }
+            session.dispatched[target] = operations
+            if target == .safari {
+                prepareSafariForIncomingBookmarkMutation()
+                lastNetworkSyncTime = Date()
+                recordInternalWrite()
+                let result = safariBookmarks.applyNativePlan(operations, inputToken: context.inputToken, scopeRootId: context.scopeRootId)
+                if result.applied {
+                    session.verified.insert(.safari)
+                    log("Wrote and verified \(result.writes) planned bookmark operation(s) in Safari.")
+                } else {
+                    log("Safari bookmark plan was not written: \(result.error ?? "unknown error"). It will be offered again by the next sync.")
+                }
+                continue
+            }
+            guard let clientId = session.clientIds[target],
+                  let client = daemon?.connectedClients.first(where: { $0.id == clientId }) else {
+                log("\(target.displayName) disconnected before its bookmark plan could be sent. Nothing was written there.")
+                continue
+            }
+            let messageId = UUID().uuidString
+            let message = WSMessage(
+                type: .sync, site: "*", category: "bookmark_apply_plan",
+                payload: .raw([
+                    "inputToken": AnyCodable(context.inputToken),
+                    "operations": AnyCodable(operations.map { op in
+                        ["type": op.kind.rawValue, "id": op.id, "sourceId": op.sourceId as Any, "parentId": op.parentId as Any,
+                         "index": op.index as Any, "title": op.title as Any, "url": op.url as Any]
+                    })
+                ]),
+                messageId: messageId, timestamp: Date().timeIntervalSince1970)
+            session.outstandingWrites[messageId] = target
+            daemon?.sendWSMessage(message, to: client)
+            log("Dispatched \(operations.count) planned bookmark operation(s) to [\(clientId)].")
+        }
+        bookmarkSyncSession = session
+        publishPendingReviews()
+        if session.outstandingWrites.isEmpty {
+            completeBookmarkSessionWrites()
+        } else {
+            let id = session.id
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                await MainActor.run {
+                    guard let self, var session = self.bookmarkSyncSession, session.id == id, !session.outstandingWrites.isEmpty else { return }
+                    let missing = Set(session.outstandingWrites.values).map(\.displayName).sorted().joined(separator: ", ")
+                    session.outstandingWrites.removeAll()
+                    self.bookmarkSyncSession = session
+                    self.log("No verified bookmark write result arrived from \(missing); those changes are treated as not applied.")
+                    self.completeBookmarkSessionWrites()
+                }
+            }
+        }
+    }
+
+    /// When one node receives the same kind of change from two sources, only
+    /// the last one describes the final state that can be verified.
+    private func coalescedBookmarkOperations(_ operations: [BookmarkMutationOperation]) -> [BookmarkMutationOperation] {
+        var seen = Set<String>()
+        return operations.reversed().filter { op in
+            op.kind == .create || seen.insert("\(op.kind.rawValue)|\(op.id)").inserted
+        }.reversed()
+    }
+
+    /// Returns true when the result belonged to the current session.
+    func acceptSessionBookmarkWriteResult(_ raw: [String: AnyCodable], messageId: String, clientId: String) -> Bool {
+        guard var session = bookmarkSyncSession, let target = session.outstandingWrites.removeValue(forKey: messageId) else { return false }
+        let operations = session.dispatched[target] ?? []
+        if (raw["applied"]?.value as? Bool) == true, (raw["verified"]?.value as? Bool) == true,
+           verifyNativeOperationResults(raw["operationResults"]?.value, operations: operations) {
+            session.verified.insert(target)
+            log("[\(clientId)] wrote and verified \(operations.count) planned bookmark operation(s).")
+        } else {
+            log("[\(clientId)] did not verify its bookmark write (\((raw["error"]?.value as? String) ?? "results differ from the plan")). It will be offered again by the next sync.")
+        }
+        bookmarkSyncSession = session
+        if session.outstandingWrites.isEmpty { completeBookmarkSessionWrites() }
+        return true
+    }
+
+    /// All writes are answered: refresh written browsers, then move each
+    /// pair's baseline past exactly the changes that are now in the target.
+    private func completeBookmarkSessionWrites() {
+        guard var session = bookmarkSyncSession else { return }
+        session.phase = .finalizing
+        for target in session.verified {
+            if target == .safari {
+                refreshSafariSnapshot()
+            } else {
+                session.awaitingFreshSnapshots.insert(target)
+                requestFreshBookmarkSnapshot(for: session.clientIds[target] ?? target.rawValue)
+            }
+        }
+        bookmarkSyncSession = session
+        notifyAutomaticBookmarkSessionResult(session)
+        for source in session.observed.keys where !session.awaitingFreshSnapshots.contains(source) {
+            finalizeBookmarkSessionSource(source)
+        }
+        if !session.awaitingFreshSnapshots.isEmpty {
+            let id = session.id
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                await MainActor.run {
+                    guard let self, var session = self.bookmarkSyncSession, session.id == id else { return }
+                    for browser in session.awaitingFreshSnapshots {
+                        // Without its post-write tree, advancing would turn
+                        // our own writes into "local" changes later.
+                        session.finalizedSources.insert(browser)
+                        self.log("\(browser.displayName) did not report its tree after the write; its pending changes are kept for the next sync.")
+                    }
+                    session.awaitingFreshSnapshots.removeAll()
+                    self.bookmarkSyncSession = session
+                    self.endBookmarkSyncSessionIfDone()
+                }
+            }
+        }
+        endBookmarkSyncSessionIfDone()
+    }
+
+    /// A browser reported a new snapshot. Returns true when it was the
+    /// post-write tree the current session was waiting for.
+    func acceptSessionFreshSnapshot(from browser: Browser) -> Bool {
+        guard var session = bookmarkSyncSession, session.awaitingFreshSnapshots.contains(browser) else {
+            if bookmarkSyncSession != nil { bookmarkSessionNeedsRerun = true }
+            return false
+        }
+        session.awaitingFreshSnapshots.remove(browser)
+        bookmarkSyncSession = session
+        finalizeBookmarkSessionSource(browser)
+        endBookmarkSyncSessionIfDone()
+        return true
+    }
+
+    private func finalizeBookmarkSessionSource(_ source: Browser) {
+        guard var session = bookmarkSyncSession, !session.finalizedSources.contains(source) else { return }
+        session.finalizedSources.insert(source)
+        bookmarkSyncSession = session
+        // Written browsers use their post-write tree, so our own writes are
+        // never mistaken for local edits; others use the observed tree.
+        let wasWritten = session.verified.contains(source)
+        let base = wasWritten
+            ? (backupService?.getRecentSnapshots(sourceBrowser: source.rawValue, limit: 1).last?.bookmarks ?? session.observed[source] ?? [])
+            : (session.observed[source] ?? [])
+        // The post-write tree absorbs only what our verified operations
+        // explain; any other difference is a user edit made around the write
+        // and stays detectable.
+        let concurrentEdits = wasWritten
+            ? BookmarkBaseline.unexplainedChanges(observed: session.observed[source] ?? [], fresh: base,
+                                                  operations: session.dispatched[source] ?? [],
+                                                  nativeNodes: session.contexts[source]?.nodes ?? [])
+            : []
+        if !concurrentEdits.isEmpty {
+            log("Kept \(concurrentEdits.count) edit(s) made in \(source.displayName) around the sync write as pending local changes.")
+        }
+        for target in settings.bookmarkParticipatingBrowsers where target != source {
+            let key = BookmarkSyncSession.pairKey(source, target)
+            guard session.deltas[key] != nil || wasWritten || !concurrentEdits.isEmpty else { continue }
+            guard session.contexts[target] != nil else { continue } // target unavailable: keep pending
+            let unhandled = unhandledChanges(session, source: source, target: target)
+            backupService?.saveSyncBaseline(bookmarks: BookmarkBaseline.advanced(observed: base, reverting: concurrentEdits + unhandled),
+                                            source: source, target: target)
+            if !unhandled.isEmpty {
+                log("Kept \(unhandled.count) change(s) from \(source.displayName) pending for \(target.displayName); the next sync offers them again.")
+            }
+        }
+    }
+
+    private func unhandledChanges(_ session: BookmarkSyncSession, source: Browser, target: Browser) -> [BookmarkSnapshotChange] {
+        guard let delta = session.deltas[BookmarkSyncSession.pairKey(source, target)] else { return [] }
+        // The unfiltered plan: an ignored change has operations that were
+        // never dispatched, so it stays pending (and stays ignored).
+        let nothingToApply = session.plans[target]?.operations.isEmpty == true
+            && session.conflicts.allSatisfy { session.ignored.contains(BookmarkIgnore.conflictKey($0.id)) }
+        guard let plan = session.appliedRawPlans[target] ?? (nothingToApply ? session.rawPlans[target] : nil),
+              let route = plan.routes.first(where: { $0.source == source }), route.validationError == nil else {
+            return delta.changes
+        }
+        let dispatched = Set((session.dispatched[target] ?? []).map { "\($0.kind.rawValue)|\($0.id)" })
+        let verified = session.verified.contains(target)
+        let conflictKeys = Set(session.conflicts.flatMap(\.contentKeys))
+        let resolutionOK = session.resolutionsApplied && plan.resolution?.validationError == nil
+            && ((plan.resolution?.operations.isEmpty ?? true) || verified)
+        return delta.changes.filter { change in
+            let nodeId = change.nodeId
+            let operations = route.operations.filter { $0.sourceId == nodeId }
+            if operations.isEmpty {
+                if let node = change.after, !node.isFolder, conflictKeys.contains(BookmarkSyncConflict.contentKey(node)) {
+                    return !resolutionOK
+                }
+                return false
+            }
+            return !(verified && operations.allSatisfy { dispatched.contains("\($0.kind.rawValue)|\($0.id)") })
+        }
+    }
+
+    private func endBookmarkSyncSessionIfDone() {
+        guard let session = bookmarkSyncSession, session.phase == .finalizing,
+              session.awaitingFreshSnapshots.isEmpty, session.outstandingWrites.isEmpty else { return }
+        for source in session.observed.keys where !session.finalizedSources.contains(source) {
+            finalizeBookmarkSessionSource(source)
+        }
+        bookmarkSyncSession = nil
+        publishPendingReviews()
+        log("Bookmark sync finished.")
+        if bookmarkSessionNeedsRerun {
+            bookmarkSessionNeedsRerun = false
+            scheduleBookmarkSyncSession()
+        }
+    }
+
+    private func notifyAutomaticBookmarkSessionResult(_ session: BookmarkSyncSession) {
+        guard !session.manual, AppState.shared.settingsService.general.notifySyncComplete else { return }
+        var stats = SyncStats()
+        for target in session.verified {
+            for op in session.dispatched[target] ?? [] {
+                let isFolder = op.kind == .create ? op.url == nil : false
+                switch op.kind {
+                case .create: if isFolder { stats.bookmarkFoldersAdded += 1 } else { stats.bookmarksAdded += 1 }
+                case .removeTree: stats.bookmarksDeleted += 1
+                case .update, .move: stats.bookmarksModified += 1
+                }
+            }
+        }
+        stats.bookmarkSourceBrowserIds = Set(session.deltas.keys.compactMap { $0.components(separatedBy: ">").first }
+            .compactMap(Browser.init(rawValue:)).map(\.id))
+        guard !stats.isEmpty else { return }
+        AppState.shared.notificationService.notifyAutoSyncComplete(stats: stats, categories: [.bookmarks])
+    }
+
+    /// The persisted baseline for one pair. Existing installs start from the
+    /// previous observation (what the old snapshot-pair logic compared with).
+    private func syncBaseline(source: Browser, target: Browser, current: [Bookmark]) -> [Bookmark] {
+        if let baseline = backupService?.getSyncBaseline(source: source, target: target) { return baseline }
+        let recent = backupService?.getRecentSnapshots(sourceBrowser: source.rawValue, limit: 2) ?? []
+        let initial = recent.count == 2 ? recent[0].bookmarks : current
+        backupService?.saveSyncBaseline(bookmarks: initial, source: source, target: target)
+        log("Established the bookmark sync baseline \(source.displayName) → \(target.displayName).")
+        return initial
+    }
+
+    private func reconcileLiveTrees(_ session: BookmarkSyncSession) -> BookmarkReconciliation {
+        var history: [Browser: [BookmarkSnapshotRecord]] = [:]
+        for browser in session.contexts.keys {
+            history[browser] = backupService?.getRecentSnapshots(sourceBrowser: browser.rawValue, limit: 256) ?? []
+        }
+        var evidence: [BookmarkDeletionEvidence] = []
+        func collect(_ item: DeletedBookmark) {
+            if !item.isFolder, let link = BookmarkSyncConflict.canonicalURL(item.url) {
+                for browser in item.browsers { evidence.append(.init(url: link, browser: browser, deletedAt: item.deletedAt)) }
+            }
+            item.children?.forEach(collect)
+        }
+        backupService?.deletedBookmarksForSyncEvidence().forEach(collect)
+        return BookmarkReconciler.reconcile(observed: session.observed, live: session.contexts, history: history,
+                                            deletions: evidence, pendingURLs: pendingBookmarkURLs(session))
+    }
+
+    /// URLs touched by any pending source → target change.
+    private func pendingBookmarkURLs(_ session: BookmarkSyncSession) -> Set<String> {
+        var pending = Set<String>()
+        for delta in session.deltas.values {
+            for change in delta.changes {
+                for node in [change.before, change.after].compactMap({ $0 }) where !node.isFolder {
+                    if let link = BookmarkSyncConflict.canonicalURL(node.url) { pending.insert(link) }
+                }
+            }
+        }
+        return pending
+    }
+
+    /// Local deletions are listed in Recently Deleted once detected.
+    private func recordDetectedBookmarkDeletions(_ session: BookmarkSyncSession) {
+        var bySource: [Browser: [Bookmark]] = [:]
+        for (key, removed) in session.reconciliation.removals {
+            guard let origin = key.components(separatedBy: ">").first.flatMap(Browser.init(rawValue:)) else { continue }
+            for node in removed where !(bySource[origin] ?? []).contains(where: { $0.id == node.id }) {
+                bySource[origin, default: []].append(node)
+            }
+        }
+        for (key, delta) in session.deltas {
+            guard let source = key.components(separatedBy: ">").first.flatMap(Browser.init(rawValue:)) else { continue }
+            let baseline = session.baselines[key] ?? []
+            let children = Dictionary(grouping: baseline, by: { $0.parentId ?? "" })
+            for removed in delta.removed {
+                // A removed folder is one change; its subtree comes from the baseline.
+                var queue = [removed]
+                while let node = queue.popLast() {
+                    if !(bySource[source] ?? []).contains(where: { $0.id == node.id }) { bySource[source, default: []].append(node) }
+                    queue.append(contentsOf: children[node.id] ?? [])
+                }
+            }
+        }
+        for (source, removed) in bySource where !removed.isEmpty {
+            backupService?.addDeletedBookmarks(buildDeletedBookmarkForest(from: removed, sourceBrowser: source.rawValue))
+        }
+    }
+
+    private func cancelActiveManualSyncIfNeededForSession() {
+        guard activeManualSyncID != nil else { return }
+        activeManualSyncID = nil
+        lastManualSyncWasCancelled = true
+        isSyncing = false
     }
 }
 

@@ -194,6 +194,9 @@
 
 "Bookmark Sync Title" = "ブックマークの同期";
 "Enable Bookmark Sync" = "ブックマークの同期を有効にする";
+"Safe Mode — review every bookmark change" = "セーフモード — ブックマークの変更を毎回確認";
+"Safe Mode" = "セーフモード";
+"Review every bookmark change before it is applied." = "ブックマークの変更を適用前に毎回確認します。";
 "Sync Strategy" = "同期戦略";
 "Bookmark Strategy" = "デフォルトの戦略";
 "Bookmark Source Browser" = "ソースブラウザ";
@@ -387,6 +390,7 @@
 "Deleted Bookmarks (Trash Bin)" = "最近削除したブックマーク";
 "No deleted bookmarks" = "削除済みブックマークはありません";
 "These bookmarks were deleted recently. You can restore them individually." = "これらのブックマークは最近削除されました。個別に復元できます。";
+"Deleted from %@" = "%@ から削除";
 "Clear All" = "すべて消去";
 "Delete Permanently" = "完全に削除";
 "This deleted bookmark will be permanently removed from the trash bin." = "この削除済みブックマークはゴミ箱から完全に削除されます。";
@@ -558,9 +562,15 @@
 
 "Syncing from %@ would remove %d, move %d and modify %d existing Safari bookmarks. Nothing was changed — click to review." = "%1$@ からの同期により、Safari の既存ブックマークが %2$d 件削除、%3$d 件移動、%4$d 件変更されます。何も変更されていません。クリックして確認してください。";
 "Syncing from %@ would remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet." = "%1$@ からの同期により、Safari の既存ブックマーク %5$d 件のうち %2$d 件が削除、%3$d 件が移動、%4$d 件が変更されます。まだ何も書き込まれていません。";
+"Syncing from %@ would add %d, remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet." = "%1$@ からの同期により、Safari の既存ブックマーク %6$d 件に対して %2$d 件が追加、%3$d 件が削除、%4$d 件が移動、%5$d 件が変更されます。まだ何も書き込まれていません。";
 "Modified" = "変更";
 
 "Review Blocked Bookmark Changes" = "ブロックされたブックマークの変更を確認";
+"Bookmark Conflict" = "ブックマークの競合";
+"These bookmarks use the same location but differ. Choose which version to keep before syncing." = "これらのブックマークは同じ場所にありますが内容が異なります。同期前に残すバージョンを選択してください。";
+"“%@” and “%@” use the same location but differ. Choose which version to keep before syncing." = "“%@” と “%@” は同じ場所にありますが内容が異なります。同期前に残すバージョンを選択してください。";
+"Keep %@" = "%@ を残す";
+"Keep Both" = "両方を残す";
 
 "Keeping Safari as is also brings the other browsers back to Safari's bookmarks." = "Safari を変更しない場合、ほかのブラウザも Safari のブックマークに戻ります。";
 
@@ -568,9 +578,18 @@
 "Keeping Safari as is pauses later bookmark changes from this browser until you resume them from the menu bar." = "Safari を変更しない場合、メニューバーから再開するまで、このブラウザからの以降のブックマーク変更は一時停止されます。";
 
 "Syncing would remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet." = "同期により、%5$@ の既存ブックマーク %4$d 件のうち %1$d 件が削除、%2$d 件が移動、%3$d 件が変更されます。まだ何も書き込まれていません。";
+"Syncing would add %d, remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet." = "同期により、%6$@ の既存ブックマーク %5$d 件に対して %1$d 件が追加、%2$d 件が削除、%3$d 件が移動、%4$d 件が変更されます。まだ何も書き込まれていません。";
 "Syncing would remove %d, move %d and modify %d existing bookmarks in %@. Nothing was changed — click to review." = "同期により、%4$@ の既存ブックマークが %1$d 件削除、%2$d 件移動、%3$d 件変更されます。何も変更されていません。クリックして確認してください。";
 "%@ Now" = "現在の %@";
 "Keep %@ As Is" = "%@ を変更しない";
+"Skip This Destination (%@)" = "この同期先をスキップ（%@）";
+"This destination would add %d, remove %d, move %d and modify %d bookmarks. Nothing has been written yet." = "この同期先ではブックマークを %d 件追加、%d 件削除、%d 件移動、%d 件変更します。変更はまだ書き込まれていません。";
+"%d destinations awaiting review" = "%d 個の同期先が確認待ち";
+"Across %d destinations, this sync would add %d, remove %d, move %d and modify %d bookmarks. Nothing has been written yet." = "%d 個の同期先で、ブックマークを %d 件追加、%d 件削除、%d 件移動、%d 件変更します。変更はまだ書き込まれていません。";
+"Skip All Destinations" = "すべての同期先をスキップ";
+"Apply All Changes" = "すべての変更を適用";
+"Cancel This Sync" = "今回の同期をキャンセル";
+"Apply Selected Changes" = "選択した変更を適用";
 "Keeping %@ as is pauses later bookmark changes to it until you resume them from the menu bar." = "%@ を変更しない場合、メニューバーから再開するまで、このブラウザへの以降のブックマーク変更は一時停止されます。";
 "Resume Bookmark Sync to %@" = "%@ へのブックマーク同期を再開";
 
@@ -600,3 +619,14 @@
 "Only allow this request if you just enabled BrowSync in your browser. The extension can use your enabled sync features. Your choice is remembered on this Mac for future connections." = "ブラウザでBrowSyncを有効にした直後の場合のみ許可してください。拡張機能は有効な同期機能を利用できます。このMacに許可が保存され、次回から自動接続されます。";
 "Don't Allow" = "許可しない";
 "Allow Connection" = "接続を許可";
+"Restore to %@" = "%@ に復元";
+"Restore to…" = "復元先…";
+"%@ → %@: add %d, remove %d, move %d and modify %d. Nothing was changed — click to review." = "%@ → %@：%d 件追加、%d 件削除、%d 件移動、%d 件変更。まだ変更されていません。クリックして確認してください。";
+"A complete copy of every changed source and destination folder is saved before synchronization. Backups are kept for 7 days." = "同期前に、変更された各同期元および同期先フォルダの完全なコピーを保存します。バックアップは 7 日間保持されます。";
+"Reordered" = "並べ替え";
+"Across %d destinations, this sync would add %d, remove %d, move %d, reorder %d and modify %d bookmarks. Nothing has been written yet." = "この同期では %d 個の対象に対して、ブックマークを %d 件追加、%d 件削除、%d 件移動、%d 件並べ替え、%d 件変更します。まだ変更は書き込まれていません。";
+"Ignore" = "無視";
+"Don't offer this change again unless it changes." = "変更されない限り、この変更を再度表示しません。";
+"Ignored Bookmark Changes" = "無視したブックマークの変更";
+"%d ignored changes are not offered again until they change." = "無視した %d 件の変更は、内容が変わるまで再表示されません。";
+"Review" = "確認";

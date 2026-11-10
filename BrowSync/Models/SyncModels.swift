@@ -2,6 +2,7 @@
 // BrowSync — Sync data models
 
 import Foundation
+import CryptoKit
 
 enum BookmarkFolderPath {
     static let rootBar = "browsync-root-bar"
@@ -155,6 +156,192 @@ struct Bookmark: Identifiable, Codable, Equatable {
         try container.encodeIfPresent(dateModified, forKey: .dateModified)
         try container.encode(sourceBrowser, forKey: .sourceBrowser)
         try container.encodeIfPresent(children, forKey: .children)
+    }
+}
+
+// MARK: - Snapshot diff
+
+struct BookmarkSnapshotRecord: Identifiable, Codable, Equatable {
+    let id: String
+    let capturedAt: Date
+    let sourceBrowser: String
+    let bookmarks: [Bookmark]
+}
+
+struct BookmarkSnapshotChange: Identifiable, Equatable {
+    enum Kind: String, Codable { case added, removed, moved, reordered, modified }
+    var id: String { "\(kind.rawValue)|\(nodeId)" }
+    let kind: Kind
+    let nodeId: String
+    let before: Bookmark?
+    let after: Bookmark?
+}
+
+struct BookmarkSnapshotDelta: Equatable {
+    let sourceBrowser: String
+    let fromSnapshotId: String
+    let toSnapshotId: String
+    let observedAt: Date
+    let changes: [BookmarkSnapshotChange]
+
+    var isEmpty: Bool { changes.isEmpty }
+    var removed: [Bookmark] { changes.compactMap { $0.kind == .removed ? $0.before : nil } }
+    var changedNodeIds: Set<String> { Set(changes.compactMap { $0.after?.id }) }
+}
+
+enum BookmarkSnapshotDiffer {
+    static func diff(older: BookmarkSnapshotRecord, newer: BookmarkSnapshotRecord) -> BookmarkSnapshotDelta {
+        let oldById = Dictionary(older.bookmarks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let newById = Dictionary(newer.bookmarks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let oldIds = Set(oldById.keys)
+        let newIds = Set(newById.keys)
+        var changes: [BookmarkSnapshotChange] = []
+
+        for id in newIds.subtracting(oldIds).sorted() {
+            changes.append(.init(kind: .added, nodeId: id, before: nil, after: newById[id]))
+        }
+
+        // A removed folder already represents its complete subtree. Do not
+        // emit a second deletion for every descendant.
+        let missingIds = oldIds.subtracting(newIds)
+        for id in missingIds.sorted() {
+            guard let node = oldById[id], node.parentId.map({ !missingIds.contains($0) }) ?? true else { continue }
+            changes.append(.init(kind: .removed, nodeId: id, before: node, after: nil))
+        }
+
+        let commonIds = oldIds.intersection(newIds)
+        for id in commonIds.sorted() {
+            guard let old = oldById[id], let new = newById[id] else { continue }
+            if old.parentId != new.parentId {
+                changes.append(.init(kind: .moved, nodeId: id, before: old, after: new))
+            }
+            if old.title != new.title || canonicalURL(old.url) != canonicalURL(new.url) || old.isFolder != new.isFolder {
+                changes.append(.init(kind: .modified, nodeId: id, before: old, after: new))
+            }
+        }
+
+        // Do not infer user-visible reorders from sibling indexes. Browsers
+        // normalize those indexes differently (and may rewrite a whole folder
+        // after an unrelated add/remove), so an index-only difference is not
+        // reliable evidence of a user operation. A real relocation is already
+        // represented above by a parent-id change.
+
+        return BookmarkSnapshotDelta(sourceBrowser: newer.sourceBrowser, fromSnapshotId: older.id,
+                                     toSnapshotId: newer.id, observedAt: newer.capturedAt,
+                                     changes: changes.sorted { $0.id < $1.id })
+    }
+
+    /// Changed nodes plus the folders needed to reconstruct their current
+    /// parent chains. Removed nodes are represented only in `delta.removed`.
+    static func payload(for delta: BookmarkSnapshotDelta, current: [Bookmark]) -> [Bookmark] {
+        let byId = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var ids = delta.changedNodeIds
+        var queue = Array(ids)
+        while let id = queue.popLast(), let parent = byId[id]?.parentId,
+              !["0", "1", "2", "3"].contains(parent), ids.insert(parent).inserted {
+            queue.append(parent)
+        }
+        // A newly added folder carries its new subtree.
+        let children = Dictionary(grouping: current, by: { $0.parentId ?? "" })
+        var descendants = delta.changes.filter { $0.kind == .added && $0.after?.isFolder == true }.map(\.nodeId)
+        while let parent = descendants.popLast() {
+            for child in children[parent] ?? [] where ids.insert(child.id).inserted {
+                descendants.append(child.id)
+            }
+        }
+        return current.filter { ids.contains($0.id) }
+    }
+
+    private static func canonicalURL(_ value: String??) -> String? {
+        guard let value, let raw = value else { return nil }
+        return URL(string: raw)?.absoluteString ?? raw
+    }
+
+    /// Extensions report a node under the ID of the bookmark it was synced
+    /// from once that mapping exists, so the same unchanged node can appear
+    /// under a new ID. A removal and an addition with identical content (and,
+    /// for folders, the same parent) are such an identity change, not edits.
+    static func ignoringIdentityDrift(_ delta: BookmarkSnapshotDelta) -> BookmarkSnapshotDelta {
+        func key(_ node: Bookmark) -> String {
+            node.isFolder ? "f|\(node.parentId ?? "")|\(node.title)" : "b|\(node.title)|\(canonicalURL(node.url) ?? "")"
+        }
+        var removedByKey: [String: [String]] = [:]
+        for change in delta.changes where change.kind == .removed {
+            if let node = change.before { removedByKey[key(node), default: []].append(change.nodeId) }
+        }
+        var dropped = Set<String>()
+        for change in delta.changes where change.kind == .added {
+            guard let node = change.after, var ids = removedByKey[key(node)], !ids.isEmpty else { continue }
+            dropped.insert(change.id)
+            dropped.insert("removed|\(ids.removeFirst())")
+            removedByKey[key(node)] = ids
+        }
+        guard !dropped.isEmpty else { return delta }
+        return BookmarkSnapshotDelta(sourceBrowser: delta.sourceBrowser, fromSnapshotId: delta.fromSnapshotId,
+                                     toSnapshotId: delta.toSnapshotId, observedAt: delta.observedAt,
+                                     changes: delta.changes.filter { !dropped.contains($0.id) })
+    }
+
+}
+
+/// Finds genuine competing bookmark values in two *stable* browser snapshots.
+/// This deliberately produces conflicts only, never a merge operation: a
+/// quiet browser is not permission to mirror an entire tree into another one.
+enum BookmarkStableConflictDetector {
+    static func conflicts(source: [Bookmark], target: [Bookmark]) -> [BookmarkConflict] {
+        func canonicalURL(_ value: String??) -> String? {
+            guard let outer = value, let raw = outer else { return nil }
+            return URL(string: raw)?.absoluteString ?? raw
+        }
+
+        func rootRole(_ id: String) -> String? {
+            switch id.lowercased() {
+            case "1", "browsync-root-bar", "browsync-root-favorites", "firefox-toolbar-root": return "bar"
+            case "2", "browsync-root-other", "firefox-menu-root": return "other"
+            case "3", "browsync-root-mobile", "firefox-mobile-root": return "mobile"
+            default: return nil
+            }
+        }
+
+        func parentPaths(_ nodes: [Bookmark]) -> [String: String] {
+            let byID = Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            var cache: [String: String] = [:]
+            func path(for id: String, seen: Set<String> = []) -> String? {
+                if let cached = cache[id] { return cached }
+                if let role = rootRole(id) { return role }
+                guard let node = byID[id], !seen.contains(id) else { return nil }
+                let parent = node.parentId.flatMap { path(for: $0, seen: seen.union([id])) } ?? "root"
+                let result = parent + "/" + node.title
+                cache[id] = result
+                return result
+            }
+            return Dictionary(uniqueKeysWithValues: nodes.map { node in
+                (node.id, node.parentId.flatMap { path(for: $0) } ?? "root")
+            })
+        }
+
+        let sourcePaths = parentPaths(source)
+        let targetPaths = parentPaths(target)
+        var result: [BookmarkConflict] = []
+        var claimedTargetIDs = Set<String>()
+        for sourceNode in source where !sourceNode.isFolder {
+            guard let parentPath = sourcePaths[sourceNode.id] else { continue }
+            let candidates = target.filter { !$0.isFolder && targetPaths[$0.id] == parentPath && !claimedTargetIDs.contains($0.id) }
+            let sameURL = candidates.filter {
+                canonicalURL($0.url) == canonicalURL(sourceNode.url) && $0.title != sourceNode.title
+            }
+            let sameTitle = candidates.filter {
+                $0.title == sourceNode.title && canonicalURL($0.url) != canonicalURL(sourceNode.url)
+            }
+            let selected: (Bookmark, BookmarkConflict.Reason)?
+            if sameURL.count == 1 { selected = (sameURL[0], .title) }
+            else if sameTitle.count == 1 { selected = (sameTitle[0], .url) }
+            else { selected = nil }
+            guard let (targetNode, reason) = selected else { continue }
+            claimedTargetIDs.insert(targetNode.id)
+            result.append(.init(id: "stable|\(sourceNode.id)|\(targetNode.id)", source: sourceNode, target: targetNode, reason: reason))
+        }
+        return result.sorted { $0.id < $1.id }
     }
 }
 
@@ -355,6 +542,9 @@ struct SyncSettings: Codable, Equatable {
     var bookmarkSyncFolder: String? = nil
     var bookmarkSyncFolders: [String: String] = [:]
     var bookmarkAutoSync: Bool = false
+    /// When enabled, every non-empty bookmark mutation is held for review,
+    /// regardless of its size or whether it is destructive.
+    var bookmarkSafeMode: Bool = true
     var bookmarkParticipatingBrowsers: Set<Browser> = []
     
     // Browser Data (Cookies & LocalStorage) Settings
@@ -373,7 +563,7 @@ struct SyncSettings: Codable, Equatable {
     var iCloudSync: Bool = false     // PRO
 
     private enum CodingKeys: String, CodingKey {
-        case conflictStrategy, bookmarkSyncStrategy, bookmarkSourceBrowser, bookmarkSyncFolder, bookmarkSyncFolders, bookmarkAutoSync, bookmarkParticipatingBrowsers, browserDataSyncStrategy, stateSourceBrowser, stateParticipatingBrowsers, websiteListPolicy, websiteSettings, tabSharingParticipatingBrowsers, tabSharingEnabled, enabledCategories, automaticSync, iCloudSync
+        case conflictStrategy, bookmarkSyncStrategy, bookmarkSourceBrowser, bookmarkSyncFolder, bookmarkSyncFolders, bookmarkAutoSync, bookmarkSafeMode, bookmarkParticipatingBrowsers, browserDataSyncStrategy, stateSourceBrowser, stateParticipatingBrowsers, websiteListPolicy, websiteSettings, tabSharingParticipatingBrowsers, tabSharingEnabled, enabledCategories, automaticSync, iCloudSync
     }
 
     init() {}
@@ -391,6 +581,7 @@ struct SyncSettings: Codable, Equatable {
             }
         }
         bookmarkAutoSync = try container.decodeIfPresent(Bool.self, forKey: .bookmarkAutoSync) ?? false
+        bookmarkSafeMode = try container.decodeIfPresent(Bool.self, forKey: .bookmarkSafeMode) ?? true
         bookmarkParticipatingBrowsers = try container.decodeIfPresent(Set<Browser>.self, forKey: .bookmarkParticipatingBrowsers) ?? []
         browserDataSyncStrategy = try container.decodeIfPresent(BrowserDataSyncStrategy.self, forKey: .browserDataSyncStrategy) ?? .latestWins
         stateSourceBrowser = try container.decodeIfPresent(Browser.self, forKey: .stateSourceBrowser) ?? .safari
@@ -425,6 +616,1397 @@ struct SyncSettings: Codable, Equatable {
         bookmarkSyncFolder = bookmarkSyncFolders.isEmpty ? nil : bookmarkSyncFolder
     }
 }
+
+/// Browser-independent final write policy. Every native or extension write
+/// boundary must enforce the same OFF/participation/one-way-source rules.
+enum BookmarkWritePolicy {
+    static func allowsWrite(to target: Browser, settings: SyncSettings, explicitRestore: Bool = false) -> Bool {
+        settings.enabledCategories.contains(.bookmarks)
+            && settings.bookmarkParticipatingBrowsers.contains(target)
+            && (explicitRestore || settings.bookmarkSyncStrategy != .oneWay || settings.bookmarkSourceBrowser != target)
+    }
+}
+
+// MARK: - Native bookmark planning
+
+/// Browser extensions expose native trees and replay these operations, but do
+/// not decide what a sync should change. Planning, signatures and review live
+/// in the app so every browser follows one implementation.
+struct BookmarkMutationOperation: Codable, Equatable, Identifiable {
+    enum Kind: String, Codable { case create, update, move, removeTree }
+    var id: String
+    var sourceId: String? = nil
+    var kind: Kind
+    var parentId: String?
+    var index: Int?
+    var title: String?
+    var url: String?
+}
+
+struct BookmarkNativeTreeContext: Codable, Equatable {
+    var inputToken: String
+    var browser: Browser
+    var nodes: [Bookmark]
+    /// Portable system role (1/2/3) -> browser-native root ID.
+    var rootIds: [String: String]
+    /// Source bookmark ID -> browser-native bookmark ID.
+    var sourceToNativeIds: [String: String]
+    var scopeRootId: String?
+}
+
+struct NativeBookmarkPlan: Equatable {
+    var inputToken: String
+    var operations: [BookmarkMutationOperation]
+    var impact: NativeBookmarkImpact
+    var changes: [NativeBookmarkChange]
+    var conflicts: [BookmarkConflict] = []
+    var validationError: String? = nil
+    /// The target tree as it would look after `operations` (virtual IDs for
+    /// planned creations). Lets several sources be planned in sequence
+    /// against one native input token.
+    var resultingNodes: [Bookmark] = []
+}
+
+/// Two bookmarks occupy the same intended slot but disagree on user data.
+/// This is deliberately not reduced to a create/update heuristic: a user
+/// must choose the source version, target version, or keep both.
+struct BookmarkConflict: Identifiable, Equatable {
+    enum Reason: String, Equatable { case title, url }
+    let id: String
+    let source: Bookmark
+    let target: Bookmark
+    let reason: Reason
+    /// Display names of the browsers holding each version (review UI).
+    var sourceLabel: String? = nil
+    var targetLabel: String? = nil
+    /// Browsers holding each version (review icons).
+    var sourceBrowsers: [Browser] = []
+    var targetBrowsers: [Browser] = []
+}
+
+enum BookmarkConflictResolution: String, CaseIterable, Codable, Identifiable {
+    case source
+    case target
+    case both
+    var id: String { rawValue }
+}
+
+struct NativeBookmarkImpact: Equatable {
+    var added: Int
+    var removed: Int
+    var moved: Int
+    var modified: Int
+    var total: Int
+    var signature: String
+    var destructiveSignature: String
+}
+
+struct NativeBookmarkChange: Equatable {
+    enum Kind: String { case added, removed, moved, modified }
+    var id: String
+    var title: String
+    var url: String?
+    var isFolder: Bool
+    var kind: Kind
+    var parentId: String?
+    var containingPath: String
+}
+
+enum NativeBookmarkPlanner {
+    static func makeRemovalPlan(removals: [Bookmark], context: BookmarkNativeTreeContext) -> NativeBookmarkPlan {
+        let existing = Dictionary(uniqueKeysWithValues: context.nodes.map { ($0.id, $0) })
+        var operations: [BookmarkMutationOperation] = []
+        var ambiguous = false
+        func inScope(_ node: Bookmark) -> Bool {
+            guard let scope = context.scopeRootId else { return true }
+            var parent = node.parentId
+            var seen = Set<String>()
+            while let current = parent, seen.insert(current).inserted {
+                if current == scope { return true }
+                parent = existing[current]?.parentId
+            }
+            return false
+        }
+        for item in removals {
+            if let nativeId = context.sourceToNativeIds[item.id], let node = existing[nativeId], inScope(node) {
+                operations.append(.init(id: nativeId, sourceId: item.id, kind: .removeTree))
+                continue
+            }
+            let matches = context.nodes.filter { node in
+                guard inScope(node) else { return false }
+                guard node.isFolder == item.isFolder, node.title == item.title else { return false }
+                if item.isFolder { return true }
+                return node.url.flatMap { $0 } == item.url.flatMap { $0 }
+            }
+            if matches.count == 1 { operations.append(.init(id: matches[0].id, sourceId: item.id, kind: .removeTree)) }
+            else if matches.count > 1 { ambiguous = true }
+        }
+        var result = existing
+        operations.forEach { result.removeValue(forKey: $0.id) }
+        var plan = summarize(context: context, resulting: result, operations: ambiguous ? [] : operations)
+        if ambiguous { plan.validationError = "ambiguous target bookmark identity" }
+        return plan
+    }
+
+    /// Builds a deterministic plan against the exact native tree supplied by
+    /// an extension. Ambiguous content matches are never guessed.
+    static func makePlan(
+        desired: [Bookmark],
+        context: BookmarkNativeTreeContext,
+        fullMirror: Bool,
+        conflictResolutions: [String: BookmarkConflictResolution] = [:],
+        virtualIdPrefix: String = "browsync-app-planned-"
+    ) -> NativeBookmarkPlan {
+        var existing = Dictionary(uniqueKeysWithValues: context.nodes.map { ($0.id, $0) })
+        let children = Dictionary(grouping: context.nodes) { $0.parentId ?? "" }
+        var claimed = Set<String>()
+        var resolved = context.sourceToNativeIds.filter { existing[$0.value] != nil }
+        var operations: [BookmarkMutationOperation] = []
+        var virtualCounter = 0
+        var validationError: String?
+        var conflicts: [BookmarkConflict] = []
+
+        // `1`, `2`, and `3` are portable root roles, not folders to create.
+        // Chromium and Firefox omit immutable roots from ordinary snapshots,
+        // while Safari includes role placeholders. Creating the placeholders
+        // made duplicate "Bookmarks Menu" / "Favorites" folders forever.
+        func isPortableSystemRoot(_ bookmark: Bookmark) -> Bool {
+            bookmark.isFolder && bookmark.parentId == "0" && ["1", "2", "3"].contains(bookmark.id)
+        }
+
+        for root in desired where isPortableSystemRoot(root) {
+            guard let nativeRoot = context.rootIds[root.id], existing[nativeRoot] != nil else {
+                validationError = "missing native system root"
+                break
+            }
+            resolved[root.id] = nativeRoot
+            claimed.insert(nativeRoot)
+        }
+
+        func isInBoundScope(_ node: Bookmark) -> Bool {
+            guard let scope = context.scopeRootId else { return true }
+            if node.id == scope { return true }
+            var parent = node.parentId
+            var seen = Set<String>()
+            while let current = parent, seen.insert(current).inserted {
+                if current == scope { return true }
+                parent = existing[current]?.parentId
+            }
+            return false
+        }
+
+        func canonicalURL(_ value: String??) -> String? {
+            guard let outer = value, let raw = outer else { return nil }
+            return URL(string: raw)?.absoluteString ?? raw
+        }
+        func nativeParent(for bookmark: Bookmark) -> String? {
+            guard let parent = bookmark.parentId else { return context.scopeRootId ?? context.rootIds["1"] }
+            if let scope = context.scopeRootId, ["0", "1", "2", "3"].contains(parent) { return scope }
+            return context.rootIds[parent] ?? resolved[parent] ?? parent
+        }
+        func uniqueMatch(_ bookmark: Bookmark, parentId: String?) -> String? {
+            let candidates = (children[parentId ?? ""] ?? []).filter { !claimed.contains($0.id) }
+            let matches: [Bookmark]
+            if bookmark.isFolder {
+                matches = candidates.filter { $0.isFolder && $0.title == bookmark.title }
+            } else {
+                matches = candidates.filter {
+                    !$0.isFolder && $0.title == bookmark.title && canonicalURL($0.url) == canonicalURL(bookmark.url)
+                }
+            }
+            if matches.count > 1 { validationError = "ambiguous target bookmark identity" }
+            return matches.count == 1 ? matches[0].id : nil
+        }
+
+        func conflictCandidate(_ bookmark: Bookmark, parentId: String?, mappedId: String?) -> BookmarkConflict? {
+            guard !bookmark.isFolder else { return nil }
+            // A prior native-ID mapping proves historical lineage, not that a
+            // newer source and target value agree.  In particular, a title or
+            // URL edited independently after the last sync must never be
+            // silently turned into an update merely because it has a mapping.
+            if let mappedId, let mapped = existing[mappedId],
+               mapped.parentId == parentId,
+               (mapped.title != bookmark.title || canonicalURL(mapped.url) != canonicalURL(bookmark.url)) {
+                let reason: BookmarkConflict.Reason = canonicalURL(mapped.url) == canonicalURL(bookmark.url) ? .title : .url
+                return BookmarkConflict(id: "mapped|\(bookmark.id)|\(mapped.id)", source: bookmark, target: mapped, reason: reason)
+            }
+            let candidates = (children[parentId ?? ""] ?? []).filter { !$0.isFolder && !claimed.contains($0.id) }
+            let sameURL = candidates.filter { canonicalURL($0.url) == canonicalURL(bookmark.url) && $0.title != bookmark.title }
+            if sameURL.count == 1 {
+                return BookmarkConflict(id: "url|\(bookmark.id)|\(sameURL[0].id)", source: bookmark, target: sameURL[0], reason: .title)
+            }
+            let sameTitle = candidates.filter { $0.title == bookmark.title && canonicalURL($0.url) != canonicalURL(bookmark.url) }
+            if sameTitle.count == 1 {
+                return BookmarkConflict(id: "title|\(bookmark.id)|\(sameTitle[0].id)", source: bookmark, target: sameTitle[0], reason: .url)
+            }
+
+            // A portable parent can be absent from the target tree while the
+            // app is reconstructing a cross-browser root/folder chain.  Do
+            // not let that implementation detail turn two clearly competing
+            // bookmarks into a silent create (or a malformed move).  A unique
+            // same-URL/different-title or same-title/different-URL candidate
+            // anywhere inside the bound target scope is still a conflict. The
+            // user can explicitly keep either version or keep both; we never
+            // guess from browser-native parent IDs.
+            let scoped = context.nodes.filter { !($0.isFolder) && isInBoundScope($0) && !claimed.contains($0.id) }
+            let scopedSameURL = scoped.filter {
+                canonicalURL($0.url) == canonicalURL(bookmark.url) && $0.title != bookmark.title
+            }
+            if scopedSameURL.count == 1 {
+                return BookmarkConflict(id: "url-scope|\(bookmark.id)|\(scopedSameURL[0].id)", source: bookmark, target: scopedSameURL[0], reason: .title)
+            }
+            let scopedSameTitle = scoped.filter {
+                $0.title == bookmark.title && canonicalURL($0.url) != canonicalURL(bookmark.url)
+            }
+            if scopedSameTitle.count == 1 {
+                return BookmarkConflict(id: "title-scope|\(bookmark.id)|\(scopedSameTitle[0].id)", source: bookmark, target: scopedSameTitle[0], reason: .url)
+            }
+            return nil
+        }
+
+        // Parents precede children; sortIndex is shared by folders/bookmarks.
+        var remaining = desired.filter { !isPortableSystemRoot($0) }
+        var safety = desired.count + 1
+        while !remaining.isEmpty && safety > 0 {
+            safety -= 1
+            var progressed = false
+            for bookmark in remaining {
+                if let parent = bookmark.parentId,
+                   !["0", "1", "2", "3"].contains(parent),
+                   resolved[parent] == nil,
+                   existing[parent] == nil,
+                   // Wait only when the missing parent is another source
+                   // node that this same payload will resolve first.  If it
+                   // is absent from the payload altogether, still inspect the
+                   // leaf for an in-scope conflict before failing closed.
+                   remaining.contains(where: { $0.id == parent }) { continue }
+                let parentId = nativeParent(for: bookmark)
+                if let parentId, let existingParent = existing[parentId],
+                   (!existingParent.isFolder || !isInBoundScope(existingParent)) {
+                    validationError = "target parent is outside the selected scope"
+                    remaining.removeAll { $0.id == bookmark.id }
+                    progressed = true
+                    continue
+                }
+                var mapped = resolved[bookmark.id].flatMap { existing[$0] == nil ? nil : $0 }
+                if let conflict = conflictCandidate(bookmark, parentId: parentId, mappedId: mapped) {
+                    switch conflictResolutions[conflict.id] {
+                    case .source:
+                        mapped = conflict.target.id
+                    case .target:
+                        claimed.insert(conflict.target.id)
+                        remaining.removeAll { $0.id == bookmark.id }
+                        progressed = true
+                        continue
+                    case .both:
+                        // Deliberately forget the historical mapping: keeping
+                        // both means creating a distinct target node rather
+                        // than updating the mapped one.  The old target must
+                        // still be claimed, otherwise a full-mirror tail pass
+                        // would immediately schedule it for removal.
+                        claimed.insert(conflict.target.id)
+                        resolved.removeValue(forKey: bookmark.id)
+                        mapped = nil
+                    case nil:
+                        conflicts.append(conflict)
+                        remaining.removeAll { $0.id == bookmark.id }
+                        progressed = true
+                        continue
+                    }
+                }
+                // Source node IDs are not portable across browsers.  A
+                // non-system parent must have been resolved from a current
+                // target folder (or already be a target-native ID); otherwise
+                // dispatching a create would let an executor pick an
+                // arbitrary root.  Run this after conflict detection so a
+                // unique competing bookmark can still be presented to the
+                // user instead of being hidden behind an internal ID issue.
+                if let sourceParent = bookmark.parentId,
+                   !["0", "1", "2", "3"].contains(sourceParent),
+                   resolved[sourceParent] == nil,
+                   existing[sourceParent] == nil {
+                    validationError = "missing or invalid target parent identity"
+                    remaining.removeAll { $0.id == bookmark.id }
+                    progressed = true
+                    continue
+                }
+                if let mapped, let mappedNode = existing[mapped], !isInBoundScope(mappedNode) {
+                    validationError = "mapped target bookmark is outside the selected scope"
+                    remaining.removeAll { $0.id == bookmark.id }
+                    progressed = true
+                    continue
+                }
+                if let id = mapped ?? uniqueMatch(bookmark, parentId: parentId), var current = existing[id] {
+                    resolved[bookmark.id] = id
+                    claimed.insert(id)
+                    if current.title != bookmark.title || canonicalURL(current.url) != canonicalURL(bookmark.url) {
+                        operations.append(.init(id: id, sourceId: bookmark.id, kind: .update, title: bookmark.title, url: bookmark.url.flatMap { $0 }))
+                        current.title = bookmark.title
+                        current.url = bookmark.url
+                    }
+                    // Browser root implementations freely rewrite sibling
+                    // indexes while adding, importing and account-syncing.
+                    // An index-only difference is not evidence of a user move
+                    // across browsers, and treating it as one turns a single
+                    // addition into a mass "reorder" plan. Preserve target
+                    // sibling order unless the item's parent actually changed.
+                    if current.parentId != parentId {
+                        operations.append(.init(id: id, sourceId: bookmark.id, kind: .move, parentId: parentId, index: bookmark.sortIndex))
+                        current.parentId = parentId
+                        current.sortIndex = bookmark.sortIndex
+                    }
+                    existing[id] = current
+                } else {
+                    let id = "\(virtualIdPrefix)\(virtualCounter)"
+                    virtualCounter += 1
+                    resolved[bookmark.id] = id
+                    claimed.insert(id)
+                    operations.append(.init(id: id, sourceId: bookmark.id, kind: .create, parentId: parentId, index: bookmark.sortIndex,
+                                            title: bookmark.title, url: bookmark.url.flatMap { $0 }))
+                    existing[id] = Bookmark(id: id, title: bookmark.title, url: bookmark.url, parentId: parentId,
+                                            isFolder: bookmark.isFolder, sortIndex: bookmark.sortIndex,
+                                            inBookmarksBar: bookmark.inBookmarksBar, dateAdded: bookmark.dateAdded,
+                                            sourceBrowser: context.browser)
+                }
+                remaining.removeAll { $0.id == bookmark.id }
+                progressed = true
+            }
+            if !progressed { break }
+        }
+
+        if !remaining.isEmpty, validationError == nil {
+            validationError = "missing or invalid target parent identity"
+        }
+
+        if validationError == nil && fullMirror {
+            let scopeRoots = Set(context.scopeRootId.map { [$0] } ?? context.rootIds.values.map { $0 })
+            let removable = context.nodes.filter { isInBoundScope($0) && !claimed.contains($0.id) && !scopeRoots.contains($0.id) }
+            let removableIds = Set(removable.map(\.id))
+            for node in removable where !removableIds.contains(node.parentId ?? "") {
+                operations.append(.init(id: node.id, kind: .removeTree))
+            }
+        }
+
+        // No subset of an unresolved conflict is executable.  The user must
+        // see the complete conflict set before any accompanying operations
+        // can mutate a browser.
+        if !conflicts.isEmpty { operations.removeAll() }
+        var plan = summarize(context: context, resulting: existing, operations: validationError == nil ? operations : [])
+        plan.conflicts = conflicts.sorted { $0.id < $1.id }
+        plan.validationError = validationError
+        return plan
+    }
+
+    static func summarize(context: BookmarkNativeTreeContext, resulting: [String: Bookmark], operations: [BookmarkMutationOperation]) -> NativeBookmarkPlan {
+        let before = Dictionary(uniqueKeysWithValues: context.nodes.map { ($0.id, $0) })
+        let added = operations.filter { $0.kind == .create }.count
+        let removed = operations.filter { $0.kind == .removeTree }.count
+        let moved = operations.filter { $0.kind == .move }.count
+        let modified = operations.filter { $0.kind == .update }.count
+        let lines = operations.map { "\($0.kind.rawValue)|\($0.id)|\($0.parentId ?? "")|\($0.index ?? -1)|\($0.title ?? "")|\($0.url ?? "")" }
+        let signature = SHA256.hash(data: Data(lines.joined(separator: "\n").utf8)).map { String(format: "%02x", $0) }.joined()
+        let destructiveLines = zip(lines, operations).filter { $0.1.kind != .create }.map(\.0)
+        let destructive = SHA256.hash(data: Data(destructiveLines.joined(separator: "\n").utf8)).map { String(format: "%02x", $0) }.joined()
+
+        func containingPath(of bookmark: Bookmark, in nodes: [String: Bookmark]) -> String {
+            var titles: [String] = []
+            var current = bookmark.parentId
+            var visited = Set<String>()
+            while let id = current, visited.insert(id).inserted {
+                if let role = context.rootIds.first(where: { $0.value == id })?.key {
+                    switch role {
+                    case "1": titles.insert(String(localized: "Bookmarks Bar"), at: 0)
+                    case "2": titles.insert(String(localized: "Other Bookmarks"), at: 0)
+                    case "3": titles.insert(String(localized: "Mobile Bookmarks"), at: 0)
+                    default: break
+                    }
+                    break
+                }
+                guard let parent = nodes[id] else { break }
+                if !parent.title.isEmpty { titles.insert(parent.title, at: 0) }
+                current = parent.parentId
+            }
+            return "/" + titles.joined(separator: "/")
+        }
+        func change(_ bookmark: Bookmark, kind: NativeBookmarkChange.Kind, nodes: [String: Bookmark]) -> NativeBookmarkChange {
+            NativeBookmarkChange(id: bookmark.id, title: bookmark.title, url: bookmark.url.flatMap { $0 },
+                                 isFolder: bookmark.isFolder, kind: kind, parentId: bookmark.parentId,
+                                 containingPath: containingPath(of: bookmark, in: nodes))
+        }
+        let beforeChanges = operations.compactMap { op -> NativeBookmarkChange? in
+            guard let bookmark = before[op.id] else { return nil }
+            switch op.kind {
+            case .removeTree: return change(bookmark, kind: .removed, nodes: before)
+            case .move: return change(bookmark, kind: .moved, nodes: before)
+            case .update: return change(bookmark, kind: .modified, nodes: before)
+            case .create: return nil
+            }
+        }
+        let afterChanges = operations.compactMap { op -> NativeBookmarkChange? in
+            guard let bookmark = resulting[op.id] else { return nil }
+            switch op.kind {
+            case .create: return change(bookmark, kind: .added, nodes: resulting)
+            case .move: return change(bookmark, kind: .moved, nodes: resulting)
+            case .update: return change(bookmark, kind: .modified, nodes: resulting)
+            case .removeTree: return nil
+            }
+        }
+        return NativeBookmarkPlan(
+            inputToken: context.inputToken,
+            operations: operations,
+            impact: .init(added: added, removed: removed, moved: moved, modified: modified,
+                          total: before.count, signature: signature, destructiveSignature: destructive),
+            changes: beforeChanges + afterChanges,
+            resultingNodes: Array(resulting.values)
+        )
+    }
+}
+
+// MARK: - Ignored review rows
+
+/// A change the user chose to ignore is identified by its target and its exact
+/// content, so a later, different change to the same bookmark is shown again.
+enum BookmarkIgnore {
+    static func changeKey(target: Browser, change: NativeBookmarkChange) -> String {
+        let url = BookmarkSyncConflict.canonicalURL(change.url) ?? ""
+        let location = change.kind == .moved ? change.containingPath : ""
+        return [target.rawValue, change.kind.rawValue, change.isFolder ? "f" : "b", change.title, url, location]
+            .joined(separator: "|")
+    }
+
+    static func conflictKey(_ conflictId: String) -> String { "conflict|" + conflictId }
+
+    /// The newest description of every changed node in a route.
+    static func lastChanges(_ route: BookmarkRoutePlan) -> [String: NativeBookmarkChange] {
+        var result: [String: NativeBookmarkChange] = [:]
+        for change in route.changes { result[change.id] = change }
+        return result
+    }
+
+    /// Removes ignored changes (and operations that depended on them) from the
+    /// ordinary routes. The conflict-resolution step is left as is.
+    static func filtered(_ plan: BookmarkTargetPlan, ignored: Set<String>) -> BookmarkTargetPlan {
+        guard !ignored.isEmpty else { return plan }
+        var dropped = Set<String>()
+        for route in plan.routes {
+            for (id, change) in lastChanges(route) where ignored.contains(changeKey(target: plan.target, change: change)) {
+                dropped.insert(id)
+            }
+        }
+        guard !dropped.isEmpty else { return plan }
+        let ordinary = plan.routes.flatMap(\.operations).filter { !dropped.contains($0.id) }
+        let kept = Set(BookmarkAggregatePlanner.pruneDependencies(ordinary).map(\.id))
+        var result = plan
+        result.routes = plan.routes.map { route in
+            var route = route
+            route.operations = route.operations.filter { kept.contains($0.id) }
+            route.changes = route.changes.filter { kept.contains($0.id) }
+            return route
+        }
+        return result
+    }
+}
+
+// MARK: - Aggregate bookmark sync planning
+
+/// One source browser's local changes since its last synchronized baseline,
+/// prepared for a particular target.
+struct BookmarkSourceContribution: Equatable {
+    var source: Browser
+    /// Changed nodes plus the folders needed for their parent chains.
+    var desired: [Bookmark]
+    /// Nodes removed in the source (a removed folder stands for its subtree).
+    var removals: [Bookmark]
+}
+
+/// One version of a disputed bookmark and every browser that holds it.
+struct BookmarkConflictSide: Equatable {
+    var bookmark: Bookmark
+    var browsers: Set<Browser>
+    /// Ancestor folders (outermost first) followed by the bookmark, in the
+    /// portable form used by sync payloads (top-level parent 1/2/3).
+    var chain: [Bookmark]
+    /// Browser-native ID of this version, where known.
+    var nativeIds: [Browser: String] = [:]
+
+    var contentKey: String { BookmarkSyncConflict.contentKey(bookmark) }
+    var sortedBrowsers: [Browser] { browsers.sorted { $0.rawValue < $1.rawValue } }
+}
+
+/// A logical conflict between two versions of one bookmark. It is identified
+/// by content only, so the same dispute seen from Safari → Chrome and from
+/// Chrome → Safari (or from a third browser) is presented and resolved once.
+/// `.source` keeps `first`, `.target` keeps `second`, `.both` keeps both.
+struct BookmarkSyncConflict: Identifiable, Equatable {
+    let id: String
+    var first: BookmarkConflictSide
+    var second: BookmarkConflictSide
+    var reason: BookmarkConflict.Reason
+
+    init?(_ a: BookmarkConflictSide, _ b: BookmarkConflictSide, reason: BookmarkConflict.Reason) {
+        guard a.contentKey != b.contentKey else { return nil }
+        let ordered = a.contentKey < b.contentKey ? (a, b) : (b, a)
+        first = ordered.0
+        second = ordered.1
+        id = first.contentKey + "||" + second.contentKey
+        self.reason = reason
+    }
+
+    static func contentKey(_ bookmark: Bookmark) -> String {
+        "\(bookmark.title)|\(canonicalURL(bookmark.url) ?? "")"
+    }
+
+    static func canonicalURL(_ value: String??) -> String? {
+        guard let outer = value, let raw = outer else { return nil }
+        return URL(string: raw)?.absoluteString ?? raw
+    }
+
+    var contentKeys: Set<String> { [first.contentKey, second.contentKey] }
+
+    mutating func merge(_ other: BookmarkSyncConflict) {
+        guard other.id == id else { return }
+        first.browsers.formUnion(other.first.browsers)
+        second.browsers.formUnion(other.second.browsers)
+        first.nativeIds.merge(other.first.nativeIds) { current, _ in current }
+        second.nativeIds.merge(other.second.nativeIds) { current, _ in current }
+    }
+
+    func winners(_ resolution: BookmarkConflictResolution) -> [BookmarkConflictSide] {
+        switch resolution {
+        case .source: return [first]
+        case .target: return [second]
+        case .both: return [first, second]
+        }
+    }
+
+    func side(withContentKey key: String) -> BookmarkConflictSide? {
+        first.contentKey == key ? first : (second.contentKey == key ? second : nil)
+    }
+}
+
+/// The operations one source contributes to one target.
+struct BookmarkRoutePlan: Equatable {
+    /// nil for the step that applies the user's conflict choices.
+    var source: Browser?
+    var operations: [BookmarkMutationOperation]
+    var changes: [NativeBookmarkChange]
+    var impact: NativeBookmarkImpact
+    var validationError: String?
+}
+
+/// Everything one target receives in one sync, planned against a single
+/// native input token so it can be executed as one verified write.
+struct BookmarkTargetPlan: Equatable {
+    var target: Browser
+    var inputToken: String
+    var routes: [BookmarkRoutePlan]
+    var resolution: BookmarkRoutePlan?
+    var conflicts: [BookmarkSyncConflict]
+
+    var operations: [BookmarkMutationOperation] {
+        routes.flatMap(\.operations) + (resolution?.operations ?? [])
+    }
+}
+
+enum BookmarkAggregatePlanner {
+    static let virtualIdPrefix = "browsync-"
+
+    /// Plans every source's contribution into one target, in order, against
+    /// one native tree. Leaves that take part in `conflicts` are left out of
+    /// the ordinary routes; with `resolutions` the chosen versions are then
+    /// applied by a final resolution step. Without resolutions, newly found
+    /// conflicts are returned so the caller can unify them across targets.
+    static func plan(
+        target: Browser,
+        context: BookmarkNativeTreeContext,
+        contributions: [BookmarkSourceContribution],
+        conflicts known: [BookmarkSyncConflict],
+        resolutions: [String: BookmarkConflictResolution]? = nil,
+        ignoredConflicts: Set<String> = []
+    ) -> BookmarkTargetPlan {
+        var working = context
+        var routes: [BookmarkRoutePlan] = []
+        var discovered: [BookmarkSyncConflict] = []
+        let excludedKeys = Set(known.flatMap(\.contentKeys))
+
+        for contribution in contributions where contribution.source != target {
+            let routeStart = working
+            var operations: [BookmarkMutationOperation] = []
+            var routeError: String?
+
+            if !contribution.removals.isEmpty {
+                let removal = NativeBookmarkPlanner.makeRemovalPlan(removals: contribution.removals, context: working)
+                if let error = removal.validationError {
+                    routeError = error
+                } else {
+                    operations += removal.operations
+                    working = removing(removal.operations.map(\.id), from: working)
+                }
+            }
+
+            var desired = contribution.desired.map { node -> Bookmark in
+                var node = node
+                node.sourceBrowser = contribution.source
+                return node
+            }.filter { $0.isFolder || !excludedKeys.contains(BookmarkSyncConflict.contentKey($0)) }
+
+            var plan = NativeBookmarkPlanner.makePlan(
+                desired: desired, context: working, fullMirror: false,
+                virtualIdPrefix: "\(virtualIdPrefix)\(contribution.source.rawValue)-planned-"
+            )
+            var attempts = 0
+            while !plan.conflicts.isEmpty && attempts < 8 {
+                attempts += 1
+                for conflict in plan.conflicts {
+                    if let unified = unifiedConflict(conflict, source: contribution.source, desired: desired, context: working) {
+                        append(unified, to: &discovered)
+                    }
+                }
+                let conflicted = Set(plan.conflicts.map(\.source.id))
+                desired.removeAll { conflicted.contains($0.id) }
+                plan = NativeBookmarkPlanner.makePlan(
+                    desired: desired, context: working, fullMirror: false,
+                    virtualIdPrefix: "\(virtualIdPrefix)\(contribution.source.rawValue)-planned-"
+                )
+            }
+            if let error = plan.validationError ?? (plan.conflicts.isEmpty ? nil : "unresolved bookmark conflict") {
+                routeError = routeError ?? error
+            } else {
+                operations += plan.operations
+                working = advancing(working, to: plan, attributedTo: contribution.source)
+            }
+            routes.append(route(source: contribution.source, start: routeStart, end: working,
+                                operations: operations, error: routeError))
+        }
+
+        var resolutionRoute: BookmarkRoutePlan?
+        if let resolutions, !known.isEmpty {
+            resolutionRoute = resolve(target: target, context: working,
+                                      conflicts: known.filter { !ignoredConflicts.contains($0.id) },
+                                      resolutions: resolutions)
+        }
+
+        return BookmarkTargetPlan(target: target, inputToken: context.inputToken, routes: routes,
+                                  resolution: resolutionRoute, conflicts: discovered)
+    }
+
+    /// Adds `conflict` to `list`, merging it with an existing identical one.
+    static func append(_ conflict: BookmarkSyncConflict, to list: inout [BookmarkSyncConflict]) {
+        if let index = list.firstIndex(where: { $0.id == conflict.id }) {
+            list[index].merge(conflict)
+        } else {
+            list.append(conflict)
+        }
+    }
+
+    /// Conflicts already present in two quiet browsers (no delta involved).
+    static func stableConflicts(snapshots: [Browser: [Bookmark]]) -> [BookmarkSyncConflict] {
+        let browsers = snapshots.keys.sorted { $0.rawValue < $1.rawValue }
+        var result: [BookmarkSyncConflict] = []
+        for (index, a) in browsers.enumerated() {
+            for b in browsers[(index + 1)...] {
+                let left = snapshots[a] ?? [], right = snapshots[b] ?? []
+                for conflict in BookmarkStableConflictDetector.conflicts(source: left, target: right) {
+                    let first = BookmarkConflictSide(
+                        bookmark: conflict.source, browsers: [a], chain: portableChain(of: conflict.source, in: left),
+                        nativeIds: a == .safari ? [a: conflict.source.id] : [:])
+                    let second = BookmarkConflictSide(
+                        bookmark: conflict.target, browsers: [b], chain: portableChain(of: conflict.target, in: right),
+                        nativeIds: b == .safari ? [b: conflict.target.id] : [:])
+                    if let unified = BookmarkSyncConflict(first, second, reason: conflict.reason) {
+                        append(unified, to: &result)
+                    }
+                }
+            }
+        }
+        return result
+    }
+
+    /// Drops selected-away operations and any operation that depends on a
+    /// planned creation that is no longer part of the write.
+    static func pruneDependencies(_ operations: [BookmarkMutationOperation]) -> [BookmarkMutationOperation] {
+        var kept = operations
+        while true {
+            let created = Set(kept.filter { $0.kind == .create }.map(\.id))
+            func available(_ id: String?) -> Bool {
+                guard let id, id.hasPrefix(virtualIdPrefix) else { return true }
+                return created.contains(id)
+            }
+            let next = kept.filter { op in
+                (op.kind == .create || available(op.id)) && available(op.parentId)
+            }
+            if next.count == kept.count { return next }
+            kept = next
+        }
+    }
+
+    // MARK: Internals
+
+    private static func route(source: Browser?, start: BookmarkNativeTreeContext, end: BookmarkNativeTreeContext,
+                              operations: [BookmarkMutationOperation], error: String?) -> BookmarkRoutePlan {
+        var resulting = Dictionary(end.nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        // Removed nodes are absent from `end`; summarize needs only survivors.
+        for op in operations where op.kind == .removeTree { resulting.removeValue(forKey: op.id) }
+        let summary = NativeBookmarkPlanner.summarize(context: start, resulting: resulting, operations: operations)
+        return BookmarkRoutePlan(source: source, operations: operations, changes: summary.changes,
+                                 impact: summary.impact, validationError: error)
+    }
+
+    private static func removing(_ ids: [String], from context: BookmarkNativeTreeContext) -> BookmarkNativeTreeContext {
+        var removed = Set(ids)
+        var changed = true
+        while changed {
+            changed = false
+            for node in context.nodes where !removed.contains(node.id) {
+                if let parent = node.parentId, removed.contains(parent) {
+                    removed.insert(node.id)
+                    changed = true
+                }
+            }
+        }
+        var next = context
+        next.nodes = context.nodes.filter { !removed.contains($0.id) }
+        return next
+    }
+
+    private static func advancing(_ context: BookmarkNativeTreeContext, to plan: NativeBookmarkPlan,
+                                  attributedTo source: Browser) -> BookmarkNativeTreeContext {
+        let touched = Set(plan.operations.filter { $0.kind == .create || $0.kind == .update }.map(\.id))
+        var next = context
+        next.nodes = plan.resultingNodes.map { node in
+            var node = node
+            if touched.contains(node.id) { node.sourceBrowser = source }
+            return node
+        }.sorted { $0.id < $1.id }
+        for op in plan.operations {
+            if let sourceId = op.sourceId { next.sourceToNativeIds[sourceId] = op.id }
+        }
+        return next
+    }
+
+    /// Ancestors (outermost first) plus the node, within one tree. The chain
+    /// stops at portable roots (0/1/2/3); a dangling parent becomes root 2.
+    static func portableChain(of leaf: Bookmark, in nodes: [Bookmark]) -> [Bookmark] {
+        let byId = Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var chain = [leaf]
+        var seen = Set([leaf.id])
+        while let parent = chain[0].parentId, !["0", "1", "2", "3"].contains(parent) {
+            guard let node = byId[parent], seen.insert(parent).inserted else {
+                chain[0].parentId = "2"
+                break
+            }
+            chain.insert(node, at: 0)
+        }
+        return chain
+    }
+
+    /// Chain of a node inside a native target context, mapped to portable
+    /// roots: native system roots become their role, a selected scope root
+    /// becomes the portable target root 2.
+    private static func nativeChain(of leaf: Bookmark, in context: BookmarkNativeTreeContext) -> [Bookmark] {
+        let byId = Dictionary(context.nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        func role(_ id: String) -> String? {
+            if id == context.scopeRootId { return "2" }
+            return ["1", "2", "3"].first { context.rootIds[$0] == id }
+        }
+        var chain = [leaf]
+        var seen = Set([leaf.id])
+        while let parent = chain[0].parentId {
+            if let role = role(parent) { chain[0].parentId = role; break }
+            guard let node = byId[parent], seen.insert(parent).inserted else { chain[0].parentId = "2"; break }
+            chain.insert(node, at: 0)
+        }
+        return chain
+    }
+
+    private static func unifiedConflict(_ conflict: BookmarkConflict, source: Browser, desired: [Bookmark],
+                                        context: BookmarkNativeTreeContext) -> BookmarkSyncConflict? {
+        let holder = conflict.target.sourceBrowser
+        let sourceSide = BookmarkConflictSide(
+            bookmark: conflict.source, browsers: [source],
+            chain: portableChain(of: conflict.source, in: desired),
+            nativeIds: source == .safari ? [source: conflict.source.id] : [:])
+        let targetSide = BookmarkConflictSide(
+            bookmark: conflict.target, browsers: [holder],
+            chain: nativeChain(of: conflict.target, in: context),
+            nativeIds: holder == context.browser && !conflict.target.id.hasPrefix(virtualIdPrefix)
+                ? [holder: conflict.target.id] : [:])
+        return BookmarkSyncConflict(sourceSide, targetSide, reason: conflict.reason)
+    }
+
+    /// Applies the user's choices to one target: every chosen version this
+    /// target does not hold yet is introduced (with its folder chain) and a
+    /// competing version found here is updated or kept as the user decided.
+    private static func resolve(target: Browser, context: BookmarkNativeTreeContext,
+                                conflicts: [BookmarkSyncConflict],
+                                resolutions: [String: BookmarkConflictResolution]) -> BookmarkRoutePlan {
+        var desired: [Bookmark] = []
+        var working = context
+        var error: String?
+        for (index, conflict) in conflicts.enumerated() {
+            guard let resolution = resolutions[conflict.id] else {
+                error = "unresolved bookmark conflict"
+                continue
+            }
+            let winners = conflict.winners(resolution)
+            let losers = [conflict.first, conflict.second].filter { side in !winners.contains(side) }
+            for (sideIndex, side) in winners.enumerated() where !side.browsers.contains(target) {
+                let prefix = "conflict\(index)-\(sideIndex)-"
+                for (position, node) in side.chain.enumerated() {
+                    var copy = node
+                    copy.id = prefix + node.id
+                    if let parent = node.parentId, !["0", "1", "2", "3"].contains(parent) {
+                        copy.parentId = prefix + parent
+                    }
+                    copy.sourceBrowser = side.sortedBrowsers.first ?? node.sourceBrowser
+                    if position == side.chain.count - 1, let nativeLoser = losers.first?.nativeIds[target] {
+                        working.sourceToNativeIds[copy.id] = nativeLoser
+                    }
+                    if !desired.contains(where: { $0.id == copy.id }) { desired.append(copy) }
+                }
+            }
+        }
+        let prefix = "\(virtualIdPrefix)conflict-planned-"
+        let probe = NativeBookmarkPlanner.makePlan(desired: desired, context: working, fullMirror: false, virtualIdPrefix: prefix)
+        var planned: [String: BookmarkConflictResolution] = [:]
+        for found in probe.conflicts {
+            let key = BookmarkSyncConflict.contentKey(found.source)
+            let other = BookmarkSyncConflict.contentKey(found.target)
+            guard let conflict = conflicts.first(where: { $0.contentKeys == [key, other] }),
+                  let resolution = resolutions[conflict.id] else {
+                error = error ?? "bookmark conflict changed since review"
+                continue
+            }
+            if resolution == .both {
+                planned[found.id] = .both
+            } else if let winner = conflict.winners(resolution).first {
+                planned[found.id] = winner.contentKey == key ? .source : .target
+            }
+        }
+        let plan = NativeBookmarkPlanner.makePlan(desired: desired, context: working, fullMirror: false,
+                                                  conflictResolutions: planned, virtualIdPrefix: prefix)
+        let failure = error ?? plan.validationError ?? (plan.conflicts.isEmpty ? nil : "bookmark conflict changed since review")
+        let operations = failure == nil ? plan.operations : []
+        let end = failure == nil ? advancing(working, to: plan, attributedTo: target) : working
+        return route(source: nil, start: working, end: end, operations: operations, error: failure)
+    }
+}
+
+/// Persisted per-browser "last synchronized" state. A local change is the
+/// difference between this baseline and the browser's newest snapshot, so a
+/// change that was cancelled, unchecked or failed is still detected by the
+/// next sync instead of disappearing with the next observation.
+enum BookmarkBaseline {
+    /// The new baseline after a sync: `observed`, except that every change in
+    /// `unhandled` is reverted so it is detected again next time.
+    static func advanced(observed: [Bookmark], reverting unhandled: [BookmarkSnapshotChange]) -> [Bookmark] {
+        var byId = Dictionary(observed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var order = observed.map(\.id)
+        for change in unhandled {
+            switch change.kind {
+            case .added:
+                byId.removeValue(forKey: change.nodeId)
+            case .removed:
+                if let before = change.before, byId[before.id] == nil {
+                    byId[before.id] = before
+                    order.append(before.id)
+                }
+            case .moved, .modified, .reordered:
+                guard let before = change.before, var current = byId[change.nodeId] else { continue }
+                if change.kind == .moved { current.parentId = before.parentId; current.sortIndex = before.sortIndex }
+                if change.kind == .modified { current.title = before.title; current.url = before.url; current.isFolder = before.isFolder }
+                byId[change.nodeId] = current
+            }
+        }
+        var seen = Set<String>()
+        return order.compactMap { id in seen.insert(id).inserted ? byId[id] : nil }
+    }
+}
+
+extension BookmarkBaseline {
+    private static func contentKey(_ node: Bookmark) -> String {
+        node.isFolder ? "f|\(node.title)" : "b|\(node.title)|\(BookmarkSyncConflict.canonicalURL(node.url) ?? "")"
+    }
+
+    /// Changes between the pre-write observation and the post-write tree that
+    /// the verified operations do not account for. They are edits the user
+    /// made around the write and must stay detectable as local changes.
+    static func unexplainedChanges(observed: [Bookmark], fresh: [Bookmark],
+                                   operations: [BookmarkMutationOperation],
+                                   nativeNodes: [Bookmark]) -> [BookmarkSnapshotChange] {
+        let native = Dictionary(nativeNodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let children = Dictionary(grouping: nativeNodes, by: { $0.parentId ?? "" })
+        var created: [String: Int] = [:], removed: [String: Int] = [:]
+        var updated = Set<String>(), moved = Set<String>()
+        var finalValues: [String: Bookmark] = [:]
+        for op in operations {
+            switch op.kind {
+            case .create:
+                let node = Bookmark(id: op.id, title: op.title ?? "", url: op.url, parentId: op.parentId,
+                                    isFolder: op.url == nil, dateAdded: nil, sourceBrowser: .safari)
+                created[contentKey(node), default: 0] += 1
+            case .update:
+                guard var node = native[op.id] else { continue }
+                node.title = op.title ?? ""
+                if !node.isFolder { node.url = op.url }
+                finalValues[op.id] = node
+                updated.insert(contentKey(node))
+            case .move, .removeTree:
+                break
+            }
+        }
+        for op in operations {
+            if op.kind == .move, let node = finalValues[op.id] ?? native[op.id] { moved.insert(contentKey(node)) }
+            if op.kind == .removeTree, let root = native[op.id] {
+                var queue = [root]
+                while let node = queue.popLast() {
+                    removed[contentKey(node), default: 0] += 1
+                    queue.append(contentsOf: children[node.id] ?? [])
+                }
+            }
+        }
+        let delta = BookmarkSnapshotDiffer.ignoringIdentityDrift(BookmarkSnapshotDiffer.diff(
+            older: BookmarkSnapshotRecord(id: "observed", capturedAt: .distantPast, sourceBrowser: "", bookmarks: observed),
+            newer: BookmarkSnapshotRecord(id: "fresh", capturedAt: Date(), sourceBrowser: "", bookmarks: fresh)))
+        return delta.changes.filter { change in
+            switch change.kind {
+            case .added:
+                guard let key = change.after.map(contentKey), let count = created[key], count > 0 else { return true }
+                created[key] = count - 1
+                return false
+            case .removed:
+                guard let key = change.before.map(contentKey), let count = removed[key], count > 0 else { return true }
+                removed[key] = count - 1
+                return false
+            case .modified:
+                return !(change.after.map { updated.contains(contentKey($0)) } ?? false)
+            case .moved:
+                return !(change.after.map { moved.contains(contentKey($0)) } ?? false)
+            case .reordered:
+                return false
+            }
+        }
+    }
+}
+
+/// A recorded deletion (Recently Deleted) used as evidence by reconciliation.
+struct BookmarkDeletionEvidence: Equatable {
+    let url: String
+    let browser: Browser
+    let deletedAt: Date
+}
+
+/// Differences between the browsers' current trees that no pending change
+/// explains (for example a change whose snapshot difference was missed).
+/// Keyed by "source>target" like session deltas.
+struct BookmarkReconciliation: Equatable {
+    var additions: [String: [Bookmark]] = [:]
+    var removals: [String: [Bookmark]] = [:]
+    var isEmpty: Bool { additions.isEmpty && removals.isEmpty }
+}
+
+enum BookmarkReconciler {
+    static func pairKey(_ source: Browser, _ target: Browser) -> String { "\(source.rawValue)>\(target.rawValue)" }
+
+    /// Evidence-based reconciliation of bookmarks present in some live trees
+    /// and absent from others. Absence alone is never treated as a deletion:
+    ///  - no lacking browser ever had it  → a missed addition;
+    ///  - a lacking browser had it and lost it (its own snapshot history or a
+    ///    recorded deletion) → the newer event wins: a holder that added it
+    ///    after that loss re-added it, otherwise the deletion is propagated.
+    static func reconcile(observed: [Browser: [Bookmark]],
+                          live: [Browser: BookmarkNativeTreeContext],
+                          history: [Browser: [BookmarkSnapshotRecord]],
+                          deletions: [BookmarkDeletionEvidence],
+                          pendingURLs: Set<String>,
+                          now: Date = Date()) -> BookmarkReconciliation {
+        func url(_ node: Bookmark) -> String? { node.isFolder ? nil : BookmarkSyncConflict.canonicalURL(node.url) }
+        func scopedURLs(_ context: BookmarkNativeTreeContext) -> Set<String> {
+            let byId = Dictionary(context.nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            func inScope(_ node: Bookmark) -> Bool {
+                guard let scope = context.scopeRootId else { return true }
+                var parent = node.parentId
+                var seen = Set<String>()
+                while let current = parent, seen.insert(current).inserted {
+                    if current == scope { return true }
+                    parent = byId[current]?.parentId
+                }
+                return false
+            }
+            return Set(context.nodes.filter(inScope).compactMap(url))
+        }
+        let browsers = live.keys.sorted { $0.rawValue < $1.rawValue }
+        let liveURLs = Dictionary(uniqueKeysWithValues: browsers.map { ($0, scopedURLs(live[$0]!)) })
+        let wholeTreeURLs = Dictionary(uniqueKeysWithValues: browsers.map { ($0, Set(live[$0]!.nodes.compactMap(url))) })
+        let records = history.mapValues { list in
+            list.sorted { $0.capturedAt < $1.capturedAt }.map { (date: $0.capturedAt, urls: Set($0.bookmarks.compactMap(url))) }
+        }
+        func lossTime(_ browser: Browser, _ link: String) -> Date? {
+            var result: Date?
+            let list = records[browser] ?? []
+            if let last = list.lastIndex(where: { $0.urls.contains(link) }) {
+                result = last == list.count - 1 ? now : list[last + 1].date
+            }
+            for deletion in deletions where deletion.browser == browser && deletion.url == link {
+                result = max(result ?? .distantPast, deletion.deletedAt)
+            }
+            return result
+        }
+        func firstSeen(_ browser: Browser, _ link: String) -> Date {
+            let list = records[browser] ?? []
+            guard var index = list.lastIndex(where: { $0.urls.contains(link) }) else { return now }
+            while index > 0 && list[index - 1].urls.contains(link) { index -= 1 }
+            return index == 0 ? .distantPast : list[index].date
+        }
+
+        var result = BookmarkReconciliation()
+        let allURLs = liveURLs.values.reduce(into: Set<String>()) { $0.formUnion($1) }
+        for link in allURLs.sorted() where !pendingURLs.contains(link) {
+            let holders = browsers.filter { liveURLs[$0]?.contains(link) == true }
+            let lacking = browsers.filter { liveURLs[$0]?.contains(link) != true }
+            guard !holders.isEmpty, !lacking.isEmpty else { continue }
+            // Present elsewhere in a lacking browser (outside its selected
+            // folder): neither a deletion nor a missing bookmark.
+            if lacking.contains(where: { wholeTreeURLs[$0]?.contains(link) == true }) { continue }
+            let losses = lacking.compactMap { browser in lossTime(browser, link).map { (browser, $0) } }
+            let newestLoss = losses.max { $0.1 < $1.1 }
+            let newestAddition = holders.map { firstSeen($0, link) }.max() ?? .distantPast
+            if let newestLoss, newestAddition <= newestLoss.1 {
+                // The deletion is newer than every holder's copy.
+                for holder in holders {
+                    guard let node = observed[holder]?.first(where: { url($0) == link }) else { continue }
+                    result.removals[pairKey(newestLoss.0, holder), default: []].append(node)
+                }
+            } else {
+                guard let holder = holders.first(where: { browser in observed[browser]?.contains { url($0) == link } == true }),
+                      let snapshot = observed[holder],
+                      let node = snapshot.first(where: { url($0) == link }) else { continue }
+                let chain = BookmarkAggregatePlanner.portableChain(of: node, in: snapshot)
+                for target in lacking {
+                    var list = result.additions[pairKey(holder, target)] ?? []
+                    for item in chain where !list.contains(where: { $0.id == item.id }) { list.append(item) }
+                    result.additions[pairKey(holder, target)] = list
+                }
+            }
+        }
+        return result
+    }
+}
+
+// MARK: - Safari Bookmarks.plist (pure, testable)
+
+/// Lightweight bookmark row read from Safari's Bookmarks.plist.
+struct SyncBookmark {
+    let id: String
+    let title: String
+    let url: String?
+    let parentId: String?
+    let isFolder: Bool
+    var sortIndex: Int? = nil
+    var inBookmarksBar: Bool = false
+    var dateAdded: Date? = nil
+}
+
+/// Pure transformations of Safari's Bookmarks.plist. `SafariBookmarkService`
+/// owns file access, authorization and the atomic write; everything that
+/// decides what the file becomes lives here so it can be tested with
+/// synthetic plists.
+enum SafariPlist {
+    static func isHiddenSystemNode(_ node: [String: Any]) -> Bool {
+        let identifier = node["WebBookmarkIdentifier"] as? String
+        let title = node["Title"] as? String
+        if identifier == "BookmarksBar" || identifier == "BookmarksMenu" || title == "BookmarksBar" || title == "BookmarksMenu" { return false }
+        if identifier == "History" || title == "History" || title == "com.apple.ReadingList" { return true }
+        if (node["ReadingListNonSync"] as? Bool) == true { return true }
+        let type = node["WebBookmarkType"] as? String
+        return type != "WebBookmarkTypeList" && type != "WebBookmarkTypeLeaf"
+    }
+
+    static func visibleNodes(_ plist: [String: Any]) -> [String: (parent: String, index: Int, content: String, title: String)] {
+        var result = [String: (parent: String, index: Int, content: String, title: String)]()
+        func walk(_ nodes: [[String: Any]], parent: String) {
+            for (index, node) in nodes.enumerated() where !isHiddenSystemNode(node) {
+                guard let uuid = node["WebBookmarkUUID"] as? String else { continue }
+                let content = (node["URLString"] as? String).map { "u:" + $0 }
+                    ?? "f:" + ((node["WebBookmarkIdentifier"] as? String) ?? (node["Title"] as? String) ?? "")
+                let title = (node["URIDictionary"] as? [String: Any])?["title"] as? String ?? (node["Title"] as? String) ?? ""
+                result[uuid] = (parent, index, content, title)
+                walk(node["Children"] as? [[String: Any]] ?? [], parent: uuid)
+            }
+        }
+        walk(plist["Children"] as? [[String: Any]] ?? [], parent: "")
+        return result
+    }
+
+    static func parseBookmarks(_ plist: [String: Any]) -> [SyncBookmark] {
+        guard let children = plist["Children"] as? [[String: Any]] else { return [] }
+        var result: [SyncBookmark] = []
+
+        func traverse(nodes: [[String: Any]], parentId: String?, rootChromeId: String?) {
+            for (sortIndex, child) in nodes.enumerated() {
+                // Skip any item that was written by BrowSync from Chrome's Mobile Bookmarks root.
+                // These were inserted erroneously in a previous sync and should not be read back.
+                if let sourceRoot = child["BrowSyncSourceRoot"] as? String, sourceRoot == "3" {
+                    continue
+                }
+                let isFolder = (child["WebBookmarkType"] as? String) == "WebBookmarkTypeList"
+                let titleDict = child["URIDictionary"] as? [String: Any]
+                let titleStr = titleDict?["title"] as? String ?? child["Title"] as? String ?? child["URLString"] as? String ?? "Untitled"
+                let urlStr = child["URLString"] as? String
+                let id = (child["WebBookmarkUUID"] as? String) ?? UUID().uuidString
+
+                let effectiveParentId = parentId ?? rootChromeId
+
+                result.append(SyncBookmark(id: id, title: titleStr, url: urlStr, parentId: effectiveParentId, isFolder: isFolder, sortIndex: sortIndex, inBookmarksBar: effectiveParentId == "1"))
+
+                if isFolder, let subChildren = child["Children"] as? [[String: Any]] {
+                    traverse(nodes: subChildren, parentId: id, rootChromeId: rootChromeId)
+                }
+            }
+        }
+
+        func syncServerId(of node: [String: Any]) -> String? {
+            (node["Sync"] as? [String: Any])?["ServerID"] as? String
+        }
+
+        func isBookmarksBarNode(_ node: [String: Any]) -> Bool {
+            (node["Title"] as? String) == "BookmarksBar" ||
+            (node["WebBookmarkIdentifier"] as? String) == "BookmarksBar" ||
+            syncServerId(of: node) == "Favorites Bar"
+        }
+
+        func isBookmarksMenuNode(_ node: [String: Any]) -> Bool {
+            (node["Title"] as? String) == "BookmarksMenu" ||
+            (node["WebBookmarkIdentifier"] as? String) == "BookmarksMenu" ||
+            syncServerId(of: node) == "Bookmarks Menu"
+        }
+
+        func isSafariSystemNode(_ node: [String: Any]) -> Bool {
+            if isBookmarksBarNode(node) || isBookmarksMenuNode(node) { return true }
+            if (node["WebBookmarkIdentifier"] as? String) == "History" { return true }
+            if (node["Title"] as? String) == "History" || (node["Title"] as? String) == "com.apple.ReadingList" { return true }
+            if (node["ReadingListNonSync"] as? Bool) == true { return true }
+            if let type = node["WebBookmarkType"] as? String, type != "WebBookmarkTypeList" && type != "WebBookmarkTypeLeaf" { return true }
+            return false
+        }
+
+        if let barIdx = children.firstIndex(where: isBookmarksBarNode),
+           let barChildren = children[barIdx]["Children"] as? [[String: Any]] {
+            result.append(SyncBookmark(id: "1", title: String(localized: "Favorites", bundle: Bundle.main), url: nil, parentId: "0", isFolder: true, inBookmarksBar: true))
+            traverse(nodes: barChildren, parentId: nil, rootChromeId: "1")
+        }
+
+        if let menuIdx = children.firstIndex(where: isBookmarksMenuNode),
+           let menuChildren = children[menuIdx]["Children"] as? [[String: Any]] {
+            result.append(SyncBookmark(id: "2", title: String(localized: "Bookmarks Menu", bundle: Bundle.main), url: nil, parentId: "0", isFolder: true, inBookmarksBar: false))
+            traverse(nodes: menuChildren, parentId: nil, rootChromeId: "2")
+        }
+
+        // Process any root-level bookmarks that are not system folders
+        let rootItems = children.filter { child in
+            !isSafariSystemNode(child)
+        }
+        if !rootItems.isEmpty {
+            traverse(nodes: rootItems, parentId: nil, rootChromeId: "2")
+        }
+
+        return result
+    }
+
+    static func digest(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Safari's tree as a native planning context. The input token is the
+    /// digest of the exact file bytes the plan is computed from.
+    static func nativeContext(plist: [String: Any], data: Data, folderPath: String?) -> (context: BookmarkNativeTreeContext?, error: String?) {
+        let nodes = parseBookmarks(plist).map {
+            Bookmark(id: $0.id, title: $0.title, url: $0.url, parentId: $0.parentId, isFolder: $0.isFolder,
+                     sortIndex: $0.sortIndex, inBookmarksBar: $0.inBookmarksBar, dateAdded: nil, sourceBrowser: .safari)
+        }
+        var rootIds: [String: String] = [:]
+        if nodes.contains(where: { $0.id == "1" }) { rootIds["1"] = "1" }
+        if nodes.contains(where: { $0.id == "2" }) { rootIds["2"] = "2"; rootIds["3"] = "2" }
+        var scopeRootId: String?
+        if let folderPath, !folderPath.isEmpty {
+            guard let folderId = BookmarkTreeMerger.folderId(tree: nodes, folderPath: folderPath) else {
+                return (nil, "target folder missing or ambiguous")
+            }
+            scopeRootId = folderId
+        }
+        // Safari bookmark IDs are its own UUIDs; other browsers report nodes
+        // that came from Safari under those same IDs.
+        var identity: [String: String] = [:]
+        for node in nodes where !["0", "1", "2", "3"].contains(node.id) { identity[node.id] = node.id }
+        return (BookmarkNativeTreeContext(inputToken: digest(data), browser: .safari, nodes: nodes,
+                                          rootIds: rootIds, sourceToNativeIds: identity, scopeRootId: scopeRootId), nil)
+    }
+
+    /// Applies app-planned operations to a plist in memory. Returns nil plus
+    /// a reason unless every operation applies, nothing outside the selected
+    /// scope changes, and the resulting values match the plan.
+    static func applying(_ operations: [BookmarkMutationOperation], to input: [String: Any], scopeRootId: String?) -> (plist: [String: Any]?, error: String?) {
+        var plist = input
+        guard var nodes = plist["Children"] as? [[String: Any]] else { return (nil, "Safari bookmarks are not readable") }
+        let original = plist
+        func uuid(_ node: [String: Any]) -> String? { node["WebBookmarkUUID"] as? String }
+        func isBar(_ node: [String: Any]) -> Bool {
+            (node["Title"] as? String) == "BookmarksBar" || (node["WebBookmarkIdentifier"] as? String) == "BookmarksBar"
+                || ((node["Sync"] as? [String: Any])?["ServerID"] as? String) == "Favorites Bar"
+        }
+        func isMenu(_ node: [String: Any]) -> Bool {
+            (node["Title"] as? String) == "BookmarksMenu" || (node["WebBookmarkIdentifier"] as? String) == "BookmarksMenu"
+                || ((node["Sync"] as? [String: Any])?["ServerID"] as? String) == "Bookmarks Menu"
+        }
+        var roots: [String: String] = [:]
+        if let bar = nodes.first(where: isBar).flatMap(uuid) { roots["1"] = bar }
+        if let menu = nodes.first(where: isMenu).flatMap(uuid) { roots["2"] = menu; roots["3"] = menu }
+        let protectedIds = Set(roots.values)
+
+        func remove(_ id: String, from list: inout [[String: Any]]) -> [String: Any]? {
+            if let index = list.firstIndex(where: { uuid($0) == id }) { return list.remove(at: index) }
+            for index in list.indices {
+                guard var children = list[index]["Children"] as? [[String: Any]] else { continue }
+                if let found = remove(id, from: &children) { list[index]["Children"] = children; return found }
+            }
+            return nil
+        }
+        func insert(_ node: [String: Any], into parent: String, at index: Int?, list: inout [[String: Any]]) -> Bool {
+            for i in list.indices {
+                if uuid(list[i]) == parent {
+                    guard (list[i]["WebBookmarkType"] as? String) == "WebBookmarkTypeList" else { return false }
+                    var children = list[i]["Children"] as? [[String: Any]] ?? []
+                    children.insert(node, at: min(max(index ?? children.count, 0), children.count))
+                    list[i]["Children"] = children
+                    return true
+                }
+                guard var children = list[i]["Children"] as? [[String: Any]] else { continue }
+                if insert(node, into: parent, at: index, list: &children) { list[i]["Children"] = children; return true }
+            }
+            return false
+        }
+        func find(_ id: String, in list: [[String: Any]], parent: String? = nil) -> (node: [String: Any], parent: String?)? {
+            for node in list {
+                if uuid(node) == id { return (node, parent) }
+                if let found = find(id, in: node["Children"] as? [[String: Any]] ?? [], parent: uuid(node)) { return found }
+            }
+            return nil
+        }
+
+        func mutate(_ id: String, in list: inout [[String: Any]], _ change: (inout [String: Any]) -> Void) -> Bool {
+            for i in list.indices {
+                if uuid(list[i]) == id { change(&list[i]); return true }
+                guard var children = list[i]["Children"] as? [[String: Any]] else { continue }
+                if mutate(id, in: &children, change) { list[i]["Children"] = children; return true }
+            }
+            return false
+        }
+
+        var created: [String: String] = [:]
+        func real(_ id: String?) -> String? {
+            guard let id else { return nil }
+            return created[id] ?? roots[id] ?? id
+        }
+        for op in operations {
+            switch op.kind {
+            case .create:
+                guard let parent = real(op.parentId ?? "2") else { return (nil, "missing parent") }
+                let newId = UUID().uuidString.uppercased()
+                let node: [String: Any]
+                if let link = op.url {
+                    node = ["WebBookmarkType": "WebBookmarkTypeLeaf", "WebBookmarkUUID": newId, "URLString": link,
+                            "URIDictionary": ["title": op.title ?? ""]]
+                } else {
+                    node = ["WebBookmarkType": "WebBookmarkTypeList", "WebBookmarkUUID": newId, "Title": op.title ?? "",
+                            "Children": [[String: Any]]()]
+                }
+                guard insert(node, into: parent, at: op.index, list: &nodes) else {
+                    return (nil, "planned parent not found")
+                }
+                created[op.id] = newId
+            case .update:
+                guard let id = real(op.id), !protectedIds.contains(id),
+                      mutate(id, in: &nodes, { node in
+                          if (node["WebBookmarkType"] as? String) == "WebBookmarkTypeList" {
+                              node["Title"] = op.title ?? ""
+                          } else {
+                              var uri = node["URIDictionary"] as? [String: Any] ?? [:]
+                              uri["title"] = op.title ?? ""
+                              node["URIDictionary"] = uri
+                              if let link = op.url { node["URLString"] = link }
+                          }
+                      }) else {
+                    return (nil, "bookmark to update not found")
+                }
+            case .move:
+                guard let id = real(op.id), !protectedIds.contains(id), let parent = real(op.parentId),
+                      let node = remove(id, from: &nodes), insert(node, into: parent, at: op.index, list: &nodes) else {
+                    return (nil, "bookmark move failed")
+                }
+            case .removeTree:
+                guard let id = real(op.id), !protectedIds.contains(id), remove(id, from: &nodes) != nil else {
+                    return (nil, "bookmark to remove not found")
+                }
+            }
+        }
+        plist["Children"] = nodes
+
+        // Nothing outside the selected scope may change.
+        if let scope = real(scopeRootId) {
+            func outside(_ tree: [String: Any]) -> [String] {
+                let visible = Self.visibleNodes(tree)
+                func inScope(_ id: String) -> Bool {
+                    var current: String? = id
+                    var seen = Set<String>()
+                    while let value = current, seen.insert(value).inserted {
+                        if value == scope { return true }
+                        current = visible[value]?.parent
+                    }
+                    return false
+                }
+                return visible.filter { !inScope($0.key) || $0.key == scope }
+                    .map { "\($0.key)|\($0.value.parent)|\($0.value.index)|\($0.value.content)|\($0.value.title)" }
+                    .sorted()
+            }
+            guard outside(original) == outside(plist) else {
+                return (nil, "bookmarks outside the selected scope would change")
+            }
+        }
+
+        // Verify the computed tree before replacing the file.
+        for op in operations {
+            guard let id = real(op.id) else { return (nil, "verification failed") }
+            let found = find(id, in: nodes)
+            if op.kind == .removeTree {
+                if found != nil { return (nil, "removed bookmark still present") }
+                continue
+            }
+            guard let found else { return (nil, "planned bookmark missing") }
+            if op.kind == .create || op.kind == .update {
+                let title = (found.node["URIDictionary"] as? [String: Any])?["title"] as? String ?? found.node["Title"] as? String
+                if title != (op.title ?? "") || (op.url != nil && found.node["URLString"] as? String != op.url) {
+                    return (nil, "planned bookmark values differ")
+                }
+            }
+            if op.kind == .create || op.kind == .move, found.parent != real(op.parentId) {
+                return (nil, "planned bookmark location differs")
+            }
+        }
+
+        return (plist, nil)
+    }
+}
+
+/// Whole-library Safari repairs (mobile contamination, leaked root folders)
+/// may only be proposed when Safari may be written and syncs its whole
+/// library; with a selected folder they would reach outside that scope.
+enum BookmarkMaintenancePolicy {
+    static func allowsSafariCleanup(settings: SyncSettings) -> Bool {
+        BookmarkWritePolicy.allowsWrite(to: .safari, settings: settings)
+            && (settings.bookmarkFolder(for: .safari)?.isEmpty ?? true)
+    }
+}
+
 // BookmarkTreeMerger.swift
 // BrowSync — Utility to merge specific bookmark folders
 
@@ -535,6 +2117,13 @@ struct BookmarkTreeMerger {
         let components = folderPath.components(separatedBy: "/").filter { !$0.isEmpty }
         guard !components.isEmpty else { return true }
         return findFolderId(pathComponents: components, in: tree) != nil
+    }
+
+    /// The unique folder at `folderPath`; nil when it is missing or ambiguous.
+    static func folderId(tree: [Bookmark], folderPath: String) -> String? {
+        let components = folderPath.components(separatedBy: "/").filter { !$0.isEmpty }
+        guard !components.isEmpty else { return nil }
+        return findFolderId(pathComponents: components, in: tree)
     }
 
     static func idsInFolderIncludingRoot(tree: [Bookmark], folderPath: String?) -> Set<String> {
@@ -792,6 +2381,7 @@ struct BookmarkTreeMerger {
             let directRootMatches = tree.filter {
                 $0.isFolder && $0.title == component && currentParentIds.contains($0.id)
             }
+            if directRootMatches.count > 1 { return nil }
             if let match = directRootMatches.first {
                 currentId = match.id
                 currentParentIds = [match.id]
@@ -799,6 +2389,7 @@ struct BookmarkTreeMerger {
             }
             
             let matches = tree.filter { $0.isFolder && $0.title == component && currentParentIds.contains($0.parentId ?? "") }
+            if matches.count > 1 { return nil }
             if let match = matches.first {
                 currentId = match.id
                 currentParentIds = [match.id]

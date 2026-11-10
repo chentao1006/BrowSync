@@ -1,5 +1,5 @@
 // BookmarkChangeReviewView.swift
-// BrowSync — Side-by-side review of a held Safari bookmark write
+// BrowSync — Per-destination review of a held bookmark write
 
 import SwiftUI
 import AppKit
@@ -8,8 +8,8 @@ import AppKit
 /// would do to it. `before` trees can only contain removed/moved changes and
 /// `after` trees only added/moved ones.
 struct BookmarkReviewNode: Identifiable {
-    enum Change {
-        case unchanged, added, removed, moved, modified
+    enum Change: Hashable {
+        case unchanged, added, removed, moved, reordered, modified
     }
 
     let id: String
@@ -18,17 +18,21 @@ struct BookmarkReviewNode: Identifiable {
     let isFolder: Bool
     let change: Change
     let children: [BookmarkReviewNode]
+    /// Explicit containing-folder path for flat, app-planned native changes.
+    /// Safari previews use the nested tree and leave this nil.
+    let containingPath: String?
     /// This node or a descendant changes. Computed once here rather than per
     /// row, because a mass change can mark thousands of rows.
     let containsChange: Bool
 
-    init(id: String, title: String, url: String?, isFolder: Bool, change: Change, children: [BookmarkReviewNode]) {
+    init(id: String, title: String, url: String?, isFolder: Bool, change: Change, children: [BookmarkReviewNode], containingPath: String? = nil) {
         self.id = id
         self.title = title
         self.url = url
         self.isFolder = isFolder
         self.change = change
         self.children = children
+        self.containingPath = containingPath
         self.containsChange = change != .unchanged || children.contains(where: \.containsChange)
     }
 }
@@ -38,103 +42,178 @@ struct BookmarkChangePreview {
     let after: [BookmarkReviewNode]
 }
 
-/// Where a held write would go. Every direction is reviewed the same way.
-enum BookmarkReviewDestination {
-    /// Into Safari, from `source`.
-    case safari(source: String, keepUpdatesOtherBrowsers: Bool)
-    /// Into another browser's bookmarks (computed by its extension).
-    case browser(name: String)
+struct BookmarkReviewRoute: Identifiable {
+    let id: String
+    let source: String
+    let target: String
+    let impact: SafariBookmarkService.WriteImpact
+    let preview: BookmarkChangePreview
+    var conflicts: [BookmarkConflict] = []
+    /// Set for aggregate sync groups, which are titled by their target only.
+    var targetBrowser: Browser? = nil
+    /// The group holding cross-browser conflicts (no header of its own).
+    var isConflictGroup = false
+}
+
+private struct BookmarkChangeRow: Identifiable {
+    let id: String
+    let change: BookmarkReviewNode.Change
+    let before: BookmarkReviewNode?
+    let after: BookmarkReviewNode?
+    let beforePath: String?
+    let afterPath: String?
+
+    var node: BookmarkReviewNode { after ?? before! }
 }
 
 struct BookmarkChangeReviewView: View {
     @EnvironmentObject var langBundle: LanguageBundle
-    let destination: BookmarkReviewDestination
-    let impact: SafariBookmarkService.WriteImpact
-    let preview: BookmarkChangePreview
-    let onApply: () -> Void
-    let onKeep: () -> Void
+    let reviewRoutes: [BookmarkReviewRoute]
+    let onApplySelected: ([String: Set<String>], [String: [String: BookmarkConflictResolution]]) -> Void
+    let onCancel: () -> Void
+    /// When set, every row offers "Ignore" on hover.
+    var onIgnoreRow: ((String, String) -> Void)? = nil
+    var onIgnoreConflict: ((String) -> Void)? = nil
+    @State private var selectedNodeIds: [String: Set<String>] = [:]
+    @State private var conflictChoices: [String: [String: BookmarkConflictResolution]] = [:]
+    @State private var hiddenRows: [String: Set<String>] = [:]
+    @State private var hiddenConflicts: Set<String> = []
+    @State private var hoveredItem: String?
 
-    private var destinationName: String {
-        switch destination {
-        case .safari: return "Safari"
-        case .browser(let name): return name
-        }
+    private func visibleRows(_ route: BookmarkReviewRoute) -> [BookmarkChangeRow] {
+        let hidden = hiddenRows[route.id] ?? []
+        return changeRows(for: route.preview).filter { !hidden.contains($0.id) }
+    }
+
+    private func visibleConflicts(_ route: BookmarkReviewRoute) -> [BookmarkConflict] {
+        route.conflicts.filter { !hiddenConflicts.contains($0.id) }
+    }
+
+    private var visibleRoutes: [BookmarkReviewRoute] {
+        reviewRoutes.filter { !visibleRows($0).isEmpty || !visibleConflicts($0).isEmpty }
     }
 
     private var summary: String {
-        switch destination {
-        case .safari(let source, _):
-            return String(
-                format: String(localized: "Syncing from %@ would remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet.", bundle: langBundle.bundle),
-                source, impact.removed, impact.moved, impact.modified, impact.total
-            )
-        case .browser(let name):
-            return String(
-                format: String(localized: "Syncing would remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet.", bundle: langBundle.bundle),
-                impact.removed, impact.moved, impact.modified, impact.total, name
-            )
+        let impact = aggregateImpact
+        return String(
+            format: String(localized: "Across %d destinations, this sync would add %d, remove %d, move %d, reorder %d and modify %d bookmarks. Nothing has been written yet.", bundle: langBundle.bundle),
+            visibleRoutes.filter { !$0.isConflictGroup }.count, impact.added, impact.removed, impact.moved, impact.reordered, impact.modified
+        )
+    }
+
+    private var aggregateImpact: (added: Int, removed: Int, moved: Int, reordered: Int, modified: Int) {
+        reviewRoutes.reduce((0, 0, 0, 0, 0)) { result, route in
+            let counts = displayedCounts(for: route)
+            return (result.0 + counts.added, result.1 + counts.removed, result.2 + counts.moved,
+                    result.3 + counts.reordered, result.4 + counts.modified)
         }
     }
 
-    private var keepFootnote: String {
-        switch destination {
-        case .safari(_, true):
-            return String(localized: "Keeping Safari as is also brings the other browsers back to Safari's bookmarks.", bundle: langBundle.bundle)
-        case .safari(_, false):
-            return String(localized: "Keeping Safari as is pauses later bookmark changes from this browser until you resume them from the menu bar.", bundle: langBundle.bundle)
-        case .browser(let name):
-            return String(format: String(localized: "Keeping %@ as is pauses later bookmark changes to it until you resume them from the menu bar.", bundle: langBundle.bundle), name)
+    private var allConflictsHaveChoices: Bool {
+        reviewRoutes.allSatisfy { route in
+            visibleConflicts(route).allSatisfy { conflict in
+                conflictChoices[route.id]?[conflict.id] != nil
+            }
         }
+    }
+
+    private var hasAnyDecision: Bool {
+        // With every row ignored, applying simply closes this sync.
+        selectedNodeIds.values.contains { !$0.isEmpty } || reviewRoutes.contains { !visibleConflicts($0).isEmpty }
+            || visibleRoutes.isEmpty
+    }
+
+    private func displayedCounts(for route: BookmarkReviewRoute) -> (added: Int, removed: Int, moved: Int, reordered: Int, modified: Int) {
+        visibleRows(route).reduce((0, 0, 0, 0, 0)) { result, row in
+            switch row.change {
+            case .added: return (result.0 + 1, result.1, result.2, result.3, result.4)
+            case .removed: return (result.0, result.1 + 1, result.2, result.3, result.4)
+            case .moved: return (result.0, result.1, result.2 + 1, result.3, result.4)
+            case .reordered: return (result.0, result.1, result.2, result.3 + 1, result.4)
+            case .modified: return (result.0, result.1, result.2, result.3, result.4 + 1)
+            case .unchanged: return result
+            }
+        }
+    }
+
+    private func changeRows(for preview: BookmarkChangePreview) -> [BookmarkChangeRow] {
+        let before = flattened(preview.before)
+        let after = flattened(preview.after)
+        let ids = Set(before.keys).union(after.keys)
+        return ids.compactMap { id in
+            let old = before[id]
+            let new = after[id]
+            let change = new?.node.change != .unchanged ? new?.node.change : old?.node.change
+            guard let change, change != .unchanged,
+                  // Sibling indexes are intentionally not synchronized. A
+                  // legacy preview may still carry a reorder row, but it must
+                  // never be shown as a selectable operation.
+                  change != .reordered else { return nil }
+            return BookmarkChangeRow(id: id, change: change, before: old?.node, after: new?.node, beforePath: old?.path, afterPath: new?.path)
+        }.sorted { lhs, rhs in
+            if lhs.change.order != rhs.change.order { return lhs.change.order < rhs.change.order }
+            let leftPath = lhs.afterPath ?? lhs.beforePath ?? ""
+            let rightPath = rhs.afterPath ?? rhs.beforePath ?? ""
+            let pathOrder = leftPath.localizedStandardCompare(rightPath)
+            if pathOrder != .orderedSame { return pathOrder == .orderedAscending }
+            return lhs.id.localizedStandardCompare(rhs.id) == .orderedAscending
+        }
+    }
+
+    private func flattened(_ roots: [BookmarkReviewNode]) -> [String: (node: BookmarkReviewNode, path: String)] {
+        var result: [String: (node: BookmarkReviewNode, path: String)] = [:]
+        func visit(_ node: BookmarkReviewNode, parents: [String]) {
+            let title = node.title.isEmpty ? (node.url ?? "") : node.title
+            // A row already displays the bookmark/folder title. Its path is
+            // therefore only the containing folder path, always rooted with
+            // "/"; including the node itself produced misleading paths such
+            // as "…/GitHub → GitHub" for a move.
+            let pathComponents = parents.filter { !$0.isEmpty }
+            let nestedPath = "/" + pathComponents.joined(separator: "/")
+            let path = node.containingPath ?? nestedPath
+            var key = node.id
+            if key.hasPrefix("before-") { key.removeFirst("before-".count) }
+            if key.hasPrefix("after-") { key.removeFirst("after-".count) }
+            result[key] = (node, path)
+            let nextParents = node.isFolder && !title.isEmpty ? parents + [title] : parents
+            node.children.forEach { visit($0, parents: nextParents) }
+        }
+        roots.forEach { visit($0, parents: []) }
+        return result
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(String(localized: "Large Bookmark Change Blocked", bundle: langBundle.bundle))
-                    .font(.title2.bold())
                 Text(summary)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
 
-            HStack(spacing: 16) {
-                legendItem(.removed)
-                legendItem(.moved)
-                legendItem(.added)
-                legendItem(.modified)
-            }
-            .font(.callout)
-
-            HStack(alignment: .top, spacing: 12) {
-                pane(String(format: String(localized: "%@ Now", bundle: langBundle.bundle), destinationName), nodes: preview.before)
-                pane(String(localized: "After Sync", bundle: langBundle.bundle), nodes: preview.after)
-            }
-
-            Text(keepFootnote)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-
-            HStack {
-                // No Escape shortcut: rejecting must be a deliberate click.
-                // Closing the window instead leaves the change pending.
-                Button(String(format: String(localized: "Keep %@ As Is", bundle: langBundle.bundle), destinationName), action: onKeep)
-                Spacer()
-                Button(String(localized: "Apply Changes", bundle: langBundle.bundle), role: .destructive, action: onApply)
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-            }
-            .controlSize(.large)
-        }
-        .padding(20)
-        .frame(minWidth: 860, minHeight: 580)
-    }
-
-    private func pane(_ title: String, nodes: [BookmarkReviewNode]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.headline)
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(nodes) { BookmarkReviewNodeView(node: $0) }
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(visibleRoutes) { route in
+                        VStack(alignment: .leading, spacing: 8) {
+                            if !route.isConflictGroup {
+                                routeHeader(route)
+                            }
+                            ForEach([BookmarkReviewNode.Change.removed, .moved, .reordered, .modified, .added], id: \.self) { change in
+                                let rows = visibleRows(route).filter { $0.change == change }
+                                if !rows.isEmpty {
+                                    HStack {
+                                        Text(change.label(langBundle.bundle)).font(.subheadline.weight(.semibold))
+                                        Text("\(rows.count)").font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    ForEach(rows) { changeRow($0, routeId: route.id) }
+                                }
+                            }
+                            ForEach(visibleConflicts(route)) { conflict in
+                                conflictRow(conflict, routeId: route.id)
+                            }
+                        }
+                        .padding(10)
+                        .background(.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                    }
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -142,75 +221,244 @@ struct BookmarkChangeReviewView: View {
             .background(Color(nsColor: .textBackgroundColor))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor)))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
 
-    private func legendItem(_ change: BookmarkReviewNode.Change) -> some View {
-        HStack(spacing: 6) {
-            RoundedRectangle(cornerRadius: 3)
-                .fill(change.tint.opacity(0.25))
-                .overlay(RoundedRectangle(cornerRadius: 3).stroke(change.tint))
-                .frame(width: 14, height: 14)
-            Text(change.label(langBundle.bundle))
-        }
-    }
-}
-
-private struct BookmarkReviewNodeView: View {
-    @EnvironmentObject var langBundle: LanguageBundle
-    let node: BookmarkReviewNode
-    @State private var isExpanded: Bool
-
-    init(node: BookmarkReviewNode) {
-        self.node = node
-        // A moved folder is highlighted itself; its unchanged contents stay
-        // collapsed so they do not bury the differences.
-        _isExpanded = State(initialValue: node.children.contains(where: \.containsChange))
-    }
-
-    var body: some View {
-        if node.isFolder && !node.children.isEmpty {
-            DisclosureGroup(isExpanded: $isExpanded) {
-                ForEach(node.children) { BookmarkReviewNodeView(node: $0) }
-            } label: {
-                row
+            HStack {
+                // No Escape shortcut: rejecting must be a deliberate click.
+                // Closing the window instead leaves the change pending.
+                Button(String(localized: "Cancel This Sync", bundle: langBundle.bundle), action: onCancel)
+                Spacer()
+                Button(String(localized: "Apply Selected Changes", bundle: langBundle.bundle), role: aggregateImpact.removed + aggregateImpact.moved + aggregateImpact.reordered + aggregateImpact.modified > 0 ? .destructive : nil) {
+                    onApplySelected(selectedNodeIds, conflictChoices)
+                }
+                    .buttonStyle(.borderedProminent)
+                    .tint(aggregateImpact.removed + aggregateImpact.moved + aggregateImpact.reordered + aggregateImpact.modified > 0 ? .red : .accentColor)
+                    .disabled(!hasAnyDecision || !allConflictsHaveChoices)
             }
+            .controlSize(.large)
+        }
+        .padding(20)
+        .frame(minWidth: 700, minHeight: 480)
+        .onAppear { selectAllChanges() }
+    }
+
+    @ViewBuilder
+    private func routeHeader(_ route: BookmarkReviewRoute) -> some View {
+        HStack(spacing: 8) {
+            if let target = route.targetBrowser {
+                browserIcon(target, size: 20)
+                Text(route.target).fontWeight(.semibold)
+            } else {
+                Text(route.source).fontWeight(.semibold)
+                Image(systemName: "arrow.right")
+                Text(route.target).fontWeight(.semibold)
+            }
+            Spacer()
+            let counts = displayedCounts(for: route)
+            Text("+\(counts.added)  −\(counts.removed)  ↔\(counts.moved)  ⇅\(counts.reordered)  ✎\(counts.modified)")
+                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func browserIcon(_ browser: Browser, size: CGFloat = 16) -> some View {
+        if let url = browser.appURL {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                .resizable()
+                .frame(width: size, height: size)
+                .accessibilityLabel(browser.displayName)
         } else {
-            row.padding(.leading, node.isFolder ? 0 : 18)
+            Image(systemName: browser.sfSymbol)
+                .frame(width: size, height: size)
+                .accessibilityLabel(browser.displayName)
         }
     }
 
-    private var row: some View {
-        HStack(spacing: 6) {
-            Image(systemName: node.isFolder ? "folder" : "globe")
-                .foregroundStyle(node.change == .unchanged ? Color.secondary : node.change.tint)
-                .frame(width: 16)
-            Text(node.title.isEmpty ? (node.url ?? "") : node.title)
-                .strikethrough(node.change == .removed)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            if node.change != .unchanged {
-                Text(node.change.label(langBundle.bundle))
+    private func browserIcons(_ browsers: [Browser], size: CGFloat = 16) -> some View {
+        HStack(spacing: 2) {
+            ForEach(browsers, id: \.id) { browserIcon($0, size: size) }
+        }
+        .help(browsers.map(\.displayName).joined(separator: ", "))
+    }
+
+    @ViewBuilder
+    private func ignoreButton(visible: Bool, action: @escaping () -> Void) -> some View {
+        Button(String(localized: "Ignore", bundle: langBundle.bundle), action: action)
+            .buttonStyle(.borderless)
+            .font(.caption)
+            .help(String(localized: "Don't offer this change again unless it changes.", bundle: langBundle.bundle))
+            .opacity(visible ? 1 : 0)
+            .accessibilityHidden(!visible)
+    }
+
+    private func selectAllChanges() {
+        selectedNodeIds = Dictionary(uniqueKeysWithValues: reviewRoutes.map { route in
+            (route.id, Set(changeRows(for: route.preview).map(\.id)))
+        })
+    }
+
+    /// One line per change: path, title, URL. The change kind sits at the
+    /// top right, "Ignore" at the bottom right (on hover).
+    private func changeRow(_ item: BookmarkChangeRow, routeId: String) -> some View {
+        let displayTitle: (BookmarkReviewNode) -> String = { $0.title.isEmpty ? ($0.url ?? "") : $0.title }
+        let path: String? = {
+            if item.change == .moved, let before = item.beforePath, let after = item.afterPath, before != after {
+                return "\(before)  →  \(after)"
+            }
+            return item.afterPath ?? item.beforePath
+        }()
+        let title: String = {
+            if item.change == .modified, let before = item.before, let after = item.after {
+                return "\(displayTitle(before))  →  \(displayTitle(after))"
+            }
+            return displayTitle(item.node)
+        }()
+        return HStack(alignment: .center, spacing: 10) {
+            Toggle("", isOn: Binding(
+                get: { selectedNodeIds[routeId, default: []].contains(item.id) },
+                set: { selected in
+                    if selected { selectedNodeIds[routeId, default: []].insert(item.id) }
+                    else { selectedNodeIds[routeId, default: []].remove(item.id) }
+                }
+            ))
+            .labelsHidden()
+            Image(systemName: item.node.isFolder ? "folder" : "bookmark")
+                .foregroundStyle(item.change.tint)
+                .frame(width: 18)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if let path {
+                    Text(path).font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+                Text(title).fontWeight(.medium)
+                    .lineLimit(1).truncationMode(.tail)
+                    .layoutPriority(1)
+                if let url = item.node.url {
+                    Text(url).font(.caption2).foregroundStyle(.tertiary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+            }
+            .help([path, title, item.node.url].compactMap { $0 }.joined(separator: "\n"))
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(item.change.label(langBundle.bundle))
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(node.change.tint)
+                    .foregroundStyle(item.change.tint)
+                if let onIgnoreRow {
+                    ignoreButton(visible: hoveredItem == routeId + "|" + item.id) {
+                        hiddenRows[routeId, default: []].insert(item.id)
+                        selectedNodeIds[routeId, default: []].remove(item.id)
+                        onIgnoreRow(routeId, item.id)
+                    }
+                }
+            }
+            .fixedSize()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(item.change.tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+        .contentShape(Rectangle())
+        .onHover { inside in
+            if inside { hoveredItem = routeId + "|" + item.id }
+            else if hoveredItem == routeId + "|" + item.id { hoveredItem = nil }
+        }
+    }
+
+    private func conflictRow(_ conflict: BookmarkConflict, routeId: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                Text(String(localized: "Bookmark Conflict", bundle: langBundle.bundle))
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                if let onIgnoreConflict {
+                    ignoreButton(visible: hoveredItem == "conflict|" + conflict.id) {
+                        hiddenConflicts.insert(conflict.id)
+                        conflictChoices[routeId]?.removeValue(forKey: conflict.id)
+                        onIgnoreConflict(conflict.id)
+                    }
+                }
+            }
+            HStack(spacing: 8) {
+                if !conflict.sourceBrowsers.isEmpty { browserIcons(conflict.sourceBrowsers) }
+                Text(conflict.source.title).fontWeight(.medium)
+                Text("↔").fontWeight(.medium)
+                if !conflict.targetBrowsers.isEmpty { browserIcons(conflict.targetBrowsers) }
+                Text(conflict.target.title).fontWeight(.medium)
+            }
+            let sourceURL = conflict.source.url.flatMap { $0 }
+            let targetURL = conflict.target.url.flatMap { $0 }
+            if let url = sourceURL ?? targetURL {
+                Text(url).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            HStack(spacing: 8) {
+                conflictChoiceButton(
+                    String(format: String(localized: "Keep %@", bundle: langBundle.bundle), conflict.sourceLabel ?? conflict.source.sourceBrowser.displayName),
+                    choice: .source, conflict: conflict, routeId: routeId, browsers: conflict.sourceBrowsers
+                )
+                conflictChoiceButton(
+                    String(format: String(localized: "Keep %@", bundle: langBundle.bundle), conflict.targetLabel ?? conflict.target.sourceBrowser.displayName),
+                    choice: .target, conflict: conflict, routeId: routeId, browsers: conflict.targetBrowsers
+                )
+                conflictChoiceButton(
+                    String(localized: "Keep Both", bundle: langBundle.bundle),
+                    choice: .both, conflict: conflict, routeId: routeId
+                )
             }
         }
-        .padding(.vertical, 2)
-        .padding(.horizontal, 6)
-        .background(node.change == .unchanged ? Color.clear : node.change.tint.opacity(0.15))
-        .clipShape(RoundedRectangle(cornerRadius: 4))
-        .help(node.url ?? node.title)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
+        .contentShape(Rectangle())
+        .onHover { inside in
+            if inside { hoveredItem = "conflict|" + conflict.id }
+            else if hoveredItem == "conflict|" + conflict.id { hoveredItem = nil }
+        }
     }
+
+    private func conflictChoiceButton(
+        _ title: String,
+        choice: BookmarkConflictResolution,
+        conflict: BookmarkConflict,
+        routeId: String,
+        browsers: [Browser] = []
+    ) -> some View {
+        let selected = conflictChoices[routeId]?[conflict.id] == choice
+        return Button {
+            conflictChoices[routeId, default: [:]][conflict.id] = choice
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                    .imageScale(.small)
+                if !browsers.isEmpty { browserIcons(browsers, size: 14) }
+                Text(title)
+            }
+            .foregroundStyle(selected ? Color.accentColor : Color.primary)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            selected ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.10),
+            in: Capsule()
+        )
+        .contentShape(Capsule())
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
 }
 
 private extension BookmarkReviewNode.Change {
+    var order: Int {
+        switch self { case .removed: 0; case .moved: 1; case .reordered: 2; case .modified: 3; case .added: 4; case .unchanged: 5 }
+    }
     var tint: Color {
         switch self {
         case .unchanged: return .primary
         case .added: return .green
         case .removed: return .red
-        case .moved: return .orange
+        case .moved, .reordered: return .orange
         case .modified: return .blue
         }
     }
@@ -221,6 +469,7 @@ private extension BookmarkReviewNode.Change {
         case .added: return String(localized: "Added", bundle: bundle)
         case .removed: return String(localized: "Removed", bundle: bundle)
         case .moved: return String(localized: "Moved", bundle: bundle)
+        case .reordered: return String(localized: "Reordered", bundle: bundle)
         case .modified: return String(localized: "Modified", bundle: bundle)
         }
     }
@@ -239,29 +488,29 @@ final class BookmarkChangeReviewWindowController: NSObject, NSWindowDelegate {
     /// Safari, "to:<ID>" for a write into that browser.
     func present(
         clientId: String,
-        destination: BookmarkReviewDestination,
-        impact: SafariBookmarkService.WriteImpact,
-        preview: BookmarkChangePreview,
+        reviewRoutes: [BookmarkReviewRoute],
         activate: Bool = true,
-        onApply: @escaping () -> Void,
-        onKeep: @escaping () -> Void
+        onApplySelected: @escaping ([String: Set<String>], [String: [String: BookmarkConflictResolution]]) -> Void,
+        onCancel: @escaping () -> Void,
+        onIgnoreRow: ((String, String) -> Void)? = nil,
+        onIgnoreConflict: ((String) -> Void)? = nil
     ) {
         let langBundle = LanguageBundle(language: AppState.shared.settingsService.general.language)
         let view = BookmarkChangeReviewView(
-            destination: destination,
-            impact: impact,
-            preview: preview,
+            reviewRoutes: reviewRoutes,
             // The decision runs after the button action has returned: it may
             // close this window or present the next review in it, which must
             // not tear down the hosting view while SwiftUI is still in the action.
-            onApply: { [weak self] in
+            onApplySelected: { [weak self] selection, conflicts in
                 self?.dismiss()
-                DispatchQueue.main.async { onApply() }
+                DispatchQueue.main.async { onApplySelected(selection, conflicts) }
             },
-            onKeep: { [weak self] in
+            onCancel: { [weak self] in
                 self?.dismiss()
-                DispatchQueue.main.async { onKeep() }
-            }
+                DispatchQueue.main.async { onCancel() }
+            },
+            onIgnoreRow: onIgnoreRow,
+            onIgnoreConflict: onIgnoreConflict
         )
         .environmentObject(langBundle)
 

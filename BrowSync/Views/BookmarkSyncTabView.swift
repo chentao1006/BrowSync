@@ -37,7 +37,6 @@ struct BookmarkSyncTabView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var backupService: BackupService
     @EnvironmentObject var langBundle: LanguageBundle
-    @State private var isSyncing = false
     @State private var showSuccess = false
     @State private var showUpgradeAlert = false
     @State private var showSandboxAlert = false
@@ -90,15 +89,14 @@ struct BookmarkSyncTabView: View {
                 
                 Button {
                     Task {
-                        isSyncing = true
                         await appState.sync(categories: [.bookmarks])
-                        isSyncing = false
+                        guard !appState.syncService.lastManualSyncWasCancelled else { return }
                         showSuccess = true
                         try? await Task.sleep(nanoseconds: 2_000_000_000)
                         showSuccess = false
                     }
                 } label: {
-                    if isSyncing || appState.syncService.isSyncing {
+                    if appState.syncService.isSyncing {
                         HStack(spacing: 6) {
                             ProgressView().controlSize(.small)
                             Text(String(localized: "Syncing...", bundle: langBundle.bundle))
@@ -111,11 +109,27 @@ struct BookmarkSyncTabView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(showSuccess ? .green : .accentColor)
-                .disabled(isSyncing || appState.syncService.isSyncing || showSuccess || !syncSettings.enabledCategories.wrappedValue.contains(.bookmarks))
+                .disabled(appState.syncService.isSyncing || showSuccess || !syncSettings.enabledCategories.wrappedValue.contains(.bookmarks))
             }
             .padding()
 
             Form {
+                if !appState.pendingBookmarkReviewClientIds.isEmpty {
+                    Section {
+                        HStack(spacing: 10) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                            Text(String(localized: "Review Bookmark Changes", bundle: langBundle.bundle))
+                                .fontWeight(.semibold)
+                            Spacer()
+                            Button(String(localized: "Review", bundle: langBundle.bundle)) {
+                                appState.syncService.presentPendingBookmarkReview(
+                                    preferredKey: appState.pendingBookmarkReviewClientIds.first
+                                )
+                            }
+                        }
+                    }
+                }
                 bookmarkBackupWarningSection
                 participatingBrowsersSection
                 syncStrategySection
@@ -215,8 +229,45 @@ struct BookmarkSyncTabView: View {
         Section(String(localized: "Sync Strategy", bundle: langBundle.bundle)) {
             bookmarkStrategyPicker
             oneWaySourcePicker
+            safeModeToggle
             syncFolderRow
             autoSyncToggle
+            ignoredChangesRow
+        }
+    }
+
+    @ViewBuilder
+    private var ignoredChangesRow: some View {
+        let count = appState.syncService.ignoredBookmarkChanges.count
+        if count > 0 {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(String(localized: "Ignored Bookmark Changes", bundle: langBundle.bundle))
+                    Text(String(format: String(localized: "%d ignored changes are not offered again until they change.", bundle: langBundle.bundle), count))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(String(localized: "Restore All", bundle: langBundle.bundle)) {
+                    appState.syncService.clearIgnoredBookmarkChanges()
+                }
+            }
+        }
+    }
+
+    private var safeModeToggle: some View {
+        Toggle(isOn: syncSettings.bookmarkSafeMode) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(String(localized: "Safe Mode", bundle: langBundle.bundle))
+                Text(String(localized: "Review every bookmark change before it is applied.", bundle: langBundle.bundle))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .onChange(of: syncSettings.bookmarkSafeMode.wrappedValue) { _ in
+            appState.settingsService.save()
+            appState.syncService.discardStalePendingSafariWrites()
+            appState.broadcastSettings()
         }
     }
 
@@ -317,7 +368,7 @@ struct BookmarkSyncTabView: View {
     private var recentBackupsSection: some View {
         Section {
             HStack {
-                Text(String(localized: "A complete copy of each source folder is saved before it is synchronized. The latest 30 backups are kept.", bundle: langBundle.bundle))
+                Text(String(localized: "A complete copy of every changed source and destination folder is saved before synchronization. Backups are kept for 7 days.", bundle: langBundle.bundle))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -843,12 +894,17 @@ struct RecentBookmarkBackupsWindow: View {
             guard bookmark.isFolder || url != nil else { return nil }
             return SyncBookmark(id: bookmark.id, title: bookmark.title, url: url, parentId: bookmark.parentId, isFolder: bookmark.isFolder, sortIndex: bookmark.sortIndex, inBookmarksBar: bookmark.inBookmarksBar ?? false, dateAdded: bookmark.dateAdded)
         }
-        // Reviewed like any large write; held restores open the review window.
-        let appliedToSafari = appState.syncService.applyRestoreToSafari(syncBookmarks, replacing: replacing)
+        // The restore confirmation above is the user's approval. Do not ask a
+        // second time in Safe Mode; hard write policy and verification remain.
+        let appliedToSafari = appState.syncService.applyRestoreToSafari(
+            syncBookmarks,
+            replacing: replacing,
+            skipDuplicateReview: true
+        )
 
         var message = WSMessage(type: .sync, site: "*", category: "bookmarks", payload: .bookmarks(restoreSource), messageId: UUID().uuidString, timestamp: Date().timeIntervalSince1970)
         message.isFullMirror = replacing
-        // Routed so a large restore held by a browser's extension is reviewed.
+        message.isExplicitBookmarkRestore = true
         appState.syncService.broadcastBookmarkSync(message)
         guard appliedToSafari else { return }
         let itemCounts = backupItemCounts(backup.bookmarks)
@@ -895,7 +951,6 @@ struct RecentlyDeletedBookmarksWindow: View {
     @State private var itemToDelete: DeletedBookmark?
     @State private var showingDeleteConfirmation = false
     @State private var showingClearAllConfirmation = false
-    @State private var showingRestoreAllConfirmation = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -930,7 +985,7 @@ struct RecentlyDeletedBookmarksWindow: View {
                                 .foregroundStyle(.secondary)
                             Spacer()
                             Button(String(localized: "Restore All", bundle: langBundle)) {
-                                showingRestoreAllConfirmation = true
+                                restoreAllBookmarks()
                             }
                             .buttonStyle(.plain)
                             .foregroundColor(.accentColor)
@@ -948,9 +1003,7 @@ struct RecentlyDeletedBookmarksWindow: View {
                             HStack {
                                 VStack(alignment: .leading) {
                                     HStack(spacing: 6) {
-                                        Image(systemName: deletedItemIconName(for: item))
-                                            .foregroundStyle(item.isFolder ? .orange : .accentColor)
-                                            .accessibilityLabel(deletedItemTypeTitle(for: item))
+                                        deletedItemIcon(for: item)
                                         Text(item.title)
                                             .font(.headline)
                                     }
@@ -965,11 +1018,24 @@ struct RecentlyDeletedBookmarksWindow: View {
 
                                 Spacer()
 
-                                Button(String(localized: "Restore", bundle: langBundle)) {
-                                    restoreBookmark(item)
+                                if item.browsers.count == 1, let browser = item.browsers.first {
+                                    Button(String(format: String(localized: "Restore to %@", bundle: langBundle), browser.displayName)) {
+                                        restoreBookmark(item, to: browser)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .tint(.orange)
+                                } else {
+                                    Menu(String(localized: "Restore to…", bundle: langBundle)) {
+                                        ForEach(item.browsers.sorted { $0.displayName < $1.displayName }, id: \.self) { browser in
+                                            Button(String(format: String(localized: "Restore to %@", bundle: langBundle), browser.displayName)) {
+                                                restoreBookmark(item, to: browser)
+                                            }
+                                        }
+                                    }
+                                    .menuStyle(.borderlessButton)
+                                    .fixedSize()
+                                    .tint(.orange)
                                 }
-                                .buttonStyle(.bordered)
-                                .tint(.orange)
 
                                 Button {
                                     itemToDelete = item
@@ -1024,17 +1090,6 @@ struct RecentlyDeletedBookmarksWindow: View {
         } message: {
             Text(String(localized: "Are you sure you want to permanently delete all bookmarks in the trash bin?", bundle: langBundle))
         }
-        .alert(
-            String(localized: "Confirm Restore All", bundle: langBundle),
-            isPresented: $showingRestoreAllConfirmation
-        ) {
-            Button(String(localized: "Restore All", bundle: langBundle)) {
-                restoreAllBookmarks()
-            }
-            Button(String(localized: "Cancel", bundle: langBundle), role: .cancel) {}
-        } message: {
-            Text(String(localized: "Are you sure you want to restore all bookmarks from the trash bin?", bundle: langBundle))
-        }
     }
 
     private func flattenDeletedBookmark(_ item: DeletedBookmark) -> [SyncBookmark] {
@@ -1051,6 +1106,26 @@ struct RecentlyDeletedBookmarksWindow: View {
         item.isFolder ? "folder.fill" : "bookmark.fill"
     }
 
+    private func deletedItemIcon(for item: DeletedBookmark) -> some View {
+        ZStack(alignment: .bottomTrailing) {
+            Image(systemName: deletedItemIconName(for: item))
+                .font(.system(size: 20))
+                .foregroundStyle(item.isFolder ? .orange : .accentColor)
+            HStack(spacing: -4) {
+                ForEach(Array(item.browsers.sorted { $0.displayName < $1.displayName }.prefix(3)), id: \.self) { browser in
+                    AppIconImage(appURL: appState.browserInfos.first(where: { $0.browser == browser })?.appURL ?? browser.appURL, size: 11)
+                        .padding(1)
+                        .background(.background, in: Circle())
+                        .overlay(Circle().stroke(.background, lineWidth: 1))
+                }
+            }
+            .offset(x: 7, y: 5)
+        }
+        .frame(width: 28, height: 25)
+        .accessibilityLabel(deletedItemTypeTitle(for: item))
+        .accessibilityValue(item.browsers.map(\.displayName).sorted().joined(separator: ", "))
+    }
+
     private func deletedItemTypeTitle(for item: DeletedBookmark) -> String {
         String(localized: item.isFolder ? "Folder" : "Bookmark", bundle: langBundle)
     }
@@ -1063,7 +1138,8 @@ struct RecentlyDeletedBookmarksWindow: View {
     }
 
     private func restoreAllBookmarks() {
-        guard SandboxAccessManager.shared.hasSafariAccess else {
+        let targets = Set(backupService.deletedBookmarks.flatMap(\.browsers))
+        guard !targets.contains(.safari) || SandboxAccessManager.shared.hasSafariAccess else {
             SandboxAccessManager.shared.requestSafariAccess { granted in
                 if granted {
                     appState.syncService.startSafariBookmarkMonitor()
@@ -1072,91 +1148,25 @@ struct RecentlyDeletedBookmarksWindow: View {
             }
             return
         }
-        let safariSvc = SafariBookmarkService()
-        var currentSafariBookmarks = safariSvc.readBookmarks()
-
-        for item in backupService.deletedBookmarks {
-            let newBookmarks = flattenDeletedBookmark(item)
-            currentSafariBookmarks.append(contentsOf: newBookmarks)
+        for browser in targets {
+            let items = backupService.deletedBookmarks.filter { $0.browsers.contains(browser) }
+            let bookmarks = items.flatMap(flattenDeletedBookmark)
+            appState.syncService.restoreDeletedBookmarks(bookmarks, to: [browser])
         }
-
-        appState.syncService.recordInternalWrite()
-        // Reviewed like any large write (an additive restore rarely is).
-        let appliedToSafari = appState.syncService.applyRestoreToSafari(currentSafariBookmarks, replacing: false)
-
-        var restoredItems: [SyncBookmark] = []
-        for item in backupService.deletedBookmarks {
-            restoredItems.append(contentsOf: flattenDeletedBookmark(item))
-        }
-        let broadcastBookmarks = restoredItems.map { b in
-            Bookmark(
-                id: b.id,
-                title: b.title,
-                url: b.url,
-                parentId: b.parentId,
-                isFolder: b.isFolder,
-                inBookmarksBar: b.inBookmarksBar,
-                dateAdded: Date(),
-                sourceBrowser: .safari
-            )
-        }
-        let msg = WSMessage(
-            type: .sync,
-            site: "*",
-            category: "bookmarks",
-            payload: .bookmarks(broadcastBookmarks),
-            messageId: UUID().uuidString,
-            timestamp: Date().timeIntervalSince1970
-        )
-        appState.syncService.broadcastBookmarkSync(msg)
-
-        // Kept in the trash while the restore awaits review (or was kept out).
-        if appliedToSafari { backupService.clearAllDeletedBookmarks() }
     }
 
-    private func restoreBookmark(_ item: DeletedBookmark) {
-        guard SandboxAccessManager.shared.hasSafariAccess else {
+    private func restoreBookmark(_ item: DeletedBookmark, to browser: Browser) {
+        guard browser != .safari || SandboxAccessManager.shared.hasSafariAccess else {
             SandboxAccessManager.shared.requestSafariAccess { granted in
                 if granted {
                     appState.syncService.startSafariBookmarkMonitor()
-                    DispatchQueue.main.async { self.restoreBookmark(item) }
+                    DispatchQueue.main.async { self.restoreBookmark(item, to: browser) }
                 }
             }
             return
         }
-        let safariSvc = SafariBookmarkService()
-        var currentSafariBookmarks = safariSvc.readBookmarks()
-
         let newBookmarks = flattenDeletedBookmark(item)
-        currentSafariBookmarks.append(contentsOf: newBookmarks)
-
-        appState.syncService.recordInternalWrite()
-        // Reviewed like any large write (an additive restore rarely is).
-        let appliedToSafari = appState.syncService.applyRestoreToSafari(currentSafariBookmarks, replacing: false)
-
-        let broadcastBookmarks = newBookmarks.map { b in
-            Bookmark(
-                id: b.id,
-                title: b.title,
-                url: b.url,
-                parentId: b.parentId,
-                isFolder: b.isFolder,
-                inBookmarksBar: b.inBookmarksBar,
-                dateAdded: Date(),
-                sourceBrowser: .safari
-            )
-        }
-        let msg = WSMessage(
-            type: .sync,
-            site: "*",
-            category: "bookmarks",
-            payload: .bookmarks(broadcastBookmarks),
-            messageId: UUID().uuidString,
-            timestamp: Date().timeIntervalSince1970
-        )
-        appState.syncService.broadcastBookmarkSync(msg)
-
-        if appliedToSafari { backupService.removeDeletedBookmark(id: item.id) }
+        _ = appState.syncService.restoreDeletedBookmarks(newBookmarks, to: [browser])
     }
 }
 

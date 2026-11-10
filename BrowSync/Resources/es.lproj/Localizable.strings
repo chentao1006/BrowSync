@@ -194,6 +194,9 @@
 
 "Bookmark Sync Title" = "Sincronización de marcadores";
 "Enable Bookmark Sync" = "Habilitar sincronización de marcadores";
+"Safe Mode — review every bookmark change" = "Modo seguro: revisar cada cambio de marcadores";
+"Safe Mode" = "Modo seguro";
+"Review every bookmark change before it is applied." = "Revisar cada cambio de marcadores antes de aplicarlo.";
 "Sync Strategy" = "Estrategia de sincronización";
 "Bookmark Strategy" = "Estrategia predeterminada";
 "Bookmark Source Browser" = "Navegador de origen";
@@ -385,6 +388,7 @@
 "Deleted Bookmarks (Trash Bin)" = "Marcadores eliminados recientemente";
 "No deleted bookmarks" = "No hay marcadores eliminados";
 "These bookmarks were deleted recently. You can restore them individually." = "Estos marcadores se eliminaron recientemente. Puedes restaurarlos individualmente.";
+"Deleted from %@" = "Eliminado de %@";
 "Clear All" = "Borrar todo";
 "Delete Permanently" = "Eliminar permanentemente";
 "This deleted bookmark will be permanently removed from the trash bin." = "Este marcador eliminado se quitara permanentemente de la papelera.";
@@ -556,9 +560,15 @@
 
 "Syncing from %@ would remove %d, move %d and modify %d existing Safari bookmarks. Nothing was changed — click to review." = "La sincronización desde %@ eliminaría %d, movería %d y modificaría %d marcadores existentes de Safari. No se ha cambiado nada: haz clic para revisarlo.";
 "Syncing from %@ would remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet." = "La sincronización desde %@ eliminaría %d, movería %d y modificaría %d de %d marcadores existentes de Safari. Todavía no se ha escrito nada.";
+"Syncing from %@ would add %d, remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet." = "La sincronización desde %1$@ añadiría %2$d, eliminaría %3$d, movería %4$d y modificaría %5$d de %6$d marcadores existentes de Safari. Todavía no se ha escrito nada.";
 "Modified" = "Modificado";
 
 "Review Blocked Bookmark Changes" = "Revisar cambios de marcadores bloqueados";
+"Bookmark Conflict" = "Conflicto de marcadores";
+"These bookmarks use the same location but differ. Choose which version to keep before syncing." = "Estos marcadores están en la misma ubicación pero son distintos. Elige la versión que quieres conservar antes de sincronizar.";
+"“%@” and “%@” use the same location but differ. Choose which version to keep before syncing." = "“%@” y “%@” están en la misma ubicación pero son distintos. Elige la versión que quieres conservar antes de sincronizar.";
+"Keep %@" = "Conservar %@";
+"Keep Both" = "Conservar ambos";
 
 "Keeping Safari as is also brings the other browsers back to Safari's bookmarks." = "Si mantienes Safari como está, los demás navegadores también volverán a tener los marcadores de Safari.";
 
@@ -566,9 +576,18 @@
 "Keeping Safari as is pauses later bookmark changes from this browser until you resume them from the menu bar." = "Si mantienes Safari como está, los siguientes cambios de marcadores de este navegador se pausarán hasta que los reanudes desde la barra de menús.";
 
 "Syncing would remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet." = "La sincronización eliminaría %d, movería %d y modificaría %d de %d marcadores existentes en %@. Todavía no se ha escrito nada.";
+"Syncing would add %d, remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet." = "La sincronización añadiría %1$d, eliminaría %2$d, movería %3$d y modificaría %4$d de %5$d marcadores existentes en %6$@. Todavía no se ha escrito nada.";
 "Syncing would remove %d, move %d and modify %d existing bookmarks in %@. Nothing was changed — click to review." = "La sincronización eliminaría %d, movería %d y modificaría %d marcadores existentes en %@. No se ha cambiado nada: haz clic para revisarlo.";
 "%@ Now" = "%@ ahora";
 "Keep %@ As Is" = "Mantener %@ como está";
+"Skip This Destination (%@)" = "Omitir este destino (%@)";
+"This destination would add %d, remove %d, move %d and modify %d bookmarks. Nothing has been written yet." = "En este destino se añadirían %d marcadores, se eliminarían %d, se moverían %d y se modificarían %d. Aún no se ha escrito ningún cambio.";
+"%d destinations awaiting review" = "%d destinos pendientes de revisión";
+"Across %d destinations, this sync would add %d, remove %d, move %d and modify %d bookmarks. Nothing has been written yet." = "En %d destinos, esta sincronización añadiría %d marcadores, eliminaría %d, movería %d y modificaría %d. Aún no se ha escrito ningún cambio.";
+"Skip All Destinations" = "Omitir todos los destinos";
+"Apply All Changes" = "Aplicar todos los cambios";
+"Cancel This Sync" = "Cancelar esta sincronización";
+"Apply Selected Changes" = "Aplicar cambios seleccionados";
 "Keeping %@ as is pauses later bookmark changes to it until you resume them from the menu bar." = "Si mantienes %@ como está, los siguientes cambios de marcadores para este navegador se pausarán hasta que los reanudes desde la barra de menús.";
 "Resume Bookmark Sync to %@" = "Reanudar la sincronización de marcadores hacia %@";
 
@@ -598,3 +617,14 @@
 "Only allow this request if you just enabled BrowSync in your browser. The extension can use your enabled sync features. Your choice is remembered on this Mac for future connections." = "Permite solo si acabas de activar BrowSync en el navegador. La extensión puede usar las funciones de sincronización activadas. Este Mac recordará tu elección para futuras conexiones.";
 "Don't Allow" = "No permitir";
 "Allow Connection" = "Permitir conexión";
+"Restore to %@" = "Restaurar en %@";
+"Restore to…" = "Restaurar en…";
+"%@ → %@: add %d, remove %d, move %d and modify %d. Nothing was changed — click to review." = "%@ → %@: añadir %d, eliminar %d, mover %d y modificar %d. No se cambió nada; haz clic para revisar.";
+"A complete copy of every changed source and destination folder is saved before synchronization. Backups are kept for 7 days." = "Antes de sincronizar se guarda una copia completa de cada carpeta de origen y destino modificada. Las copias se conservan durante 7 días.";
+"Reordered" = "Reordenado";
+"Across %d destinations, this sync would add %d, remove %d, move %d, reorder %d and modify %d bookmarks. Nothing has been written yet." = "En %d destinos, esta sincronización añadiría %d, eliminaría %d, movería %d, reordenaría %d y modificaría %d marcadores. Aún no se ha escrito ningún cambio.";
+"Ignore" = "Ignorar";
+"Don't offer this change again unless it changes." = "No volver a ofrecer este cambio a menos que cambie.";
+"Ignored Bookmark Changes" = "Cambios de marcadores ignorados";
+"%d ignored changes are not offered again until they change." = "%d cambios ignorados no se volverán a ofrecer hasta que cambien.";
+"Review" = "Revisar";

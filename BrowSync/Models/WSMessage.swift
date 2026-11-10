@@ -33,12 +33,31 @@ struct WSMessage: Codable {
     var error: String?
     var isFullMirror: Bool?
     var targetBookmarkFolder: String?
+    /// The user explicitly chose Restore in Recently Deleted. The restore
+    /// action itself is approval for this additive operation, so the app must
+    /// not open a second Safe Mode review. Hard write policy and post-write
+    /// verification still apply.
+    var isExplicitDeletedBookmarkRestore: Bool?
+    /// The user explicitly confirmed a history/backup restore. This is also a
+    /// complete approval for that restore plan and must not open Safe Mode a
+    /// second time. Hard authorization and result verification still apply.
+    var isExplicitBookmarkRestore: Bool?
+    /// Per-dispatch safety policy. Extensions prefer these values over cached
+    /// settings so propagation delay cannot bypass a newly enabled guard.
+    var bookmarkSyncEnabled: Bool?
+    var bookmarkSafeMode: Bool?
+    var bookmarkWriteAllowed: Bool?
+    var bookmarkSyncStrategy: String?
+    var bookmarkSourceBrowser: String?
     /// Set when re-sending a bookmark sync the user approved after review: the
     /// receiving extension writes it only if its dry run yields exactly the
     /// reviewed plan (this signature).
     var approvedPlanSignature: String?
+    /// Node IDs selected in the review. Nil means no subset approval; an
+    /// approved message always carries this explicitly.
+    var approvedBookmarkNodeIds: [String]?
     /// Sent with `register`: features this extension build supports
-    /// (e.g. "bookmarkPlan" — reviewed full syncs and removal batches).
+    /// (e.g. "bookmarkExecutorV2" — native snapshot + validated operation replay).
     var capabilities: [String]?
 
     // MARK: Factory Methods

@@ -20,7 +20,15 @@ struct ContentView: View {
                     Label(String(localized: "Link Router", bundle: langBundle.bundle), systemImage: "link")
                 }
                 NavigationLink(value: AppTab.bookmarkSync) {
-                    Label(String(localized: "Bookmark Sync", bundle: langBundle.bundle), systemImage: "bookmark")
+                    HStack {
+                        Label(String(localized: "Bookmark Sync", bundle: langBundle.bundle), systemImage: "bookmark")
+                        if !appState.pendingBookmarkReviewClientIds.isEmpty {
+                            Spacer()
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .foregroundStyle(.orange)
+                                .accessibilityLabel(String(localized: "Review Bookmark Changes", bundle: langBundle.bundle))
+                        }
+                    }
                 }
                 NavigationLink(value: AppTab.stateSync) {
                     Label(String(localized: "State Sync", bundle: langBundle.bundle), systemImage: "arrow.triangle.2.circlepath")

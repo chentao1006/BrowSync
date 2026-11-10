@@ -228,6 +228,9 @@
 /* BookmarkSyncTabView */
 "Bookmark Sync Title" = "书签同步";
 "Enable Bookmark Sync" = "开启书签同步";
+"Safe Mode — review every bookmark change" = "安全模式——每次书签变更均需审核";
+"Safe Mode" = "安全模式";
+"Review every bookmark change before it is applied." = "每次书签变更均在应用前审核。";
 "Sync Strategy" = "同步策略选择";
 "Bookmark Strategy" = "默认策略";
 "Bookmark Source Browser" = "数据源浏览器";
@@ -412,6 +415,7 @@
 "Deleted Bookmarks (Trash Bin)" = "最近删除的书签";
 "No deleted bookmarks" = "回收站为空";
 "These bookmarks were deleted recently. You can restore them individually." = "以下是最近被删除的书签。你可以单独恢复它们。";
+"Deleted from %@" = "删除来源：%@";
 "Clear All" = "清空回收站";
 "Delete Permanently" = "彻底删除";
 "This deleted bookmark will be permanently removed from the trash bin." = "此书签将从回收站彻底移除，无法再恢复。";
@@ -618,9 +622,15 @@
 
 "Syncing from %@ would remove %d, move %d and modify %d existing Safari bookmarks. Nothing was changed — click to review." = "来自 %@ 的同步将删除 %d 个、移动 %d 个、修改 %d 个 Safari 现有书签。已暂停，未做任何更改——点击查看。";
 "Syncing from %@ would remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet." = "来自 %@ 的同步将删除 %d 个、移动 %d 个、修改 %d 个书签（Safari 现有 %d 个）。目前尚未写入任何更改。";
+"Syncing from %@ would add %d, remove %d, move %d and modify %d of %d existing Safari bookmarks. Nothing has been written yet." = "来自 %1$@ 的同步将新增 %2$d 个、删除 %3$d 个、移动 %4$d 个、修改 %5$d 个书签（Safari 现有 %6$d 个）。目前尚未写入任何更改。";
 "Modified" = "修改";
 
 "Review Blocked Bookmark Changes" = "查看被拦截的书签更改";
+"Bookmark Conflict" = "书签冲突";
+"These bookmarks use the same location but differ. Choose which version to keep before syncing." = "这些书签位于同一位置但内容不同。请在同步前选择要保留的版本。";
+"“%@” and “%@” use the same location but differ. Choose which version to keep before syncing." = "“%@” 与 “%@” 位于同一位置但内容不同。请在同步前选择要保留的版本。";
+"Keep %@" = "保留 %@";
+"Keep Both" = "都保留";
 
 "Keeping Safari as is also brings the other browsers back to Safari's bookmarks." = "选择保持 Safari 不变后，其他浏览器也会恢复为 Safari 的书签。";
 
@@ -628,9 +638,18 @@
 "Keeping Safari as is pauses later bookmark changes from this browser until you resume them from the menu bar." = "选择保持 Safari 不变后，来自该浏览器的后续书签更改将暂停同步，直到你在菜单栏中恢复。";
 
 "Syncing would remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet." = "同步将删除 %1$d 个、移动 %2$d 个、修改 %3$d 个书签（%5$@ 现有 %4$d 个）。目前尚未写入任何更改。";
+"Syncing would add %d, remove %d, move %d and modify %d of %d existing bookmarks in %@. Nothing has been written yet." = "同步将在 %6$@ 中新增 %1$d 个、删除 %2$d 个、移动 %3$d 个、修改 %4$d 个书签（现有 %5$d 个）。目前尚未写入任何更改。";
 "Syncing would remove %d, move %d and modify %d existing bookmarks in %@. Nothing was changed — click to review." = "同步将删除 %4$@ 中的 %1$d 个、移动 %2$d 个、修改 %3$d 个现有书签。已暂停，未做任何更改——点击查看。";
 "%@ Now" = "%@ 当前";
 "Keep %@ As Is" = "保持 %@ 不变";
+"Skip This Destination (%@)" = "跳过此目标（%@）";
+"This destination would add %d, remove %d, move %d and modify %d bookmarks. Nothing has been written yet." = "将向此目标新增 %d 个、删除 %d 个、移动 %d 个并修改 %d 个书签。目前尚未写入任何更改。";
+"%d destinations awaiting review" = "%d 个目标等待审核";
+"Across %d destinations, this sync would add %d, remove %d, move %d and modify %d bookmarks. Nothing has been written yet." = "本次同步涉及 %d 个目标，将新增 %d 个、删除 %d 个、移动 %d 个并修改 %d 个书签。目前尚未写入任何更改。";
+"Skip All Destinations" = "跳过所有目标";
+"Apply All Changes" = "应用全部更改";
+"Cancel This Sync" = "取消本次同步";
+"Apply Selected Changes" = "应用所选更改";
 "Keeping %@ as is pauses later bookmark changes to it until you resume them from the menu bar." = "选择保持 %@ 不变后，同步到该浏览器的后续书签更改将暂停，直到你在菜单栏中恢复。";
 "Resume Bookmark Sync to %@" = "恢复到 %@ 的书签同步";
 
@@ -660,3 +679,14 @@
 "Only allow this request if you just enabled BrowSync in your browser. The extension can use your enabled sync features. Your choice is remembered on this Mac for future connections." = "请仅在刚刚在浏览器中启用同览扩展时允许连接。此扩展可使用你已开启的同步功能。这台 Mac 会记住你的选择，之后自动连接。";
 "Don't Allow" = "不允许";
 "Allow Connection" = "允许连接";
+"Restore to %@" = "恢复到 %@";
+"Restore to…" = "恢复到…";
+"%@ → %@: add %d, remove %d, move %d and modify %d. Nothing was changed — click to review." = "%@ → %@：新增 %d 个、删除 %d 个、移动 %d 个、修改 %d 个。尚未写入任何更改，点击查看。";
+"A complete copy of every changed source and destination folder is saved before synchronization. Backups are kept for 7 days." = "同步前会保存每个已更改来源和目标文件夹的完整副本，备份保留 7 天。";
+"Reordered" = "排序";
+"Across %d destinations, this sync would add %d, remove %d, move %d, reorder %d and modify %d bookmarks. Nothing has been written yet." = "本次同步涉及 %d 个目标，将新增 %d 个、删除 %d 个、移动 %d 个、排序 %d 个并修改 %d 个书签。目前尚未写入任何更改。";
+"Ignore" = "忽略";
+"Don't offer this change again unless it changes." = "不再提示此更改，除非它再次变化。";
+"Ignored Bookmark Changes" = "已忽略的书签更改";
+"%d ignored changes are not offered again until they change." = "%d 条已忽略的更改在再次变化前不会再提示。";
+"Review" = "审核";

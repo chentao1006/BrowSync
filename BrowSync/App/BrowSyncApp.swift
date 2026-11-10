@@ -482,8 +482,16 @@ struct MenuBarLabelView: View {
     @EnvironmentObject var appState: AppState
 
     var body: some View {
-        Image("MenuBarIcon")
-            .renderingMode(.template)
+        ZStack(alignment: .topTrailing) {
+            Image("MenuBarIcon")
+                .renderingMode(.template)
+            if !appState.pendingBookmarkReviewClientIds.isEmpty {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.orange)
+                    .offset(x: 3, y: -3)
+            }
+        }
             .onAppear {
                 appState.openWindowAction = { id in
                     openWindow(id: id)
@@ -528,8 +536,8 @@ struct MenuBarView: View {
         // A held bookmark change stays reachable even after its window was
         // closed or its notification dismissed.
         if let clientId = appState.pendingBookmarkReviewClientIds.first {
-            Button(String(localized: "Review Blocked Bookmark Changes", bundle: langBundle.bundle)) {
-                appState.syncService.presentPendingSafariWrite(from: clientId)
+            Button(String(localized: "Review Bookmark Changes", bundle: langBundle.bundle)) {
+                appState.syncService.presentPendingBookmarkReview(preferredKey: clientId)
             }
         }
         // "Keep Safari As Is" pauses that browser's sync into Safari; this is

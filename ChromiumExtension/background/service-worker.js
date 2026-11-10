@@ -1,5 +1,3 @@
-import { BookmarkPlan, replayPlan, summarizePlan, requiresConfirmation, canonicalUrl } from './bookmark-plan.js';
-
 // service-worker.js — BrowSync Chromium Extension background service worker
 // Shared for Chrome, Arc, Edge, Brave
 // MV3 — persistent state in chrome.storage, heartbeat via chrome.alarms
@@ -232,7 +230,6 @@ async function connect() {
   if (isConnecting || (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN))) return;
   isConnecting = true;
 
-  ws = new WebSocket(DAEMON_URL);
   await chrome.storage.local.set({ wsState: 'connecting' }).catch(() => { });
   console.log('[BrowSync] Connecting to daemon... browser:', DETECTED_BROWSER);
 
@@ -252,9 +249,9 @@ async function connect() {
     isConnecting = false;
     await chrome.storage.local.set({ wsState: 'open' }).catch(() => { });
 
-    // "bookmarkPlan": incoming bookmark syncs and removal batches are dry-run
-    // and large ones held for review; the app sends removal batches only then.
-    send({ type: 'register', browser: DETECTED_BROWSER, instanceId: INSTANCE_ID, capabilities: ['bookmarkPlan'] });
+    // The app owns planning/review; this extension only snapshots, validates,
+    // executes explicit operations and verifies their actual result.
+    send({ type: 'register', browser: DETECTED_BROWSER, instanceId: INSTANCE_ID, capabilities: ['bookmarkExecutorV2'] });
     // Do not request an unscoped snapshot on every connection. It makes every
     // browser stream all cookies back to this worker; state is pulled only for
     // the site being opened or explicitly synced.
@@ -377,6 +374,9 @@ async function handleIncoming(message) {
           if (raw.routerEnabled !== undefined) settings.routerEnabled = raw.routerEnabled;
           if (raw.interfaceLanguage !== undefined) settings.interfaceLanguage = raw.interfaceLanguage;
           if (raw.bookmarkSyncEnabled !== undefined) settings.bookmarkSyncEnabled = raw.bookmarkSyncEnabled;
+          if (raw.bookmarkSyncStrategy !== undefined) settings.bookmarkSyncStrategy = raw.bookmarkSyncStrategy;
+          if (raw.bookmarkSourceBrowser !== undefined) settings.bookmarkSourceBrowser = raw.bookmarkSourceBrowser;
+          if (raw.bookmarkSafeMode !== undefined) settings.bookmarkSafeMode = raw.bookmarkSafeMode;
           if (raw.stateSyncEnabled !== undefined) settings.stateSyncEnabled = raw.stateSyncEnabled;
           if (raw.automaticSync !== undefined) settings.automaticSync = raw.automaticSync;
           if (raw.tabSharingEnabled !== undefined) settings.tabSharingEnabled = raw.tabSharingEnabled;
@@ -404,7 +404,7 @@ async function handleIncoming(message) {
       }
       break;
     case 'pull':
-      await handlePullRequest(message.category, message.site);
+      await handlePullRequest(message.category, message.site, message.payload?.raw || null);
       break;
     case 'ack':
       if (message.browser) {
@@ -432,19 +432,23 @@ async function applySync(message) {
   }
 
   switch (category) {
-    case 'bookmarks':
-      console.log(`[BrowSync] Applying ${(payload.bookmarks || []).length} bookmarks... isFullMirror: ${message.isFullMirror}`);
-      await applyBookmarkSync(payload.bookmarks || [], message.isFullMirror, message.targetBookmarkFolder || null, { messageId: message.messageId, approvedPlanSignature: message.approvedPlanSignature || null });
-      break;
-    case 'bookmarks_removed_batch':
-      await applyBookmarkRemovalBatch(payload.bookmarks || [], message.targetBookmarkFolder || null, { messageId: message.messageId, approvedPlanSignature: message.approvedPlanSignature || null });
-      break;
-    case 'bookmarks_removed':
-      // Sent one by one by older apps. Planned and reviewed like a batch (and
-      // queued behind other writes), never removed directly.
-      if (payload.bookmark) {
-        await applyBookmarkRemovalBatch([payload.bookmark], message.targetBookmarkFolder || null, { messageId: message.messageId });
+    case 'bookmark_apply_plan':
+      if (!(await mayExecuteAppBookmarkPlan(message))) {
+        send({ type: 'sync', browser: CURRENT_BROWSER_ID, category: 'bookmark_apply_result',
+          payload: { kind: 'raw', raw: { messageId: message.messageId || null, applied: false, verified: false,
+            writes: 0, error: 'bookmark write refused by extension safety policy' } },
+          messageId: crypto.randomUUID(), timestamp: Date.now() });
+        break;
       }
+      await executeAppBookmarkPlan(payload.raw || {}, message.messageId);
+      break;
+    case 'bookmarks':
+    case 'bookmarks_removed_batch':
+    case 'bookmarks_removed':
+      send({ type: 'sync', browser: CURRENT_BROWSER_ID, category: 'bookmark_apply_result',
+        payload: { kind: 'raw', raw: { messageId: message.messageId || null, applied: false, verified: false,
+          writes: 0, error: 'native app bookmark plan required' } },
+        messageId: crypto.randomUUID(), timestamp: Date.now() });
       break;
     case 'localStorage':
     case 'sessionStorage': {
@@ -493,6 +497,129 @@ async function applySync(message) {
       }
       break;
   }
+}
+
+const appBookmarkPlanInputs = new Map();
+
+async function mayExecuteAppBookmarkPlan(message) {
+  if (message.bookmarkSyncEnabled !== true || message.bookmarkWriteAllowed !== true) return false;
+  const explicitRestore = message.isExplicitDeletedBookmarkRestore === true || message.isExplicitBookmarkRestore === true;
+  const target = String(CURRENT_BROWSER_ID || DETECTED_BROWSER).split('-')[0].toLowerCase();
+  const source = String(message.bookmarkSourceBrowser || '').split('-')[0].toLowerCase();
+  if (!explicitRestore && message.bookmarkSyncStrategy === 'one_way' && source === target) return false;
+  const { appSettings = {} } = await chrome.storage.local.get('appSettings').catch(() => ({}));
+  if (appSettings.bookmarkSyncEnabled !== true) return false;
+  const participants = appSettings.bookmarkParticipatingBrowsers || {};
+  if (participants[target] !== true) return false;
+  const cachedSource = String(appSettings.bookmarkSourceBrowser || '').split('-')[0].toLowerCase();
+  if (!explicitRestore && appSettings.bookmarkSyncStrategy === 'one_way' && cachedSource === target) return false;
+  return true;
+}
+
+function bookmarkTreeFingerprint(tree) {
+  const rows = [];
+  const visit = nodes => (nodes || []).forEach((node, index) => {
+    rows.push([node.id, node.parentId || '', index, node.title || '', node.url || null]);
+    visit(node.children);
+  });
+  visit(tree);
+  return JSON.stringify(rows);
+}
+
+function bookmarkOutsideScopeFingerprint(tree, scopeRootId = null) {
+  const excluded = new Set(scopeRootId ? [scopeRootId] : [...rootRoleById.entries()].filter(([, role]) => role).map(([id]) => id));
+  const rows = [];
+  const visit = nodes => (nodes || []).forEach((node, index) => {
+    rows.push([node.id, node.parentId || '', index, node.title || '', node.url || null]);
+    if (!excluded.has(node.id)) visit(node.children);
+  });
+  visit(tree);
+  return JSON.stringify(rows);
+}
+
+function canonicalBookmarkURL(value) {
+  if (!value) return null;
+  try { return new URL(value).href; }
+  catch (_) { return String(value); }
+}
+
+async function executeAppBookmarkPlan(raw, messageId) {
+  const token = raw.inputToken;
+  const expected = appBookmarkPlanInputs.get(token);
+  const answer = (applied, verified, writes, failures = [], error = null, operationResults = []) => send({
+    type: 'sync', browser: CURRENT_BROWSER_ID, category: 'bookmark_apply_result',
+    payload: { kind: 'raw', raw: { messageId: messageId || null, applied, verified, writes, failures, error, operationResults } },
+    messageId: crypto.randomUUID(), timestamp: Date.now()
+  });
+  if (!expected) { answer(false, false, 0, [], 'stale or unknown app plan input'); return; }
+  await primaryRootsReady;
+  const before = await getTreeForRoots();
+  if (bookmarkTreeFingerprint(before) !== expected.full) {
+    appBookmarkPlanInputs.delete(token);
+    answer(false, false, 0, [], 'target bookmarks changed after preview');
+    return;
+  }
+  appBookmarkPlanInputs.delete(token);
+  const failures = [];
+  const createdIds = new Map();
+  const appliedOps = [];
+  const { syncIdMap = {} } = await chrome.storage.local.get('syncIdMap');
+  const real = id => createdIds.get(id) || id;
+  const selectedIds = Array.isArray(raw.selectedNodeIds) ? new Set(raw.selectedNodeIds) : null;
+  const operations = selectedIds ? (raw.operations || []).filter(op => selectedIds.has(op.id)) : (raw.operations || []);
+  for (const op of operations) {
+    try {
+      if (op.type === 'create') {
+        const created = await chrome.bookmarks.create({ parentId: real(op.parentId), index: op.index ?? undefined,
+          title: op.title || '', url: op.url || undefined });
+        createdIds.set(op.id, created.id);
+        if (op.sourceId) syncIdMap[op.sourceId] = created.id;
+      } else if (op.type === 'update') {
+        await chrome.bookmarks.update(real(op.id), { title: op.title, url: op.url ?? undefined });
+        if (op.sourceId) syncIdMap[op.sourceId] = real(op.id);
+      } else if (op.type === 'move') {
+        await chrome.bookmarks.move(real(op.id), { parentId: real(op.parentId), index: op.index ?? undefined });
+        if (op.sourceId) syncIdMap[op.sourceId] = real(op.id);
+      } else if (op.type === 'removeTree') {
+        try { await chrome.bookmarks.removeTree(real(op.id)); }
+        catch (_) { await chrome.bookmarks.remove(real(op.id)); }
+        if (op.sourceId) delete syncIdMap[op.sourceId];
+      }
+      appliedOps.push(op);
+    } catch (error) {
+      failures.push({ type: op.type, id: op.id, error: String(error?.message || error) });
+    }
+  }
+  const after = await getTreeForRoots().catch(() => null);
+  if (after && bookmarkOutsideScopeFingerprint(after, expected.scopeRootId) !== expected.outside) {
+    failures.push({ type: 'scope', id: expected.scopeRootId || 'synced-roots', error: 'bookmarks outside the selected scope changed' });
+  }
+  const operationResults = [];
+  if (after && !failures.length) {
+    for (const op of appliedOps) {
+      const id = real(op.id);
+      const actual = (await chrome.bookmarks.get(id).catch(() => []))[0];
+      operationResults.push({ type: op.type, id: op.id, actualId: id, exists: Boolean(actual),
+        parentId: actual?.parentId ?? null, index: actual?.index ?? null,
+        title: actual?.title ?? null, url: actual?.url ?? null });
+      if (op.type === 'removeTree' ? Boolean(actual) : !actual) {
+        failures.push({ type: op.type, id: op.id, error: 'post-write verification failed' });
+        continue;
+      }
+      if ((op.type === 'create' || op.type === 'update') &&
+          (actual.title !== (op.title || '') || canonicalBookmarkURL(actual.url) !== canonicalBookmarkURL(op.url))) {
+        failures.push({ type: op.type, id: op.id, error: 'post-write values differ' });
+      }
+      if ((op.type === 'create' || op.type === 'move') &&
+          (actual.parentId !== real(op.parentId) || (op.index != null && actual.index !== op.index))) {
+        failures.push({ type: op.type, id: op.id, error: 'post-write location differs' });
+      }
+    }
+  }
+  if (!failures.length) await chrome.storage.local.set({ syncIdMap });
+  answer(failures.length === 0, Boolean(after) && failures.length === 0,
+         operations.length - failures.length, failures,
+         failures.length ? 'one or more app-planned writes failed' : null, operationResults);
 }
 
 async function sendCookiesSnapshot(site) {
@@ -612,9 +739,49 @@ async function sendStorageSnapshot(storageType, site) {
   }
 }
 
-async function handlePullRequest(category, site) {
+async function handlePullRequest(category, site, requestRaw = null) {
   console.log('[BrowSync] Received pull request for:', category, site);
   switch (category) {
+    case 'bookmark_plan_context': {
+      if (!chrome.bookmarks) return;
+      await primaryRootsReady;
+      const tree = await getTreeForRoots();
+      refreshSystemRoots(tree);
+      const { syncIdMap = {} } = await chrome.storage.local.get('syncIdMap');
+      const targetFolder = requestRaw?.targetFolder || null;
+      const scopeFolder = targetFolder ? await findBookmarkFolderByPath(targetFolder) : null;
+      if (targetFolder && !scopeFolder) {
+        send({ type: 'sync', browser: CURRENT_BROWSER_ID, category: 'bookmark_plan_context',
+          payload: { kind: 'raw', raw: { requestId: requestRaw?.requestId || site || null,
+            error: 'target folder missing or ambiguous' } }, messageId: crypto.randomUUID(), timestamp: Date.now() });
+        break;
+      }
+      const nodes = [];
+      const visit = children => {
+        for (const [index, node] of (children || []).entries()) {
+          nodes.push({ id: node.id, title: node.title || '', url: node.url ?? null,
+            parentId: node.parentId ?? null, isFolder: !node.url, sortIndex: index,
+            dateAdded: node.dateAdded ?? null, sourceBrowser: CURRENT_BROWSER_ID });
+          visit(node.children);
+        }
+      };
+      for (const root of tree?.[0]?.children || []) {
+        if (rootRoleById.get(root.id)) {
+          nodes.push({ id: root.id, title: root.title || '', url: null,
+            parentId: root.parentId ?? null, isFolder: true, sortIndex: root.index ?? 0,
+            dateAdded: root.dateAdded ?? null, sourceBrowser: CURRENT_BROWSER_ID });
+          visit(root.children);
+        }
+      }
+      const inputToken = crypto.randomUUID();
+      appBookmarkPlanInputs.set(inputToken, { full: bookmarkTreeFingerprint(tree),
+        outside: bookmarkOutsideScopeFingerprint(tree, scopeFolder?.id || null), scopeRootId: scopeFolder?.id || null });
+      send({ type: 'sync', browser: CURRENT_BROWSER_ID, category: 'bookmark_plan_context',
+        payload: { kind: 'raw', raw: { requestId: requestRaw?.requestId || site || null, inputToken, nodes,
+          rootIds: { '1': localBarId, '2': localOtherId, '3': localMobileId || localOtherId },
+          sourceToNativeIds: syncIdMap, scopeRootId: scopeFolder?.id || null } }, messageId: crypto.randomUUID(), timestamp: Date.now() });
+      break;
+    }
     case 'bookmark_backup':
     case 'bookmarks': {
       if (!chrome.bookmarks) return;
@@ -1041,8 +1208,9 @@ async function findBookmarkFolderByPath(folderPath) {
   }
 
   for (const part of parts) {
-    current = candidates.find(node => !node.url && node.title === part);
-    if (!current) return null;
+    const matches = candidates.filter(node => !node.url && node.title === part);
+    if (matches.length !== 1) return null;
+    current = matches[0];
     candidates = await chrome.bookmarks.getChildren(current.id).catch(() => []);
   }
   return current;
@@ -1089,428 +1257,6 @@ async function isBookmarkEventInSelectedFolder(event = {}) {
     if (await isNodeInsideFolder(id, folder.id)) return true;
   }
   return false;
-}
-
-// options.messageId identifies the app's message (echoed in a held report);
-// options.approvedPlanSignature is set when the user approved a reviewed
-// change and the app re-sent it: only exactly that change is then written.
-async function applyBookmarkSync(bookmarks, isFullMirror = false, targetBookmarkFolder = null, options = {}) {
-  if (isApplyingSync) {
-    // Not dropped: the latest sync waits until the current write settles
-    // (dropping it could lose a re-sent, user-approved change).
-    queuedBookmarkSyncs.push(() => applyBookmarkSync(bookmarks, isFullMirror, targetBookmarkFolder, options));
-    return;
-  }
-  beginApplyingSync();
-  let heldForReview = false;
-  try {
-  if (!chrome.bookmarks) return;
-
-  console.log(`[BrowSync] applyBookmarkSync: ${bookmarks.length} bookmarks, isFullMirror=${isFullMirror}, targetBookmarkFolder=${targetBookmarkFolder || '(root)'}`);
-
-  // Ensure system roots are up to date
-  await primaryRootsReady;
-  let localTree = await getTreeForRoots();
-  let localRoots = refreshSystemRoots(localTree);
-  let targetRootId = null;
-  if (targetBookmarkFolder) {
-    const targetFolder = await findBookmarkFolderByPath(targetBookmarkFolder);
-    if (!targetFolder) {
-      console.warn(`[BrowSync] Selected bookmark folder no longer exists: ${targetBookmarkFolder}`);
-      send({
-        type: 'sync',
-        browser: CURRENT_BROWSER_ID,
-        category: 'bookmark_folder_missing',
-        payload: { kind: 'raw', raw: { folder: targetBookmarkFolder } },
-        messageId: crypto.randomUUID(),
-        timestamp: Date.now()
-      });
-      return;
-    }
-    targetRootId = targetFolder.id;
-  }
-
-  async function isInsideTargetFolder(nodeId) {
-    if (!targetRootId) return true;
-    let currentId = nodeId;
-    const seen = new Set();
-    while (currentId && !seen.has(currentId)) {
-      if (currentId === targetRootId) return true;
-      seen.add(currentId);
-      const nodes = await api.get(currentId).catch(() => []);
-      const node = nodes && nodes[0];
-      if (!node) return false;
-      currentId = node.parentId;
-    }
-    return false;
-  }
-
-  // Resolve roots once more, right before writing, so the root IDs and the
-  // synced-node gate below come from the same tree (the awaits above may
-  // have refreshed the globals from a newer one). Only nodes under synced
-  // roots may be adopted, moved or updated: a stale mapping into an unsynced
-  // root (e.g. the local twin after Chrome switched to account roots) must
-  // not drag local-only bookmarks into the account.
-  localTree = await getTreeForRoots();
-  localRoots = refreshSystemRoots(localTree);
-  const syncedIds = syncedNodeIds(localTree);
-  // Everything below runs against an in-memory copy first (dry run). The
-  // browser is only written by replaying the recorded plan, after the
-  // change was found small or was approved by the user as reviewed.
-  const plan = new BookmarkPlan(localTree);
-  const api = plan;
-
-  // Load persistent map of Safari ID -> Chrome ID to handle renames
-  const storageData = await chrome.storage.local.get('syncIdMap');
-  const syncIdMap = storageData.syncIdMap || {};
-  const idMap = new Map(Object.entries(syncIdMap));
-  
-  // Always enforce root mappings
-  idMap.set('1', localBarId);
-  idMap.set('2', localOtherId);
-  idMap.set('3', localMobileId);
-  idMap.set('0', '0');
-  idMap.set(null, localBarId);
-  idMap.set(undefined, localBarId);
-  idMap.set(localBarId, localBarId);
-  idMap.set(localOtherId, localOtherId);
-  idMap.set(localMobileId, localMobileId);
-
-  // Build a tree to process parents before children
-  const byParent = new Map();
-  const rootsBar = [];
-  const rootsOther = [];
-  const rootsMobile = [];
-
-  const ignoreIds = new Set(['0', '1', '2', '3', localBarId, localOtherId, localMobileId]);
-
-  for (const bm of bookmarks) {
-    if (ignoreIds.has(bm.id)) continue; // Defensively ignore system folders
-    
-    let effectiveParent = bm.parentId;
-    if (targetRootId && (!effectiveParent || effectiveParent === '1' || effectiveParent === '0' || effectiveParent === '2' || effectiveParent === '3' || effectiveParent === localBarId || effectiveParent === localOtherId || effectiveParent === localMobileId)) {
-      rootsBar.push(bm);
-    } else if (!effectiveParent || effectiveParent === '1' || effectiveParent === '0' || effectiveParent === localBarId) {
-      rootsBar.push(bm);
-    } else if (effectiveParent === '2' || effectiveParent === localOtherId) {
-      rootsOther.push(bm);
-    } else if (effectiveParent === '3' || effectiveParent === localMobileId) {
-      rootsMobile.push(bm);
-    } else {
-      if (!byParent.has(effectiveParent)) byParent.set(effectiveParent, []);
-      byParent.get(effectiveParent).push(bm);
-    }
-  }
-
-  async function processNodes(nodes, localParentId) {
-    const orderedNodes = nodes
-      .map((bm, fallbackIndex) => ({ bm, fallbackIndex }))
-      .sort((a, b) => (a.bm.sortIndex ?? a.fallbackIndex) - (b.bm.sortIndex ?? b.fallbackIndex) || a.fallbackIndex - b.fallbackIndex);
-    for (let i = 0; i < orderedNodes.length; i++) {
-      const bm = orderedNodes[i].bm;
-      let existingNode = null;
-      
-      // 1. Try to find by persistent ID mapping first (handles renames/moves perfectly)
-      if (idMap.has(bm.id)) {
-        const mappedId = idMap.get(bm.id);
-        const results = await api.get(mappedId).catch(() => []);
-        if (results && results.length > 0) {
-          if (syncedIds.has(results[0].id) && await isInsideTargetFolder(results[0].id)) {
-            existingNode = results[0];
-          } else {
-            idMap.delete(bm.id);
-          }
-        } else {
-          idMap.delete(bm.id); // Stale map
-        }
-      }
-      
-      // 2. Fallback to title/url matching
-      if (!existingNode) {
-        if (bm.isFolder) {
-          const children = await api.getChildren(localParentId).catch(() => []);
-          existingNode = children.find(c => !c.url && c.title === bm.title);
-        } else if (bm.url) {
-          const searchResults = await api.search({ url: bm.url });
-          existingNode = searchResults.find(r => r.parentId === localParentId);
-          // A URL is not a bookmark identity: the same URL may intentionally
-          // exist in several folders. Never adopt an arbitrary global match,
-          // because the move below would pull that bookmark out of its real
-          // folder and persist the bad source-ID mapping across restarts.
-        }
-      }
-
-      let localId;
-      if (existingNode) {
-        localId = existingNode.id;
-        if (existingNode.title !== bm.title || (!bm.isFolder && canonicalUrl(existingNode.url) !== canonicalUrl(bm.url))) {
-          await api.update(localId, { title: bm.title, url: bm.isFolder ? undefined : bm.url }).catch(()=>{});
-        }
-        if (existingNode.parentId !== localParentId) {
-          await api.move(localId, { parentId: localParentId, index: i }).catch(()=>{});
-        } else if (existingNode.index !== i) {
-          await api.move(localId, { index: i }).catch(()=>{});
-        }
-      } else {
-        const created = await api.create({
-          parentId: localParentId,
-          title: bm.title,
-          url: bm.isFolder ? undefined : bm.url,
-          index: i
-        });
-        localId = created.id;
-        syncedIds.add(localId);
-      }
-
-      // Keep the mapping one-to-one. Safari can regenerate UUIDs after its
-      // plist is rewritten; retaining both the old and new source IDs for the
-      // same Chrome node makes the reverse map pick a stale identity after a
-      // restart, which can repeatedly resurrect an old parent relationship.
-      for (const [sourceId, mappedLocalId] of idMap.entries()) {
-        if (sourceId !== bm.id && mappedLocalId === localId) idMap.delete(sourceId);
-      }
-      idMap.set(bm.id, localId);
-
-      if (bm.isFolder && byParent.has(bm.id)) {
-        await processNodes(byParent.get(bm.id), localId);
-      }
-    }
-  }
-
-  await processNodes(rootsBar, targetRootId || localBarId);
-  if (!targetRootId) {
-    await processNodes(rootsOther, localOtherId);
-    const hasLocalMobileRoot = localRoots.some(node => node.id === localMobileId);
-    await processNodes(rootsMobile, hasLocalMobileRoot ? localMobileId : localOtherId);
-  }
-  
-
-  // STEP 2: Prune items not in incoming payload
-  if (isFullMirror) {
-    const incomingSafariIds = new Set(bookmarks.map(b => b.id));
-    const mappedLocalIds = new Set();
-    for (const [safariId, chromeId] of idMap.entries()) {
-      if (incomingSafariIds.has(safariId)) {
-        mappedLocalIds.add(chromeId);
-      }
-    }
-    
-    // Always keep system roots
-    mappedLocalIds.add('0');
-    mappedLocalIds.add(localBarId);
-    mappedLocalIds.add(localOtherId);
-    if (localMobileId) mappedLocalIds.add(localMobileId);
-
-    console.log(`[BrowSync] Pruning. Mapped local IDs: ${mappedLocalIds.size}`);
-
-    const freshTree = await api.getTree();
-
-    async function pruneTree(nodes) {
-      for (const node of nodes) {
-        if (!mappedLocalIds.has(node.id)) {
-          console.log(`[BrowSync] Pruning: deleting "${node.title}" (${node.id})`);
-          try {
-            await api.removeTree(node.id);
-          } catch(e) {
-            try { await api.remove(node.id); } catch(_) {}
-          }
-          // Don't recurse into deleted nodes
-        } else if (node.children) {
-          await pruneTree(node.children);
-        }
-      }
-    }
-
-    if (targetRootId) {
-      const children = await api.getChildren(targetRootId).catch(() => []);
-      await pruneTree(children);
-    } else {
-      // Prune inside synced system roots only; unsynced roots never reach the
-      // sender, so their contents would always look like deletions.
-      const rootNodes = freshTree[0]?.children || [];
-      for (const rootNode of rootNodes) {
-        if (rootRoleById.get(rootNode?.id) && rootNode.children) {
-          await pruneTree(rootNode.children);
-        }
-      }
-    }
-    console.log('[BrowSync] Pruning planned');
-  }
-
-  // Review gate: a large removal, move or rewrite of existing bookmarks is
-  // not written until the user approved exactly this change.
-  const scopeRootIds = targetRootId
-    ? [targetRootId]
-    : localRoots.filter(root => rootRoleById.get(root.id)).map(root => root.id);
-  const summary = await summarizePlan(localTree, plan, scopeRootIds);
-  if (requiresConfirmation(summary.impact) && options.approvedPlanSignature !== summary.signature) {
-    heldForReview = true;
-    const preview = summary.preview();
-    console.log(`[BrowSync] Holding bookmark sync for review: ${summary.impact.removed} removed, ${summary.impact.moved} moved, ${summary.impact.modified} modified of ${summary.impact.total}`);
-    send({
-      type: 'sync',
-      browser: CURRENT_BROWSER_ID,
-      category: 'bookmark_apply_held',
-      payload: { kind: 'raw', raw: {
-        messageId: options.messageId || null,
-        signature: summary.signature,
-        destructiveSignature: summary.destructiveSignature,
-        ...summary.impact,
-        before: preview.before,
-        after: preview.after
-      } },
-      messageId: crypto.randomUUID(),
-      timestamp: Date.now()
-    });
-    return;
-  }
-
-  // Every incoming write, not only full mirrors, must have a restorable
-  // snapshot of this browser's tree before any create, move, or deletion.
-  await handlePullRequest('bookmark_backup');
-  const realIds = await replayPlan(plan, chrome.bookmarks);
-  for (const [sourceId, localId] of idMap.entries()) {
-    if (BookmarkPlan.isPlannedId(localId)) {
-      if (realIds.has(localId)) idMap.set(sourceId, realIds.get(localId));
-      else idMap.delete(sourceId);
-    }
-  }
-  // Persist mapping to prevent duplicates/deletions on restart or subsequent syncs
-  await chrome.storage.local.set({ syncIdMap: Object.fromEntries(idMap) });
-  pairedChromeIds = new Set(idMap.values());
-  send({
-    type: 'sync',
-    browser: CURRENT_BROWSER_ID,
-    category: 'bookmark_apply_result',
-    payload: { kind: 'raw', raw: { messageId: options.messageId || null, applied: true, writes: plan.ops.length } },
-    messageId: crypto.randomUUID(),
-    timestamp: Date.now()
-  });
-  } finally {
-    // A held dry run wrote nothing, so there are no own events to suppress.
-    if (heldForReview) releaseApplyingSyncNow();
-    else endApplyingSyncLater();
-  }
-}
-
-// A batch of removal events (from Safari or another browser), reviewed like
-// a full sync: every removal (with its subtree) is planned in memory first;
-// a large batch is held for the user's review, and only an approved or small
-// plan is replayed. A removal is resolved through this browser's own ID map;
-// the sender's ID is used directly only when the sender is this browser.
-async function applyBookmarkRemovalBatch(removed, targetBookmarkFolder = null, options = {}) {
-  if (isApplyingSync) {
-    queuedBookmarkSyncs.push(() => applyBookmarkRemovalBatch(removed, targetBookmarkFolder, options));
-    return;
-  }
-  beginApplyingSync();
-  let heldForReview = false;
-  // Every batch is answered, also when nothing could be done, so the app
-  // never keeps waiting on it.
-  const answer = (writes, error) => send({
-    type: 'sync', browser: CURRENT_BROWSER_ID, category: 'bookmark_apply_result',
-    payload: { kind: 'raw', raw: { messageId: options.messageId || null, applied: !error, writes, error: error || null } },
-    messageId: crypto.randomUUID(), timestamp: Date.now()
-  });
-  try {
-    if (!chrome.bookmarks) { answer(0, 'no bookmarks API'); return; }
-    await primaryRootsReady;
-    const tree = await getTreeForRoots();
-    const localRoots = refreshSystemRoots(tree);
-    const syncedIds = syncedNodeIds(tree);
-    const isSyncedNode = id => syncedIds.has(id);
-    let targetRootId = null;
-    if (targetBookmarkFolder) {
-      const targetFolder = await findBookmarkFolderByPath(targetBookmarkFolder);
-      if (!targetFolder) {
-        send({
-          type: 'sync',
-          browser: CURRENT_BROWSER_ID,
-          category: 'bookmark_folder_missing',
-          payload: { kind: 'raw', raw: { folder: targetBookmarkFolder, messageId: options.messageId || null } },
-          messageId: crypto.randomUUID(),
-          timestamp: Date.now()
-        });
-        answer(0, 'sync folder missing');
-        return;
-      }
-      targetRootId = targetFolder.id;
-    }
-    const plan = new BookmarkPlan(tree);
-    const isInside = (id, ancestorId) => {
-      for (let node = plan.nodes.get(id); node; node = plan.nodes.get(node.parentId)) {
-        if (node.parentId === ancestorId) return true;
-      }
-      return false;
-    };
-    const inScope = id => plan.nodes.has(id) && isSyncedNode(id) && (!targetRootId || isInside(id, targetRootId));
-    const { syncIdMap = {} } = await chrome.storage.local.get('syncIdMap');
-    const resolvedIds = {};
-    for (const bm of removed) {
-      const sender = typeof bm.sourceBrowser === 'string' ? bm.sourceBrowser : bm.sourceBrowser?.id;
-      // Mapped to a node that no longer exists: already removed here (e.g.
-      // a re-delivered batch). Searching by URL/title could hit a duplicate.
-      if (syncIdMap[bm.id] && !plan.nodes.has(syncIdMap[bm.id])) continue;
-      let resolvedBySearch = false;
-      let localId = syncIdMap[bm.id] || (sender === CURRENT_BROWSER_ID ? bm.id : null);
-      if (localId && !inScope(localId)) localId = null;
-      if (!localId && bm.url) {
-        // One bookmark per event: the same URL and title, inside the scope.
-        const hit = (await plan.search({ url: bm.url })).find(node => node.title === bm.title && inScope(node.id));
-        localId = hit?.id || null;
-        resolvedBySearch = Boolean(localId);
-      } else if (!localId) {
-        // A folder only by an unambiguous title.
-        const hits = [...plan.nodes.values()].filter(node => node.url === undefined && node.title === bm.title && inScope(node.id));
-        localId = hits.length === 1 ? hits[0].id : null;
-        resolvedBySearch = Boolean(localId);
-      }
-      if (localId && plan.nodes.has(localId)) {
-        // Remember what this removal resolved to: a re-delivery of the same
-        // batch then hits the "already removed" skip above instead of
-        // searching again and removing a same-titled duplicate.
-        if (resolvedBySearch) resolvedIds[bm.id] = localId;
-        await plan.removeTree(localId);
-      }
-    }
-    if (!plan.ops.length) {
-      answer(0);
-      return;
-    }
-    const scopeRootIds = targetRootId ? [targetRootId] : localRoots.filter(root => rootRoleById.get(root.id)).map(root => root.id);
-    const summary = await summarizePlan(tree, plan, scopeRootIds);
-    if (requiresConfirmation(summary.impact) && options.approvedPlanSignature !== summary.signature) {
-      heldForReview = true;
-      const preview = summary.preview();
-      console.log(`[BrowSync] Holding bookmark removals for review: ${summary.impact.removed} removed of ${summary.impact.total}`);
-      send({
-        type: 'sync',
-        browser: CURRENT_BROWSER_ID,
-        category: 'bookmark_apply_held',
-        payload: { kind: 'raw', raw: {
-          messageId: options.messageId || null,
-          signature: summary.signature,
-          destructiveSignature: summary.destructiveSignature,
-          ...summary.impact,
-          before: preview.before,
-          after: preview.after
-        } },
-        messageId: crypto.randomUUID(),
-        timestamp: Date.now()
-      });
-      return;
-    }
-    await handlePullRequest('bookmark_backup');
-    await replayPlan(plan, chrome.bookmarks);
-    if (Object.keys(resolvedIds).length) {
-      const { syncIdMap: latest = {} } = await chrome.storage.local.get('syncIdMap');
-      await chrome.storage.local.set({ syncIdMap: { ...latest, ...resolvedIds } });
-    }
-    answer(plan.ops.length);
-  } finally {
-    if (heldForReview) releaseApplyingSyncNow();
-    else endApplyingSyncLater();
-  }
 }
 
 // True when nodeId lives under a synced root. Bookmarks in unsynced roots

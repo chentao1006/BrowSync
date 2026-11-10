@@ -82,6 +82,9 @@ final class DaemonServer: ObservableObject {
     @Published private(set) var deniedExtensionOrigins: [String] = []
 
     weak var delegate: DaemonServerDelegate?
+    /// Returns true when the app took ownership of a bookmark mutation and the
+    /// original payload must not be dispatched.
+    var bookmarkMutationInterceptor: ((WSMessage, ConnectedClient) -> Bool)?
 
     init() {
         deniedBrowserIDs = connectionPolicy.deniedBrowserIDs
@@ -784,7 +787,51 @@ final class DaemonServer: ObservableObject {
 
     // MARK: - WebSocket Send
 
+    private static let bookmarkMutationCategories: Set<String> = [
+        SyncCategory.bookmarks.rawValue,
+        SyncService.removalBatchCategory,
+        "bookmark_incremental",
+        "bookmarks_removed",
+        "bookmark_apply_plan"
+    ]
+    private static let bookmarkPlanningInputCategories = bookmarkMutationCategories.subtracting(["bookmark_apply_plan"])
+
+    /// The app owns the final dispatch boundary for every bookmark mutation,
+    /// regardless of which service or compatibility path produced it.
+    private func messageForDelivery(_ message: WSMessage, to browser: Browser) -> WSMessage? {
+        guard message.type == .sync,
+              let category = message.category,
+              Self.bookmarkMutationCategories.contains(category),
+              message.payload != nil else { return message }
+        var secured = message
+        let settings = AppState.shared.settingsService.syncSettings
+        secured.bookmarkSyncEnabled = settings.enabledCategories.contains(.bookmarks)
+        secured.bookmarkSafeMode = settings.bookmarkSafeMode
+        let explicitRestore = message.isExplicitDeletedBookmarkRestore == true || message.isExplicitBookmarkRestore == true
+        secured.bookmarkWriteAllowed = BookmarkWritePolicy.allowsWrite(to: browser, settings: settings, explicitRestore: explicitRestore)
+        secured.bookmarkSyncStrategy = settings.bookmarkSyncStrategy.rawValue
+        secured.bookmarkSourceBrowser = settings.bookmarkSourceBrowser.rawValue
+        // OFF, non-participation and a one-way source are hard app-side
+        // prohibitions. Do not rely on an extension to reject the payload.
+        guard secured.bookmarkWriteAllowed == true else {
+            logger.warning("Dropped bookmark mutation before dispatch to \(browser.rawValue, privacy: .public): app write policy refused it")
+            return nil
+        }
+        return secured
+    }
+
     func sendWSMessage(_ message: WSMessage, to client: ConnectedClient) {
+        if Self.bookmarkPlanningInputCategories.contains(message.category ?? ""),
+           message.payload != nil,
+           bookmarkMutationInterceptor?(message, client) == true { return }
+        guard let delivered = messageForDelivery(message, to: client.browser) else { return }
+        guard let data = try? JSONEncoder().encode(delivered) else { return }
+        sendData(data, on: client.connection)
+    }
+
+    /// Control-plane messages never contain bookmark mutations and therefore
+    /// bypass the planning interceptor.
+    func sendBookmarkControlMessage(_ message: WSMessage, to client: ConnectedClient) {
         guard let data = try? JSONEncoder().encode(message) else { return }
         sendData(data, on: client.connection)
     }
@@ -803,17 +850,25 @@ final class DaemonServer: ObservableObject {
     }
 
     func broadcast(_ message: WSMessage, excluding excludedId: String? = nil, participatingBrowsers: Set<Browser>? = nil) {
-        guard let data = try? JSONEncoder().encode(message) else { return }
         for (id, client) in clients {
             if id == excludedId { continue }
             if let participating = participatingBrowsers, !participating.contains(client.browser) { continue }
+            if Self.bookmarkPlanningInputCategories.contains(message.category ?? ""),
+               message.payload != nil,
+               bookmarkMutationInterceptor?(message, client) == true { continue }
+            guard let delivered = messageForDelivery(message, to: client.browser) else { continue }
+            guard let data = try? JSONEncoder().encode(delivered) else { continue }
             sendData(data, on: client.connection)
         }
     }
     
     func send(_ message: WSMessage, toClientId clientId: String) {
-        guard let data = try? JSONEncoder().encode(message),
-              let client = clients[clientId] else { return }
+        guard let client = clients[clientId] else { return }
+        if Self.bookmarkPlanningInputCategories.contains(message.category ?? ""),
+           message.payload != nil,
+           bookmarkMutationInterceptor?(message, client) == true { return }
+        guard let delivered = messageForDelivery(message, to: client.browser) else { return }
+        guard let data = try? JSONEncoder().encode(delivered) else { return }
         sendData(data, on: client.connection)
     }
 

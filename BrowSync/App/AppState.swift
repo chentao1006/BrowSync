@@ -25,11 +25,6 @@ final class AppState: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
     private var hasFinishedInitialSetup = false
-    private struct PendingMassBookmarkDeletion {
-        let clientId: String
-        let items: [Bookmark]
-    }
-    private var pendingMassBookmarkDeletions: [String: PendingMassBookmarkDeletion] = [:]
     
     var openWindowAction: ((String) -> Void)?
 
@@ -38,8 +33,15 @@ final class AppState: ObservableObject {
     @Published var isScanning: Bool = false
     @Published var bookmarkFolderManagerOpenRequest: Int = 0
     @Published var recentBookmarkBackupsOpenRequest: Int = 0
-    /// Browsers whose large Safari bookmark change is held for review.
-    @Published var pendingBookmarkReviewClientIds: [String] = []
+    /// Bookmark plans waiting for an explicit user decision.
+    @Published var pendingBookmarkReviewClientIds: [String] = [] {
+        didSet {
+            // A single badge is deliberately state-only: it says there is
+            // something waiting, not how many writes are safe to make.
+            NSApp.dockTile.badgeLabel = pendingBookmarkReviewClientIds.isEmpty ? nil : "!"
+            NSApp.dockTile.display()
+        }
+    }
     /// Browsers whose bookmark sync into Safari is paused by "Keep Safari As Is".
     @Published var pausedBookmarkSyncClientIds: [String] = []
     @Published private(set) var syncDisabledDomains: [String] = []
@@ -91,6 +93,9 @@ final class AppState: ObservableObject {
         syncService.daemon = daemon
         syncService.settingsService = settingsService
         syncService.backupService = backupService
+        daemon.bookmarkMutationInterceptor = { [weak syncService] message, client in
+            syncService?.stageBrowserBookmarkMutation(message, to: client) ?? false
+        }
         
         isRouterEnabled = settingsService.routerSettings.isEnabled
         fallbackBrowserId = settingsService.routerSettings.fallbackBrowserId
@@ -102,12 +107,13 @@ final class AppState: ObservableObject {
         pausedBookmarkSyncClientIds = syncService.rejectedBookmarkSyncClientIds
 
         // Unlocking Pro (e.g. purchase status loading after launch) can add
-        // participating browsers without a reconnect.
+        // participating browsers without a reconnect; recompute pending changes.
         purchaseService.$isProUnlocked
             .removeDuplicates()
+            .dropFirst()
             .sink { [weak self] _ in
                 DispatchQueue.main.async {
-                    self?.syncService.deliverAllPendingBrowserRemovals()
+                    self?.syncService.scheduleBookmarkSyncSession()
                 }
             }
             .store(in: &cancellables)
@@ -494,14 +500,11 @@ extension AppState: DaemonServerDelegate {
         Task { @MainActor in
             self.updateConnectionStatus(for: client.browser, connected: true)
             self.broadcastSettings(to: client)
-            // Deletions it missed: from other browsers (routed by the current
-            // settings) and, in two-way sync, from Safari. Both are attempted.
-            let bookmarksEnabled = self.settingsService.syncSettings.enabledCategories.contains(.bookmarks)
-            let deliveredBrowserRemovals = bookmarksEnabled && self.syncService.deliverPendingBrowserRemovals(to: client.id)
-            let deliveredSafariRemovals = bookmarksEnabled
-                && self.settingsService.syncSettings.bookmarkSyncStrategy == .twoWayMerge
-                && self.syncService.deliverPendingSafariRemovals(to: client.id)
-            if deliveredBrowserRemovals || deliveredSafariRemovals {
+            // Changes it missed while offline are still pending against its
+            // per-pair baselines; its fresh snapshot lets a session plan them.
+            if self.settingsService.syncSettings.enabledCategories.contains(.bookmarks),
+               self.settingsService.syncSettings.bookmarkParticipatingBrowsers.contains(client.browser),
+               client.browser != .safari {
                 let refresh = WSMessage(type: .sync, site: "*", category: "bookmarks",
                                         payload: nil, messageId: UUID().uuidString,
                                         timestamp: Date().timeIntervalSince1970)
@@ -512,9 +515,6 @@ extension AppState: DaemonServerDelegate {
 
     nonisolated func daemonServer(_ server: DaemonServer, didDisconnect clientId: String, browser: Browser) {
         Task { @MainActor in
-            // A removal batch it never answered must not keep it "under review".
-            self.syncService.abandonRemovalBatch(for: clientId, reason: "disconnected")
-            self.syncService.resetRemovalBatchTimeouts(for: clientId)
             if !server.isConnected(browser: browser) {
                 self.updateConnectionStatus(for: browser, connected: false)
                 
@@ -569,157 +569,20 @@ extension AppState: DaemonServerDelegate {
     }
 
 
+    /// A bookmark pull never receives another browser's tree: that would
+    /// turn a cross-browser difference into writes outside the session
+    /// planner. Its fresh snapshot is requested instead; a session plans it.
     nonisolated func daemonServer(_ server: DaemonServer, didReceivePullBookmarks clientId: String) {
         Task { @MainActor in
-            guard self.settingsService.syncSettings.enabledCategories.contains(.bookmarks) else { return }
-            let strategy = self.settingsService.syncSettings.bookmarkSyncStrategy
-            let sourceBrowser = self.settingsService.syncSettings.bookmarkSourceBrowser
-            
-            // Safari extension does not support the WebExtension bookmarks API (it uses native sync instead)
-            // so we should never push bookmarks to the Safari extension.
-            if clientId.contains("safari") { return }
-
-            if strategy == .twoWayMerge {
-                _ = self.syncService.deliverPendingSafariRemovals(to: clientId)
-            }
-            
-            // Do not push bookmarks back to the browser that is the source of truth.
-            // In one-way mode the source must never receive its own snapshot as a
-            // full mirror, especially after another browser requested a refresh.
-            let clientBrowserId = clientId.components(separatedBy: "-").first?.lowercased() ?? clientId.lowercased()
-            if strategy == .oneWay && clientBrowserId == sourceBrowser.id.lowercased() { return }
-            
-            var bookmarksToSend: [Bookmark]? = nil
-            var currentSafariBms: [SyncBookmark] = []
-            
-            if sourceBrowser == .safari {
-                let safariSvc = SafariBookmarkService()
-                currentSafariBms = safariSvc.readBookmarks()
-                if !currentSafariBms.isEmpty {
-                    bookmarksToSend = currentSafariBms.map { b in
-                        Bookmark(id: b.id, title: b.title, url: b.url, parentId: b.parentId, isFolder: b.isFolder, sortIndex: b.sortIndex, inBookmarksBar: b.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
-                    }
-                }
-
-            } else {
-                if let snapshot = self.backupService.getSnapshot(sourceBrowser: sourceBrowser.rawValue) {
-                    bookmarksToSend = snapshot
-                }
-            }
-            
-            guard let bookmarks = bookmarksToSend, !bookmarks.isEmpty else { return }
-            
-            // ── Offline Deletion Sync ────────────────────────────────────────────
-            // Compare Safari's current state to this client's last known snapshot.
-            // One-way only: two-way merge already detects real Safari deletions
-            // elsewhere (SyncService.syncCategory), with UUID-drift-safe fallbacks.
-                let clientBrowserRawId = clientId.components(separatedBy: "-").first ?? clientId
-                if strategy == .oneWay, sourceBrowser == .safari && !currentSafariBms.isEmpty,
-                    let clientSnapshot = self.backupService.getSnapshot(sourceBrowser: clientId)
-                    ?? self.backupService.getSnapshot(sourceBrowser: clientBrowserRawId) {
-                
-                var currentUrls = Set(currentSafariBms.compactMap { $0.url }.map { $0.lowercased() })
-                var currentFolderTitles = Set(currentSafariBms.filter { $0.isFolder }.map { $0.title.lowercased() })
-                var snapshotToCheck = clientSnapshot
-                
-                if let sourceSyncFolder = self.settingsService.syncSettings.bookmarkFolder(for: sourceBrowser) {
-                    guard BookmarkTreeMerger.folderExists(tree: bookmarks, folderPath: sourceSyncFolder) else {
-                        self.syncService.missingBookmarkFolders[sourceBrowser.rawValue] = sourceSyncFolder
-                        self.notificationService.notifyBookmarkSyncFailed(browser: sourceBrowser, folder: sourceSyncFolder)
-                        return
-                    }
-                    let (urls, titles) = BookmarkTreeMerger.getIdentifiersInFolder(tree: bookmarks, folderPath: sourceSyncFolder)
-                    currentUrls = urls
-                    currentFolderTitles = titles
-                }
-
-                     if let clientBrowser = Browser(rawValue: clientBrowserRawId),
-                   let targetSyncFolder = self.settingsService.syncSettings.bookmarkFolder(for: clientBrowser) {
-                    if let targetSnapshot = BookmarkTreeMerger.extractExistingSubtreeAsRoot(sourceTree: clientSnapshot, folderPath: targetSyncFolder) {
-                        snapshotToCheck = targetSnapshot
-                    } else {
-                        self.syncService.missingBookmarkFolders[clientBrowser.rawValue] = targetSyncFolder
-                        self.notificationService.notifyBookmarkSyncFailed(browser: clientBrowser, folder: targetSyncFolder)
-                        snapshotToCheck = []
-                    }
-                }
-                
-                let offlineDeleted = snapshotToCheck.filter { bm in
-                    if let urlOpt = bm.url, let url = urlOpt, currentUrls.contains(url.lowercased()) { return false }
-                    if bm.isFolder == true && currentFolderTitles.contains(bm.title.lowercased()) { return false }
-                    return true
-                }
-                
-                // A single unretried plist read can come back thin but non-empty (sandbox
-                // access race, mid-write, etc.), slipping past the empty-snapshot guard above.
-                // Refuse to mass-delete off the back of one such read.
-                let looksLikeMassDeletion = !snapshotToCheck.isEmpty
-                    && offlineDeleted.count > max(3, snapshotToCheck.count / 2)
-                // These deletions are not sent as events: the full mirror below
-                // brings the browser in line, and its extension dry-runs that
-                // mirror and holds a large removal for review.
-                if !offlineDeleted.isEmpty {
-                    self.syncService.log("\(offlineDeleted.count) of \(snapshotToCheck.count) items in [\(clientId)] were deleted in Safari while it was offline\(looksLikeMassDeletion ? " (a large share)" : ""); the reviewed full mirror applies them.")
-                }
-            }
-            // ────────────────────────────────────────────────────────────────────
-            
-            var finalBookmarksToSend = bookmarks
-            let isFullMirror = (strategy == .oneWay)
-            
-            guard let sourceAdjusted = self.syncService.folderAdjustedBookmarksForSource(bookmarks, browser: sourceBrowser) else { return }
-            finalBookmarksToSend = sourceAdjusted
-            
-            var msg = WSMessage(
-                type: .sync,
-                site: "*",
-                category: "bookmarks",
-                payload: .bookmarks(finalBookmarksToSend),
-                messageId: UUID().uuidString,
-                timestamp: Date().timeIntervalSince1970
-            )
-            msg.isFullMirror = isFullMirror
-            if let browser = Browser(rawValue: clientId.components(separatedBy: "-").first ?? clientId) {
-                finalBookmarksToSend = self.syncService.bookmarksPreparedForTarget(
-                    finalBookmarksToSend,
-                    sourceBrowser: sourceBrowser,
-                    targetBrowser: browser
-                )
-                msg.payload = .bookmarks(finalBookmarksToSend)
-                msg.targetBookmarkFolder = self.settingsService.syncSettings.bookmarkFolder(for: browser)
-            }
-            msg.browser = sourceBrowser.rawValue
-            if sourceBrowser != .safari, self.syncService.hasHeldBookmarkChange(from: sourceBrowser) {
-                // The stored snapshot of the source holds the change awaiting
-                // review (or refused); it must not reach another browser.
-                self.syncService.log("Deferred answering the bookmark pull from [\(clientId)] while the source's change awaits review.")
-                return
-            }
-            if sourceBrowser == .safari, !self.syncService.mayPushSafariBookmarks(to: clientId) {
-                self.syncService.log("Deferred answering the bookmark pull from [\(clientId)] until its pending review is decided.")
-                return
-            }
-            if let client = server.connectedClients.first(where: { $0.id == clientId }),
-               !self.syncService.mayWriteBookmarks(to: client) {
-                return
-            }
-            self.syncService.recordSentBookmarkMessage(msg, to: clientId)
-            // Only send to the requesting client
-            let sourceName = sourceBrowser == .safari ? "Safari" : "Chrome"
-            self.syncService.log("Answering pull request from [\(clientId)]: Pushed \(finalBookmarksToSend.count) \(sourceName) bookmarks (isFullMirror: \(msg.isFullMirror ?? false))")
-            server.send(msg, toClientId: clientId)
-        }
-    }
-
-    /// Called when the user taps "Apply Deletions" on the mass-bookmark-deletion
-    /// warning notification, confirming a suspicious offline-deletion diff.
-    func applyPendingMassBookmarkDeletion(from clientId: String) {
-        guard let pending = pendingMassBookmarkDeletions.removeValue(forKey: clientId) else { return }
-        let clientBrowserRawId = clientId.components(separatedBy: "-").first ?? clientId
-        syncService.log("User approved \(pending.items.count) offline bookmark deletions for [\(clientId)].")
-        // Still reviewed by the browser's extension if large.
-        if let browser = Browser(rawValue: clientBrowserRawId) {
-            syncService.sendBookmarkRemovalBatch(pending.items, browsers: [browser])
+            let settings = self.settingsService.syncSettings
+            guard settings.enabledCategories.contains(.bookmarks),
+                  let client = server.connectedClients.first(where: { $0.id == clientId }),
+                  client.browser != .safari,
+                  settings.bookmarkParticipatingBrowsers.contains(client.browser) else { return }
+            let refresh = WSMessage(type: .sync, site: "*", category: "bookmarks", payload: nil,
+                                    messageId: UUID().uuidString, timestamp: Date().timeIntervalSince1970)
+            server.sendWSMessage(refresh, to: client)
+            self.syncService.log("Bookmark pull from [\(clientId)] answered with a snapshot request; changes are planned by a sync session.")
         }
     }
 
@@ -842,6 +705,9 @@ extension AppState: DaemonServerDelegate {
             "routerEnabled": AnyCodable(isRouterEnabled),
             "interfaceLanguage": AnyCodable(resolvedExtensionLanguage()),
             "bookmarkSyncEnabled": AnyCodable(settingsService.syncSettings.enabledCategories.contains(.bookmarks)),
+            "bookmarkSyncStrategy": AnyCodable(settingsService.syncSettings.bookmarkSyncStrategy.rawValue),
+            "bookmarkSourceBrowser": AnyCodable(settingsService.syncSettings.bookmarkSourceBrowser.rawValue),
+            "bookmarkSafeMode": AnyCodable(settingsService.syncSettings.bookmarkSafeMode),
             "stateSyncEnabled": AnyCodable(settingsService.syncSettings.enabledCategories.contains(.browserData)),
             // Extensions use this value to decide whether navigation and cookie
             // changes may start an automatic state pull.  Keep it aligned with
