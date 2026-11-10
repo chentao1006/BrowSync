@@ -430,7 +430,7 @@ struct BookmarkSyncTabView: View {
             set: { isParticipating in
                 if isParticipating {
                     guard appState.purchaseService.isProUnlocked ||
-                            syncSettings.wrappedValue.bookmarkParticipatingBrowsers.count < ProLimits.freeSyncBrowserCount else {
+                            syncSettings.wrappedValue.bookmarkParticipatingBrowsers.filter(\.isInstalledApp).count < ProLimits.freeSyncBrowserCount else {
                         showUpgradeAlert = true
                         return
                     }
@@ -466,7 +466,7 @@ struct BookmarkSyncTabView: View {
     @ViewBuilder
     private func browserToggleLabel(for info: BrowserInfo) -> some View {
         let isParticipating = syncSettings.bookmarkParticipatingBrowsers.wrappedValue.contains(info.browser)
-        let hasReachedFreeLimit = syncSettings.bookmarkParticipatingBrowsers.wrappedValue.count >= ProLimits.freeSyncBrowserCount
+        let hasReachedFreeLimit = syncSettings.bookmarkParticipatingBrowsers.wrappedValue.filter(\.isInstalledApp).count >= ProLimits.freeSyncBrowserCount
         let shouldShowProBadge = !appState.purchaseService.isProUnlocked && !isParticipating && hasReachedFreeLimit
 
         HStack(spacing: 6) {

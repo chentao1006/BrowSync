@@ -598,7 +598,7 @@ extension AppState: DaemonServerDelegate {
                 if stateSync {
                     if self.purchaseService.isProUnlocked ||
                         self.settingsService.syncSettings.stateParticipatingBrowsers.contains(browser) ||
-                        self.settingsService.syncSettings.stateParticipatingBrowsers.count < ProLimits.freeSyncBrowserCount {
+                        self.settingsService.syncSettings.stateParticipatingBrowsers.filter(\.isInstalledApp).count < ProLimits.freeSyncBrowserCount {
                         self.settingsService.syncSettings.stateParticipatingBrowsers.insert(browser)
                     }
                 } else {
@@ -611,7 +611,7 @@ extension AppState: DaemonServerDelegate {
                 if bookmarkSync {
                     if self.purchaseService.isProUnlocked ||
                         self.settingsService.syncSettings.bookmarkParticipatingBrowsers.contains(browser) ||
-                        self.settingsService.syncSettings.bookmarkParticipatingBrowsers.count < ProLimits.freeSyncBrowserCount {
+                        self.settingsService.syncSettings.bookmarkParticipatingBrowsers.filter(\.isInstalledApp).count < ProLimits.freeSyncBrowserCount {
                         self.settingsService.syncSettings.bookmarkParticipatingBrowsers.insert(browser)
                     }
                 } else {
@@ -814,9 +814,12 @@ extension AppState: DaemonServerDelegate {
         return appURL.deletingPathExtension().lastPathComponent
     }
 
+    /// Same rule as SyncService.settings: browsers that are not installed
+    /// never take part, and the free limit counts installed browsers only.
     private func effectiveSyncBrowsers(_ browsers: Set<Browser>, isProUnlocked: Bool) -> Set<Browser> {
-        guard !isProUnlocked else { return browsers }
-        let ordered = Browser.allCases.filter { browsers.contains($0) }
+        let installed = browsers.filter(\.isInstalledApp)
+        guard !isProUnlocked else { return installed }
+        let ordered = Browser.allCases.filter { installed.contains($0) }
         return Set(ordered.prefix(ProLimits.freeSyncBrowserCount))
     }
 }

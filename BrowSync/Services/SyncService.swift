@@ -97,6 +97,7 @@ final class SyncService: ObservableObject {
         static func pairKey(_ source: Browser, _ target: Browser) -> String { "\(source.rawValue)>\(target.rawValue)" }
     }
     var bookmarkSyncSession: BookmarkSyncSession?
+    private var installedBrowserCache: [String: (installed: Bool, checkedAt: Date)] = [:]
 
     /// Result of restoring a backup into its own browser.
     struct BookmarkRestoreOutcome {
@@ -313,8 +314,23 @@ final class SyncService: ObservableObject {
 
     var daemon: DaemonServer?
     var settingsService: SettingsService?
+    /// A browser that is not installed cannot take part in bookmark sync,
+    /// even if it is still ticked in saved settings (for example after it
+    /// was uninstalled). LaunchServices lookups are cached briefly because
+    /// `settings` is read very often.
+    private func isInstalledForBookmarkSync(_ browser: Browser) -> Bool {
+        if browser == .safari { return true }
+        if let cached = installedBrowserCache[browser.id], Date().timeIntervalSince(cached.checkedAt) < 30 {
+            return cached.installed
+        }
+        let installed = browser.isInstalledApp
+        installedBrowserCache[browser.id] = (installed, Date())
+        return installed
+    }
+
     var settings: SyncSettings {
         var current = settingsService?.syncSettings ?? SyncSettings()
+        current.bookmarkParticipatingBrowsers = current.bookmarkParticipatingBrowsers.filter(isInstalledForBookmarkSync)
         guard !AppState.shared.purchaseService.isProUnlocked else { return current }
 
         current.bookmarkParticipatingBrowsers = Set(Browser.allCases.filter {

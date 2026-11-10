@@ -18,6 +18,9 @@ struct Browser: Codable, Identifiable, Hashable {
         NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
     }
 
+    /// Installed on this Mac (Safari always is).
+    var isInstalledApp: Bool { self == .safari || appURL != nil }
+
     // MARK: Standard Browsers
     static let safari = Browser(id: "safari", displayName: "Safari", bundleIdentifier: "com.apple.Safari", sfSymbol: "safari", extensionBasePath: nil, isCustom: false)
     static let chrome = Browser(id: "chrome", displayName: "Chrome", bundleIdentifier: "com.google.Chrome", sfSymbol: "circle.grid.cross", extensionBasePath: "Google/Chrome", isCustom: false)

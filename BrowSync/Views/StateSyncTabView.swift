@@ -113,7 +113,7 @@ struct StateSyncTabView: View {
                                     set: { isParticipating in
                                         if isParticipating {
                                             guard appState.purchaseService.isProUnlocked ||
-                                                    syncSettings.wrappedValue.stateParticipatingBrowsers.count < ProLimits.freeSyncBrowserCount else {
+                                                    syncSettings.wrappedValue.stateParticipatingBrowsers.filter(\.isInstalledApp).count < ProLimits.freeSyncBrowserCount else {
                                                 showUpgradeAlert = true
                                                 return
                                             }
@@ -137,7 +137,7 @@ struct StateSyncTabView: View {
                                         Text(info.displayName)
                                         if !appState.purchaseService.isProUnlocked &&
                                             !syncSettings.stateParticipatingBrowsers.wrappedValue.contains(info.browser) &&
-                                            syncSettings.stateParticipatingBrowsers.wrappedValue.count >= ProLimits.freeSyncBrowserCount {
+                                            syncSettings.stateParticipatingBrowsers.wrappedValue.filter(\.isInstalledApp).count >= ProLimits.freeSyncBrowserCount {
                                             ProBadge()
                                         }
                                     }
