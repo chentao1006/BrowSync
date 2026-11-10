@@ -75,7 +75,17 @@ echo "  Updating Homebrew tap"
 echo "================================================="
 
 ensure_remote_repo() {
-    if git ls-remote "$TAP_REMOTE" HEAD >/dev/null 2>&1; then return; fi
+    local attempt
+    for attempt in 1 2 3; do
+        if git ls-remote "$TAP_REMOTE" HEAD >/dev/null 2>&1; then return; fi
+        sleep 2
+    done
+    # ls-remote can fail transiently (network/credentials); only create the
+    # repository when GitHub confirms it does not exist.
+    if [ -n "$GH_BIN" ] && "$GH_BIN" repo view "${TAP_OWNER}/${TAP_REPO}" >/dev/null 2>&1; then
+        echo "Tap repository exists but git ls-remote failed; continuing."
+        return
+    fi
     "$GH_BIN" repo create "${TAP_OWNER}/${TAP_REPO}" --public --description "Homebrew tap for apps by ${TAP_OWNER}" --clone=false
 }
 
