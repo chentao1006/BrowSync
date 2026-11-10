@@ -1,0 +1,9 @@
+{
+  "id" : "bc485087-9dbb-40fa-ab22-088b74b3bb9f",
+  "targets" : [
+    {
+      "id" : "849c6289-2c95-413c-b7ba-675a0928d337",
+      "name" : "BrowSync"
+    }
+  ]
+}
