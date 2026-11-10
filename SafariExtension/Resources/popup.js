@@ -11,9 +11,10 @@ const permissionsAPI = (typeof browser !== 'undefined' && browser.permissions) |
 // Safari before 16.4 has no dynamic content-script registration or optional
 // permissions API. The separately packaged legacy extension declares its
 // permissions statically, so it must not show a misleading "Grant Permission"
-// control or attempt a runtime request.
+// control or attempt a runtime request. Identify it by its manifest: a missing
+// chrome.scripting only means the modern extension lacks that optional grant.
 const usesLegacyStaticPermissions = typeof chrome !== 'undefined' &&
-  !chrome.scripting?.getRegisteredContentScripts;
+  !(chrome.runtime?.getManifest?.().optional_permissions?.length);
 
 let appInterfaceLanguage = 'system';
 let appMessages = null;

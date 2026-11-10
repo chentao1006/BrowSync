@@ -89,8 +89,13 @@ const permissionsAPI = (typeof browser !== 'undefined' && browser.permissions) |
 // The Safari 16.0–16.3 compatibility extension declares these permissions in
 // its manifest. It deliberately has no runtime permission or dynamic-script
 // APIs, so treat its declared permissions as available.
+// Identify it by its manifest, never by a missing API: chrome.scripting and
+// chrome.cookies are also absent from the modern extension whenever Safari has
+// not granted (or has dropped) those optional permissions. Treating that state
+// as "legacy" reported the permissions as granted, never asked for them again,
+// and silently discarded every incoming cookie.
 const usesLegacyStaticPermissions = DETECTED_BROWSER === 'safari' &&
-  !chrome.scripting?.getRegisteredContentScripts;
+  !(chrome.runtime.getManifest?.().optional_permissions?.length);
 
 async function hasOptionalPermissions(details) {
   if (usesLegacyStaticPermissions) return true;
@@ -643,7 +648,21 @@ async function applySync(message) {
       break;
     }
     case 'cookies':
-      if (!(await canSyncCookies())) break;
+      if (!(await canSyncCookies())) {
+        // Without the cookies API nothing can be applied. Report it so the
+        // app log shows the failure instead of the cookies vanishing silently.
+        const dropped = (payload.cookies || []).length;
+        if (dropped > 0 && await isStateSyncConfigured()) {
+          console.warn(`[BrowSync] Dropped ${dropped} incoming cookie(s): the cookies permission is not granted.`);
+          void updatePermissionBadge();
+          send({
+            type: 'sync', browser: DETECTED_BROWSER, category: 'cookie_apply_result',
+            payload: { kind: 'raw', raw: { summary: `0 set, ${dropped} failed; details: cookies permission not granted` } },
+            messageId: crypto.randomUUID(), timestamp: Date.now()
+          });
+        }
+        break;
+      }
       const acceptedCookies = await filterIncomingCookiesBySource(payload.cookies || [], message.browser);
       if (acceptedCookies.length === 0) break;
       await applyCookieSync(acceptedCookies);
@@ -1798,7 +1817,7 @@ async function requestCurrentSiteState(tabId, url) {
   navigationSyncSites.set(tabSiteKey, now);
   pendingSiteReloads.set(tabId, site);
   send({
-    type: 'pull', browser: CURRENT_BROWSER_ID, category: 'browserData', site,
+    type: 'pull', browser: DETECTED_BROWSER, category: 'browserData', site,
     messageId: crypto.randomUUID(), timestamp: now
   });
 }
