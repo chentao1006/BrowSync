@@ -43,6 +43,13 @@ if [ ! -d "${BUILT_APP_PATH}" ]; then
     exit 1
 fi
 
+# CI and local verification can exercise the release build without replacing
+# the user's installed app (and without launching it against live settings).
+if [ "${BROWSYNC_TEST_BUILD_ONLY:-0}" = "1" ]; then
+    echo "✅ Build-only verification complete; installation and launch skipped."
+    exit 0
+fi
+
 # 4. Move to /Applications
 echo "📦 Installing to system Applications folder (${INSTALL_PATH})..."
 
