@@ -126,7 +126,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] notification in
             if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                app.bundleIdentifier != Bundle.main.bundleIdentifier {
-                self?.lastActiveAppBundleId = app.bundleIdentifier
+                let bundleIdentifier = app.bundleIdentifier
+                Task { @MainActor [weak self] in
+                    self?.lastActiveAppBundleId = bundleIdentifier
+                }
             }
         }
         

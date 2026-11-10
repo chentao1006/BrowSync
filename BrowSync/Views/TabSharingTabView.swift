@@ -2,6 +2,7 @@
 // BrowSync — Tab Sharing Config View
 
 import SwiftUI
+import Combine
 
 struct TabSharingTabView: View {
     @EnvironmentObject var appState: AppState
