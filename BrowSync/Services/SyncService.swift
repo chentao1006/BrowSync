@@ -97,6 +97,31 @@ final class SyncService: ObservableObject {
         static func pairKey(_ source: Browser, _ target: Browser) -> String { "\(source.rawValue)>\(target.rawValue)" }
     }
     var bookmarkSyncSession: BookmarkSyncSession?
+
+    /// Result of restoring a backup into its own browser.
+    struct BookmarkRestoreOutcome {
+        let browser: Browser
+        let added: Int
+        let removed: Int
+        let updated: Int
+    }
+    struct PendingBookmarkRestore {
+        let browser: Browser
+        let clientId: String
+        let desired: [Bookmark]
+        let replacing: Bool
+        let targetFolder: String?
+        let archiveFolder: String?
+        let completion: (BookmarkRestoreOutcome?) -> Void
+        var operations: [BookmarkMutationOperation] = []
+    }
+    /// Restores waiting for a native tree (by request ID) or a verified
+    /// write result (by message ID).
+    var pendingRestoreContexts: [String: PendingBookmarkRestore] = [:]
+    var pendingRestoreWrites: [String: PendingBookmarkRestore] = [:]
+    /// Restore dispatches whose result did not arrive in time. A late result
+    /// still means the browser may have changed: its tree is re-read.
+    var lateRestoreWrites: [String: String] = [:]
     var bookmarkSessionNeedsRerun = false
     var bookmarkSessionScheduleTask: Task<Void, Never>?
     static let bookmarkSessionReviewKey = "bookmark-sync"
@@ -423,7 +448,7 @@ final class SyncService: ObservableObject {
             return nil
         }
         clearMissingBookmarkFolder(browser)
-        return BookmarkTreeMerger.extractExistingSubtreeIncludingRoot(sourceTree: archivalTree, folderPath: folder)
+        return BookmarkTreeMerger.extractExistingSubtreeWithAncestors(sourceTree: archivalTree, folderPath: folder)
     }
 
     /// Chrome-family sync snapshots intentionally omit their immutable root
@@ -983,6 +1008,7 @@ final class SyncService: ObservableObject {
     private func handleBrowserWriteResult(_ message: WSMessage, clientId: String) {
         guard case .raw(let raw) = message.payload else { return }
         let messageId = raw["messageId"]?.value as? String
+        if let messageId, acceptRestoreWriteResult(raw, messageId: messageId, clientId: clientId) { return }
         if let messageId, acceptSessionBookmarkWriteResult(raw, messageId: messageId, clientId: clientId) { return }
         if let messageId, let operations = dispatchedNativePlans.removeValue(forKey: messageId) {
             guard (raw["applied"]?.value as? Bool) == true,
@@ -1375,19 +1401,6 @@ final class SyncService: ObservableObject {
         }
         refreshSafariSnapshot()
         return true
-    }
-
-    /// Sends a full bookmark sync (e.g. a backup restore) to every
-    /// participating browser, remembering it per browser so a large result
-    /// held by its extension can be reviewed and approved.
-    func broadcastBookmarkSync(_ message: WSMessage) {
-        guard let daemon else { return }
-        let explicitRestore = message.isExplicitDeletedBookmarkRestore == true || message.isExplicitBookmarkRestore == true
-        // Same recipients and content as the plain broadcast it replaces.
-        for client in daemon.connectedClients where settings.bookmarkParticipatingBrowsers.contains(client.browser) && mayWriteBookmarks(to: client, explicitRestore: explicitRestore) {
-            recordSentBookmarkMessage(message, to: client.id)
-            daemon.sendWSMessage(message, to: client)
-        }
     }
 
     /// Restores trash items only to the browsers in which the deletion was
@@ -2588,7 +2601,8 @@ final class SyncService: ObservableObject {
 
     private func handleBookmarkPlanContext(_ message: WSMessage, clientId: String) {
         if case .raw(let raw)? = message.payload, let requestId = raw["requestId"]?.value as? String,
-           acceptSessionBookmarkContext(raw, requestId: requestId, clientId: clientId) {
+           acceptRestoreContext(raw, requestId: requestId, clientId: clientId)
+            || acceptSessionBookmarkContext(raw, requestId: requestId, clientId: clientId) {
             return
         }
         guard case .raw(let raw)? = message.payload,
@@ -2625,8 +2639,12 @@ final class SyncService: ObservableObject {
         let context = BookmarkNativeTreeContext(inputToken: token, browser: input.browser, nodes: nodes,
                                                 rootIds: roots, sourceToNativeIds: mapping,
                                                 scopeRootId: raw["scopeRootId"]?.value as? String)
+        guard BookmarkRestorePlanner.contextMatchesRequestedScope(context, requestedFolder: input.message.targetBookmarkFolder) else {
+            log("App refused bookmark planning for [\(clientId)]: it did not report the requested folder as its scope. Nothing was written.")
+            return
+        }
         _ = backupService?.savePreSyncBackup(
-            bookmarks: nodes,
+            bookmarks: BookmarkRestorePlanner.archive(of: context),
             sourceBrowser: clientId,
             folderPath: settings.bookmarkFolder(for: input.browser)
         )
@@ -3577,9 +3595,10 @@ extension SyncService {
     func acceptSessionBookmarkContext(_ raw: [String: AnyCodable], requestId: String, clientId: String) -> Bool {
         guard var session = bookmarkSyncSession, let target = session.awaitingContexts[requestId] else { return false }
         session.awaitingContexts.removeValue(forKey: requestId)
-        if session.clientIds[target] == clientId, let context = nativeTreeContext(from: raw, browser: target) {
+        if session.clientIds[target] == clientId, let context = nativeTreeContext(from: raw, browser: target),
+           BookmarkRestorePlanner.contextMatchesRequestedScope(context, requestedFolder: settings.bookmarkFolder(for: target)) {
             session.contexts[target] = context
-            _ = backupService?.savePreSyncBackup(bookmarks: context.nodes, sourceBrowser: clientId,
+            _ = backupService?.savePreSyncBackup(bookmarks: BookmarkRestorePlanner.archive(of: context), sourceBrowser: clientId,
                                                  folderPath: settings.bookmarkFolder(for: target))
         } else {
             log("Bookmark sync skipped [\(clientId)] as a target: \((raw["error"]?.value as? String) ?? "it returned no valid current tree"). Nothing will be written there.")
@@ -4209,6 +4228,228 @@ extension SyncService {
         activeManualSyncID = nil
         lastManualSyncWasCancelled = true
         isSyncing = false
+    }
+}
+
+// MARK: - Backup restore
+
+extension SyncService {
+    /// The browser a backup belongs to ("safari", "chrome-<instance>", ...).
+    static func restoreBrowser(forBackupSource source: String) -> Browser? {
+        Browser(rawValue: (source.components(separatedBy: "-").first ?? source).lowercased())
+    }
+
+    /// Restores a backup into the browser it was taken from, inside that
+    /// browser's selected folder, through the scoped native planner and a
+    /// verified write. The confirmation that called this is the explicit
+    /// approval (so the one-way-source exception applies to this browser
+    /// only); other browsers follow through a normal sync session.
+    func restoreBackup(archive: [Bookmark], archiveFolder: String?, source: String, replacing: Bool,
+                       completion: @escaping (BookmarkRestoreOutcome?) -> Void) {
+        func fail(_ reason: String) {
+            log("Backup restore was not performed: \(reason). Nothing was reported as restored.")
+            completion(nil)
+        }
+        guard let browser = Self.restoreBrowser(forBackupSource: source) else { return fail("the backup's browser is unknown") }
+        guard BookmarkWritePolicy.allowsWrite(to: browser, settings: settings, explicitRestore: true) else {
+            return fail("bookmark sync is off or \(browser.displayName) is not participating")
+        }
+        if let phase = bookmarkSyncSession?.phase, phase == .applying || phase == .finalizing {
+            return fail("a bookmark sync is writing right now; try again when it finishes")
+        }
+        let scope = BookmarkRestorePlanner.scope(archive: archive, archiveFolder: archiveFolder,
+                                                 targetFolder: settings.bookmarkFolder(for: browser))
+        guard scope.isRestorable else { return fail("the backup does not contain \(browser.displayName)'s sync folder") }
+        guard !replacing || scope.allowsReplace else {
+            return fail("Replace Restore needs the backup and the sync folder to cover the same folder")
+        }
+        // The bound folder in the live browser: its sync folder, or the
+        // backup's own folder when the browser syncs its whole library.
+        let targetFolder = scope.effectiveFolder
+        let desired = BookmarkRestorePlanner.portableTree(archive: archive, scope: scope)
+        guard !desired.isEmpty else { return fail("the backup contains no restorable bookmarks") }
+
+        if browser == .safari {
+            guard SandboxAccessManager.shared.hasSafariAccess else { return fail("Safari folder access has not been granted") }
+            let read = safariBookmarks.nativePlanContext(folderPath: targetFolder)
+            guard let context = read.context else {
+                return fail(read.error ?? "Safari bookmarks are unavailable")
+            }
+            let plan = BookmarkRestorePlanner.plan(desired: desired, context: context, replacing: replacing)
+            if let error = plan.validationError { return fail(error) }
+            let operations = restoreOperations(plan.operations)
+            guard !operations.isEmpty else { return finishRestore(browser: browser, operations: [], completion: completion) }
+            backupSafariBeforeRestore()
+            lastNetworkSyncTime = Date()
+            recordInternalWrite()
+            let result = safariBookmarks.applyNativePlan(operations, inputToken: context.inputToken,
+                                                         scopeRootId: context.scopeRootId, explicitRestore: true)
+            guard result.applied else { return fail(result.error ?? "the Safari write could not be verified") }
+            refreshSafariSnapshot()
+            return finishRestore(browser: browser, operations: operations, completion: completion)
+        }
+
+        guard let client = daemon?.connectedClients.first(where: { $0.browser == browser }),
+              mayWriteBookmarks(to: client, explicitRestore: true) else {
+            return fail("\(browser.displayName) is not connected with a current BrowSync extension")
+        }
+        let requestId = UUID().uuidString
+        pendingRestoreContexts[requestId] = PendingBookmarkRestore(browser: browser, clientId: client.id, desired: desired,
+                                                                   replacing: replacing, targetFolder: targetFolder,
+                                                                   archiveFolder: archiveFolder, completion: completion)
+        let request = WSMessage(type: .pull, site: requestId, category: "bookmark_plan_context",
+                                payload: .raw(["requestId": AnyCodable(requestId),
+                                               "targetFolder": AnyCodable(targetFolder ?? NSNull())]),
+                                messageId: UUID().uuidString, timestamp: Date().timeIntervalSince1970)
+        daemon?.sendBookmarkControlMessage(request, to: client)
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            await MainActor.run {
+                guard let self, let pending = self.pendingRestoreContexts.removeValue(forKey: requestId) else { return }
+                self.log("Backup restore into [\(pending.clientId)] timed out waiting for its current tree. Nothing was written.")
+                pending.completion(nil)
+            }
+        }
+    }
+
+    /// Captures Safari's synced scope immediately before a restore writes it,
+    /// even if a backup was taken moments ago (identical content is still
+    /// deduplicated), then suppresses follow-up backups of our own write.
+    private func backupSafariBeforeRestore() {
+        let raw = safariBookmarks.readBookmarks().map {
+            Bookmark(id: $0.id, title: $0.title, url: $0.url, parentId: $0.parentId, isFolder: $0.isFolder,
+                     sortIndex: $0.sortIndex, inBookmarksBar: $0.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
+        }
+        if let backup = backupBookmarksForSource(raw, browser: .safari) {
+            _ = backupService?.savePreSyncBackup(bookmarks: backup, sourceBrowser: "safari",
+                                                 folderPath: settings.bookmarkFolder(for: .safari), bypassBurstSuppression: true)
+        }
+        suppressSafariPreSyncBackupUntil = Date().addingTimeInterval(15)
+    }
+
+    /// Sibling positions are not replayed: later inserts would shift earlier
+    /// ones and fail verification. Creation order preserves backup order.
+    private func restoreOperations(_ operations: [BookmarkMutationOperation]) -> [BookmarkMutationOperation] {
+        operations.map { op in
+            var op = op
+            op.index = nil
+            return op
+        }
+    }
+
+    func acceptRestoreContext(_ raw: [String: AnyCodable], requestId: String, clientId: String) -> Bool {
+        guard var pending = pendingRestoreContexts[requestId], pending.clientId == clientId else { return false }
+        pendingRestoreContexts.removeValue(forKey: requestId)
+        func fail(_ reason: String) {
+            log("Backup restore into [\(clientId)] was not performed: \(reason). Nothing was reported as restored.")
+            pending.completion(nil)
+        }
+        guard let context = nativeTreeContext(from: raw, browser: pending.browser) else {
+            fail((raw["error"]?.value as? String).map { "\($0) (\(pending.targetFolder ?? "whole library"))" }
+                 ?? "it returned no valid current tree")
+            return true
+        }
+        guard BookmarkWritePolicy.allowsWrite(to: pending.browser, settings: settings, explicitRestore: true) else {
+            fail("bookmark sync settings changed")
+            return true
+        }
+        // The confirmation named a folder; if the sync folder changed since,
+        // that confirmation no longer describes this write.
+        let configured = settings.bookmarkFolder(for: pending.browser)
+        let currentTarget = (configured?.isEmpty ?? true) ? pending.archiveFolder : configured
+        guard BookmarkFolderPath.canonicalized(currentTarget) == BookmarkFolderPath.canonicalized(pending.targetFolder) else {
+            fail("the browser's sync folder changed after the restore was confirmed")
+            return true
+        }
+        guard BookmarkRestorePlanner.contextMatchesRequestedScope(context, requestedFolder: pending.targetFolder) else {
+            fail("the browser did not report the requested folder as its scope")
+            return true
+        }
+        // The target scope is saved before anything is replayed into it,
+        // even if another backup of it was taken seconds ago.
+        _ = backupService?.savePreSyncBackup(bookmarks: BookmarkRestorePlanner.archive(of: context), sourceBrowser: clientId,
+                                             folderPath: pending.targetFolder, bypassBurstSuppression: true)
+        let plan = BookmarkRestorePlanner.plan(desired: pending.desired, context: context, replacing: pending.replacing)
+        if let error = plan.validationError {
+            fail(error)
+            return true
+        }
+        let operations = restoreOperations(plan.operations)
+        guard !operations.isEmpty else {
+            finishRestore(browser: pending.browser, operations: [], completion: pending.completion)
+            return true
+        }
+        guard let client = daemon?.connectedClients.first(where: { $0.id == clientId }) else {
+            fail("the browser disconnected")
+            return true
+        }
+        let messageId = UUID().uuidString
+        var message = WSMessage(
+            type: .sync, site: "*", category: "bookmark_apply_plan",
+            payload: .raw([
+                "inputToken": AnyCodable(context.inputToken),
+                "operations": AnyCodable(operations.map { op in
+                    ["type": op.kind.rawValue, "id": op.id, "sourceId": op.sourceId as Any, "parentId": op.parentId as Any,
+                     "index": op.index as Any, "title": op.title as Any, "url": op.url as Any]
+                })
+            ]),
+            messageId: messageId, timestamp: Date().timeIntervalSince1970)
+        message.isExplicitBookmarkRestore = true
+        pending.operations = operations
+        pendingRestoreWrites[messageId] = pending
+        daemon?.sendWSMessage(message, to: client)
+        log("Dispatched a confirmed backup restore (\(operations.count) operation(s)) to [\(clientId)].")
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 60_000_000_000)
+            await MainActor.run {
+                guard let self, let pending = self.pendingRestoreWrites.removeValue(forKey: messageId) else { return }
+                self.log("No verified result arrived for the backup restore into [\(pending.clientId)]; it is not reported as restored.")
+                self.lateRestoreWrites[messageId] = pending.clientId
+                pending.completion(nil)
+            }
+        }
+        return true
+    }
+
+    func acceptRestoreWriteResult(_ raw: [String: AnyCodable], messageId: String, clientId: String) -> Bool {
+        if lateRestoreWrites.removeValue(forKey: messageId) != nil {
+            log("A late result arrived for a timed-out backup restore into [\(clientId)]; re-reading its bookmarks.")
+            requestFreshBookmarkSnapshot(for: clientId)
+            scheduleBookmarkSyncSession()
+            return true
+        }
+        guard let pending = pendingRestoreWrites.removeValue(forKey: messageId) else { return false }
+        guard (raw["applied"]?.value as? Bool) == true, (raw["verified"]?.value as? Bool) == true,
+              verifyNativeOperationResults(raw["operationResults"]?.value, operations: pending.operations) else {
+            log("Backup restore into [\(clientId)] was not verified (\((raw["error"]?.value as? String) ?? "results differ from the plan")); some operations may have been written. It is not reported as restored; re-reading the browser.")
+            // An extension applies operations one by one: a failed result can
+            // still mean a partial write, which the next sync must see.
+            requestFreshBookmarkSnapshot(for: clientId)
+            scheduleBookmarkSyncSession()
+            pending.completion(nil)
+            return true
+        }
+        requestFreshBookmarkSnapshot(for: clientId)
+        finishRestore(browser: pending.browser, operations: pending.operations, completion: pending.completion)
+        return true
+    }
+
+    private func finishRestore(browser: Browser, operations: [BookmarkMutationOperation],
+                               completion: (BookmarkRestoreOutcome?) -> Void) {
+        let outcome = BookmarkRestoreOutcome(
+            browser: browser,
+            added: operations.filter { $0.kind == .create }.count,
+            removed: operations.filter { $0.kind == .removeTree }.count,
+            updated: operations.filter { $0.kind == .update || $0.kind == .move }.count)
+        log("Restored a backup into \(browser.displayName): \(outcome.added) added, \(outcome.removed) removed, \(outcome.updated) updated. Other browsers follow through normal sync.")
+        completion(outcome)
+        // A review computed before the restore no longer describes the trees.
+        if !operations.isEmpty, let phase = bookmarkSyncSession?.phase, phase == .collecting || phase == .reviewing {
+            discardBookmarkSyncSession(reason: "a backup was restored into \(browser.displayName)")
+        }
+        // The restore is now a local change of that browser; a session
+        // propagates it under the user's direction, folders and Safe Mode.
+        scheduleBookmarkSyncSession()
     }
 }
 

@@ -987,6 +987,22 @@ enum NativeBookmarkPlanner {
             }
         }
 
+        // Every create/move must land in a node of this target tree (or one
+        // planned earlier in the same plan). Anything else would make the
+        // executor fail mid-way after other operations already ran.
+        if validationError == nil {
+            let known = Set(context.nodes.map(\.id))
+            var planned = Set<String>()
+            for op in operations {
+                if op.kind == .create || op.kind == .move,
+                   let parent = op.parentId, !known.contains(parent), !planned.contains(parent) {
+                    validationError = "planned parent is not in the target tree"
+                    break
+                }
+                if op.kind == .create { planned.insert(op.id) }
+            }
+        }
+
         // No subset of an unresolved conflict is executable.  The user must
         // see the complete conflict set before any accompanying operations
         // can mutate a browser.
@@ -1693,6 +1709,164 @@ enum BookmarkReconciler {
     }
 }
 
+// MARK: - Backup restore planning
+
+/// A backup is restored only into the browser it was taken from, inside that
+/// browser's currently selected folder. Other browsers follow through the
+/// normal sync session, under the user's direction, folders and Safe Mode.
+enum BookmarkRestorePlanner {
+    /// What a restore of one backup into its browser covers.
+    struct Scope: Equatable {
+        /// Folder bound in the live browser (nil = whole library).
+        var effectiveFolder: String?
+        /// Folder whose contents are taken from the archive (nil = all of it).
+        var archiveSourceFolder: String?
+        /// Archived node IDs that will be restored (shown undimmed).
+        var restorableIds: Set<String>
+        /// Replace only when the archive covers exactly the bound folder.
+        var allowsReplace: Bool
+        var isRestorable: Bool
+    }
+
+    /// The live browser's selected folder decides the scope. A whole-library
+    /// backup restored into a browser that syncs one folder contributes only
+    /// that folder; a folder backup restored into a whole-library browser
+    /// goes back into that same folder.
+    static func scope(archive: [Bookmark], archiveFolder: String?, targetFolder: String?) -> Scope {
+        let archiveFolder = (archiveFolder?.isEmpty ?? true) ? nil : archiveFolder
+        let targetFolder = (targetFolder?.isEmpty ?? true) ? nil : targetFolder
+        let effective = targetFolder ?? archiveFolder
+        let source: String? = archiveFolder ?? targetFolder
+        let sameFolder = archiveFolder == nil || targetFolder == nil
+            || BookmarkFolderPath.canonicalized(archiveFolder) == BookmarkFolderPath.canonicalized(targetFolder)
+        guard let source else {
+            return Scope(effectiveFolder: nil, archiveSourceFolder: nil, restorableIds: Set(archive.map(\.id)),
+                         allowsReplace: true, isRestorable: !archive.isEmpty)
+        }
+        guard let folderId = BookmarkTreeMerger.folderId(tree: archive, folderPath: source)
+                ?? legacyArchiveFolderId(archive: archive, archiveFolder: archiveFolder, source: source) else {
+            return Scope(effectiveFolder: effective, archiveSourceFolder: source, restorableIds: [],
+                         allowsReplace: false, isRestorable: false)
+        }
+        let children = Dictionary(grouping: archive, by: { $0.parentId ?? "" })
+        var ids = Set([folderId])
+        var queue = [folderId]
+        while let id = queue.popLast() {
+            for child in children[id] ?? [] where ids.insert(child.id).inserted { queue.append(child.id) }
+        }
+        return Scope(effectiveFolder: effective, archiveSourceFolder: source, restorableIds: ids,
+                     allowsReplace: sameFolder, isRestorable: ids.count > 1)
+    }
+
+    /// A native tree is usable only if it is bound to exactly what was asked:
+    /// a requested folder must come back as a scope node present in the
+    /// tree; no folder means no scope. Otherwise planning fails closed.
+    static func contextMatchesRequestedScope(_ context: BookmarkNativeTreeContext, requestedFolder: String?) -> Bool {
+        let requested = !(requestedFolder?.isEmpty ?? true)
+        guard let scope = context.scopeRootId else { return !requested }
+        return requested && context.nodes.contains { $0.id == scope && $0.isFolder }
+    }
+
+    /// Backups made before ancestor chains were archived hold only the folder
+    /// and its contents. When the archive is that folder's backup, its single
+    /// top-level folder with the path's last title is the folder.
+    private static func legacyArchiveFolderId(archive: [Bookmark], archiveFolder: String?, source: String) -> String? {
+        guard let archiveFolder, BookmarkFolderPath.canonicalized(archiveFolder) == BookmarkFolderPath.canonicalized(source),
+              let title = source.components(separatedBy: "/").filter({ !$0.isEmpty }).last else { return nil }
+        let ids = Set(archive.map(\.id))
+        let tops = archive.filter { $0.isFolder && $0.title == title && !ids.contains($0.parentId ?? "") }
+        return tops.count == 1 ? tops[0].id : nil
+    }
+
+    /// A pre-write backup of a native target tree: the bound scope with its
+    /// ancestor chain (or the whole tree), with browser-native root IDs
+    /// rewritten to the portable roles 1/2/3 so the folder path resolves.
+    static func archive(of context: BookmarkNativeTreeContext) -> [Bookmark] {
+        var roleById: [String: String] = [:]
+        for role in ["3", "2", "1"] { if let native = context.rootIds[role] { roleById[native] = role } }
+        let nodes = context.scopeRootId.map { BookmarkTreeMerger.subtreeWithAncestors(of: $0, in: context.nodes) } ?? context.nodes
+        return nodes.map { node in
+            var node = node
+            if let role = roleById[node.id] { node.id = role; node.parentId = "0" }
+            if let parent = node.parentId, let role = roleById[parent] { node.parentId = role }
+            return node
+        }
+    }
+
+    /// The archived content as a portable payload: the scope's folder
+    /// contents (or the whole archive), browser-owned roots removed and their
+    /// children re-parented to the portable roles 1/2/3.
+    static func portableTree(archive: [Bookmark], scope: Scope) -> [Bookmark] {
+        let selection: [Bookmark]
+        if let folder = scope.archiveSourceFolder {
+            selection = BookmarkTreeMerger.extractExistingSubtreeAsRoot(sourceTree: archive, folderPath: folder,
+                                                                       portableParentId: "2") ?? []
+        } else {
+            selection = archive
+        }
+        func canonicalRootID(for bookmark: Bookmark) -> String? {
+            let id = bookmark.id.lowercased()
+            if id == "0" { return "0" }
+            // Archives name roots several ways: "1", "browsync-root-bar",
+            // Firefox's "firefox-toolbar-root" / "firefox-menu-root" ...
+            if id == "1" || id.contains("root-bar") || id.contains("root-favorites") || id.hasSuffix("toolbar-root") { return "1" }
+            if id == "2" || id.contains("root-menu") || id.contains("root-other") || id.hasSuffix("menu-root") || id.hasSuffix("other-root") { return "2" }
+            if id == "3" || id.contains("root-mobile") || id.hasSuffix("mobile-root") { return "3" }
+            return nil
+        }
+        let rootMappings = Dictionary(selection.compactMap { bookmark in canonicalRootID(for: bookmark).map { (bookmark.id, $0) } },
+                                      uniquingKeysWith: { first, _ in first })
+        return selection.compactMap { bookmark in
+            if rootMappings[bookmark.id] != nil { return nil }
+            var node = bookmark
+            if let parent = bookmark.parentId, let role = rootMappings[parent] {
+                node.parentId = role
+                node.inBookmarksBar = role == "1"
+            }
+            return node
+        }
+    }
+
+    /// Incremental restore only creates what is missing: it never removes,
+    /// renames or moves an existing bookmark, and a differing existing value
+    /// wins. Replace restore makes the bound scope equal to the backup
+    /// (backup values win); nothing outside the scope is planned.
+    static func plan(desired: [Bookmark], context input: BookmarkNativeTreeContext, replacing: Bool) -> NativeBookmarkPlan {
+        // Archived IDs are only trustworthy in the browser's own ID space:
+        // Safari archives use Safari's UUIDs. An extension's syncIdMap maps
+        // *other* browsers' IDs and small numeric IDs collide, so extension
+        // restores match by content alone.
+        var context = input
+        if context.browser != .safari { context.sourceToNativeIds = [:] }
+        var resolutions: [String: BookmarkConflictResolution] = [:]
+        var plan = NativeBookmarkPlanner.makePlan(desired: desired, context: context, fullMirror: replacing,
+                                                  virtualIdPrefix: "browsync-restore-planned-")
+        var attempts = 0
+        while !plan.conflicts.isEmpty && attempts < 8 {
+            attempts += 1
+            for conflict in plan.conflicts {
+                // A same-slot (or mapped) difference: Replace takes the backup,
+                // Incremental keeps the existing value. A match found only
+                // elsewhere in the folder is a different bookmark: keep both.
+                let elsewhere = conflict.id.hasPrefix("url-scope|") || conflict.id.hasPrefix("title-scope|")
+                resolutions[conflict.id] = elsewhere ? .both : (replacing ? .source : .target)
+            }
+            plan = NativeBookmarkPlanner.makePlan(desired: desired, context: context, fullMirror: replacing,
+                                                  conflictResolutions: resolutions,
+                                                  virtualIdPrefix: "browsync-restore-planned-")
+        }
+        if !plan.conflicts.isEmpty, plan.validationError == nil { plan.validationError = "unresolved bookmark conflict" }
+        guard !replacing else { return plan }
+        plan.operations = plan.operations.filter { $0.kind == .create }
+        let created = Set(plan.operations.map(\.id))
+        plan.changes = plan.changes.filter { $0.kind == .added && created.contains($0.id) }
+        plan.impact = NativeBookmarkImpact(added: plan.operations.count, removed: 0, moved: 0, modified: 0,
+                                           total: plan.impact.total, signature: plan.impact.signature,
+                                           destructiveSignature: "")
+        return plan
+    }
+}
+
 // MARK: - Safari Bookmarks.plist (pure, testable)
 
 /// Lightweight bookmark row read from Safari's Bookmarks.plist.
@@ -2198,6 +2372,27 @@ struct BookmarkTreeMerger {
             )
         }
         return result
+    }
+
+    /// The selected folder, everything below it, and its ancestor folders up
+    /// to the root (ancestors only, never their other children). Backups keep
+    /// this chain so a nested folder can be located again on restore.
+    static func extractExistingSubtreeWithAncestors(sourceTree: [Bookmark], folderPath: String?) -> [Bookmark]? {
+        guard let folderPath, !folderPath.isEmpty else { return sourceTree }
+        let components = folderPath.components(separatedBy: "/").filter { !$0.isEmpty }
+        guard let folderId = findFolderId(pathComponents: components, in: sourceTree) else { return nil }
+        return subtreeWithAncestors(of: folderId, in: sourceTree)
+    }
+
+    static func subtreeWithAncestors(of folderId: String, in tree: [Bookmark]) -> [Bookmark] {
+        let byId = Dictionary(tree.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var included = Set([folderId])
+        included.formUnion(extractDescendants(of: folderId, in: tree).map(\.id))
+        var parent = byId[folderId]?.parentId
+        while let id = parent, byId[id] != nil, included.insert(id).inserted {
+            parent = byId[id]?.parentId
+        }
+        return tree.filter { included.contains($0.id) }
     }
 
     /// Extracts a selected folder together with its descendants for archival.

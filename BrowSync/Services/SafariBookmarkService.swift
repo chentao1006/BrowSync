@@ -971,8 +971,9 @@ final class SafariBookmarkService {
     /// Executes app-planned operations as one atomic plist replacement. Nothing
     /// is written unless every operation applies, nodes outside the selected
     /// scope are untouched, and the resulting values match the plan.
-    func applyNativePlan(_ operations: [BookmarkMutationOperation], inputToken: String, scopeRootId: String?) -> NativePlanResult {
-        guard safariWriteIsAuthorized() else { return .init(applied: false, writes: 0, error: "Safari bookmark write is not authorized") }
+    func applyNativePlan(_ operations: [BookmarkMutationOperation], inputToken: String, scopeRootId: String?,
+                         explicitRestore: Bool = false) -> NativePlanResult {
+        guard safariWriteIsAuthorized(explicitRestore: explicitRestore) else { return .init(applied: false, writes: 0, error: "Safari bookmark write is not authorized") }
         guard !operations.isEmpty else { return .init(applied: true, writes: 0, error: nil) }
         return SandboxAccessManager.shared.withSafariAccess {
             guard let url = bookmarksURL,
@@ -989,7 +990,8 @@ final class SafariBookmarkService {
             }
             installMonitorEventHandler()
             let added = operations.filter { $0.kind == .create }.count
-            guard writePlist(updated, to: url, added: added, sourceBrowser: "BrowSync plan") else {
+            guard writePlist(updated, to: url, added: added, sourceBrowser: explicitRestore ? "Backup Restore" : "BrowSync plan",
+                             explicitRestore: explicitRestore) else {
                 return .init(applied: false, writes: 0, error: "Safari bookmark file could not be written")
             }
             return .init(applied: true, writes: operations.count, error: nil)

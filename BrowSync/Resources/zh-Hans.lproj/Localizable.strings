@@ -690,3 +690,13 @@
 "Ignored Bookmark Changes" = "已忽略的书签更改";
 "%d ignored changes are not offered again until they change." = "%d 条已忽略的更改在再次变化前不会再提示。";
 "Review" = "审核";
+"Restored in %@: %d added, %d removed, %d updated. Other browsers follow through normal sync, using your sync direction, folders and Safe Mode." = "已恢复到 %@：新增 %d 个、删除 %d 个、更新 %d 个。其它浏览器会通过正常同步跟进，遵循你的同步方向、文件夹和安全模式设置。";
+"Restore failed" = "恢复失败";
+"The backup was not restored and nothing was reported as written. See the sync log for details." = "此备份未恢复，也没有任何内容被报告为已写入。详情请查看同步日志。";
+"Replace the bookmarks in %@ › %@ with this backup? Items there that are not in the backup are removed; nothing outside it changes. Other browsers follow through normal sync." = "要用此备份替换 %@ › %@ 中的书签吗？其中不在备份里的项目会被删除，此文件夹以外的内容不受影响。其它浏览器会通过正常同步跟进。";
+"Add the items missing from %@ › %@ from this backup? Existing bookmarks are kept unchanged. Other browsers follow through normal sync." = "要从此备份中补回 %@ › %@ 缺少的项目吗？现有书签保持不变。其它浏览器会通过正常同步跟进。";
+"%@ is the read-only source of one-way sync. This restore will write to it." = "%@ 是单向同步的只读源，此次恢复将写入它。";
+"Replace Restore needs the backup and the sync folder to cover the same folder." = "替换恢复要求备份与同步文件夹对应同一个文件夹。";
+"This backup does not contain %@'s sync folder %@, so it cannot be restored there." = "此备份不包含 %@ 的同步文件夹 %@，无法恢复到那里。";
+"Only %@ is restored into %@. Grayed items are outside it and will not be restored." = "只有 %@ 会恢复到 %@，灰色项目在此范围之外，不会恢复。";
+"The backup was not restored. If the browser had already started writing, some items may have changed; it is re-read and the next sync shows any difference. See the sync log for details." = "此备份未能恢复。如果浏览器已开始写入，部分项目可能已改变；BrowSync 会重新读取它，下次同步会显示所有差异。详情请查看同步日志。";

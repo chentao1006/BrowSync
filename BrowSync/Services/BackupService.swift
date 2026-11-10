@@ -230,7 +230,11 @@ final class BackupService: ObservableObject {
     // MARK: - User-visible pre-sync backups
 
     @discardableResult
-    func savePreSyncBackup(bookmarks: [Bookmark], sourceBrowser: String, folderPath: String?) -> Bool {
+    /// - Parameter bypassBurstSuppression: a confirmed restore replays into a
+    ///   target that may have been backed up seconds ago; that state must
+    ///   still be captured. Identical content remains deduplicated.
+    func savePreSyncBackup(bookmarks: [Bookmark], sourceBrowser: String, folderPath: String?,
+                           bypassBurstSuppression: Bool = false) -> Bool {
         guard !bookmarks.isEmpty else {
             logger.debug("Skipped empty pre-sync bookmark backup for \(sourceBrowser)")
             return false
@@ -243,7 +247,7 @@ final class BackupService: ObservableObject {
             // One incoming change can fan out into several extension callbacks.
             // The first capture is the only state guaranteed to be pre-write;
             // subsequent callbacks in the same burst may already be synced.
-            if Date().timeIntervalSince(previousBackup.createdAt) < 30 {
+            if !bypassBurstSuppression, Date().timeIntervalSince(previousBackup.createdAt) < 30 {
                 logger.debug("Skipped duplicate pre-sync bookmark backup in the current sync burst for \(sourceBrowser)")
                 return false
             }

@@ -628,3 +628,13 @@
 "Ignored Bookmark Changes" = "Ignorierte Lesezeichenänderungen";
 "%d ignored changes are not offered again until they change." = "%d ignorierte Änderungen werden erst wieder angeboten, wenn sie sich ändern.";
 "Review" = "Prüfen";
+"Restored in %@: %d added, %d removed, %d updated. Other browsers follow through normal sync, using your sync direction, folders and Safe Mode." = "In %@ wiederhergestellt: %d hinzugefügt, %d entfernt, %d aktualisiert. Andere Browser folgen über die normale Synchronisierung gemäß Richtung, Ordnern und abgesichertem Modus.";
+"Restore failed" = "Wiederherstellung fehlgeschlagen";
+"The backup was not restored and nothing was reported as written. See the sync log for details." = "Das Backup wurde nicht wiederhergestellt, und nichts wurde als geschrieben gemeldet. Details stehen im Synchronisierungsprotokoll.";
+"Replace the bookmarks in %@ › %@ with this backup? Items there that are not in the backup are removed; nothing outside it changes. Other browsers follow through normal sync." = "Die Lesezeichen in %@ › %@ durch dieses Backup ersetzen? Einträge, die nicht im Backup sind, werden entfernt; außerhalb ändert sich nichts. Andere Browser folgen über die normale Synchronisierung.";
+"Add the items missing from %@ › %@ from this backup? Existing bookmarks are kept unchanged. Other browsers follow through normal sync." = "Fehlende Einträge in %@ › %@ aus diesem Backup ergänzen? Vorhandene Lesezeichen bleiben unverändert. Andere Browser folgen über die normale Synchronisierung.";
+"%@ is the read-only source of one-way sync. This restore will write to it." = "%@ ist die schreibgeschützte Quelle der Einweg-Synchronisierung. Diese Wiederherstellung schreibt in diesen Browser.";
+"Replace Restore needs the backup and the sync folder to cover the same folder." = "Ersetzen erfordert, dass Backup und Synchronisierungsordner denselben Ordner abdecken.";
+"This backup does not contain %@'s sync folder %@, so it cannot be restored there." = "Dieses Backup enthält den Synchronisierungsordner %2$@ von %1$@ nicht und kann dort nicht wiederhergestellt werden.";
+"Only %@ is restored into %@. Grayed items are outside it and will not be restored." = "Nur %@ wird in %@ wiederhergestellt. Ausgegraute Einträge liegen außerhalb und werden nicht wiederhergestellt.";
+"The backup was not restored. If the browser had already started writing, some items may have changed; it is re-read and the next sync shows any difference. See the sync log for details." = "Das Backup wurde nicht wiederhergestellt. Falls der Browser bereits zu schreiben begonnen hatte, können sich einige Einträge geändert haben; er wird neu eingelesen und die nächste Synchronisierung zeigt jede Abweichung. Details stehen im Synchronisierungsprotokoll.";

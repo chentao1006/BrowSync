@@ -628,3 +628,13 @@
 "Ignored Bookmark Changes" = "Modifiche ai segnalibri ignorate";
 "%d ignored changes are not offered again until they change." = "%d modifiche ignorate non verranno più proposte finché non cambiano.";
 "Review" = "Rivedi";
+"Restored in %@: %d added, %d removed, %d updated. Other browsers follow through normal sync, using your sync direction, folders and Safe Mode." = "Ripristinato in %@: %d aggiunti, %d rimossi, %d aggiornati. Gli altri browser seguono tramite la sincronizzazione normale, secondo direzione, cartelle e modalità sicura.";
+"Restore failed" = "Ripristino non riuscito";
+"The backup was not restored and nothing was reported as written. See the sync log for details." = "Il backup non è stato ripristinato e nulla è stato segnalato come scritto. Consulta il registro di sincronizzazione per i dettagli.";
+"Replace the bookmarks in %@ › %@ with this backup? Items there that are not in the backup are removed; nothing outside it changes. Other browsers follow through normal sync." = "Sostituire i segnalibri in %@ › %@ con questo backup? Gli elementi non presenti nel backup verranno rimossi; nulla cambia al di fuori. Gli altri browser seguono tramite la sincronizzazione normale.";
+"Add the items missing from %@ › %@ from this backup? Existing bookmarks are kept unchanged. Other browsers follow through normal sync." = "Aggiungere da questo backup gli elementi mancanti in %@ › %@? I segnalibri esistenti restano invariati. Gli altri browser seguono tramite la sincronizzazione normale.";
+"%@ is the read-only source of one-way sync. This restore will write to it." = "%@ è la sorgente in sola lettura della sincronizzazione unidirezionale. Questo ripristino vi scriverà.";
+"Replace Restore needs the backup and the sync folder to cover the same folder." = "La sostituzione richiede che backup e cartella sincronizzata corrispondano alla stessa cartella.";
+"This backup does not contain %@'s sync folder %@, so it cannot be restored there." = "Questo backup non contiene la cartella sincronizzata %2$@ di %1$@, quindi non può essere ripristinato lì.";
+"Only %@ is restored into %@. Grayed items are outside it and will not be restored." = "Solo %@ viene ripristinato in %@. Gli elementi in grigio sono esclusi e non verranno ripristinati.";
+"The backup was not restored. If the browser had already started writing, some items may have changed; it is re-read and the next sync shows any difference. See the sync log for details." = "Il backup non è stato ripristinato. Se il browser aveva già iniziato a scrivere, alcuni elementi potrebbero essere cambiati; viene riletto e la prossima sincronizzazione mostrerà ogni differenza. Consulta il registro di sincronizzazione.";

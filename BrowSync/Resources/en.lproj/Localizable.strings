@@ -662,3 +662,13 @@
 "Ignored Bookmark Changes" = "Ignored Bookmark Changes";
 "%d ignored changes are not offered again until they change." = "%d ignored changes are not offered again until they change.";
 "Review" = "Review";
+"Restored in %@: %d added, %d removed, %d updated. Other browsers follow through normal sync, using your sync direction, folders and Safe Mode." = "Restored in %@: %d added, %d removed, %d updated. Other browsers follow through normal sync, using your sync direction, folders and Safe Mode.";
+"Restore failed" = "Restore failed";
+"The backup was not restored and nothing was reported as written. See the sync log for details." = "The backup was not restored and nothing was reported as written. See the sync log for details.";
+"Replace the bookmarks in %@ › %@ with this backup? Items there that are not in the backup are removed; nothing outside it changes. Other browsers follow through normal sync." = "Replace the bookmarks in %@ › %@ with this backup? Items there that are not in the backup are removed; nothing outside it changes. Other browsers follow through normal sync.";
+"Add the items missing from %@ › %@ from this backup? Existing bookmarks are kept unchanged. Other browsers follow through normal sync." = "Add the items missing from %@ › %@ from this backup? Existing bookmarks are kept unchanged. Other browsers follow through normal sync.";
+"%@ is the read-only source of one-way sync. This restore will write to it." = "%@ is the read-only source of one-way sync. This restore will write to it.";
+"Replace Restore needs the backup and the sync folder to cover the same folder." = "Replace Restore needs the backup and the sync folder to cover the same folder.";
+"This backup does not contain %@'s sync folder %@, so it cannot be restored there." = "This backup does not contain %@'s sync folder %@, so it cannot be restored there.";
+"Only %@ is restored into %@. Grayed items are outside it and will not be restored." = "Only %@ is restored into %@. Grayed items are outside it and will not be restored.";
+"The backup was not restored. If the browser had already started writing, some items may have changed; it is re-read and the next sync shows any difference. See the sync log for details." = "The backup was not restored. If the browser had already started writing, some items may have changed; it is re-read and the next sync shows any difference. See the sync log for details.";

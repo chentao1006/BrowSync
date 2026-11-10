@@ -56,7 +56,17 @@ private enum BookmarkRootMappingTests {
             ("Safari plan writes inside the selected folder and nowhere else", testSafariPlanStaysInScope),
             ("Safari executor edits in place and refuses out-of-scope or invalid operations", testSafariExecutorRefusals),
             ("Safari context refuses missing or duplicate folders and binds the token to the bytes", testSafariContextBinding),
-            ("Safari maintenance runs only for an authorized whole-library sync", testSafariMaintenancePolicy)
+            ("Safari maintenance runs only for an authorized whole-library sync", testSafariMaintenancePolicy),
+            ("incremental restore only adds and never overwrites", testIncrementalRestoreOnlyAdds),
+            ("replace restore changes only the selected folder", testReplaceRestoreStaysInFolder),
+            ("restore payload drops archived browser roots", testRestorePayloadDropsRoots),
+            ("restore scope follows the browser's sync folder", testRestoreScopeFollowsSyncFolder),
+            ("folder backups keep their ancestor chain and stay restorable", testFolderBackupKeepsAncestors),
+            ("Firefox root archives restore into native roots, never under the tree root", testFirefoxArchiveRoots),
+            ("planner refuses operations into a parent outside the target tree", testPlannerRefusesUnknownParent),
+            ("extension restores ignore foreign syncIdMap entries", testRestoreIgnoresForeignIdMap),
+            ("incremental restore still adds a bookmark whose title exists elsewhere", testIncrementalRestoreSameTitleElsewhere),
+            ("a native tree must be bound to exactly the requested folder", testContextScopeBinding)
         ]
         for (name, test) in tests {
             do {
@@ -912,5 +922,211 @@ private enum BookmarkRootMappingTests {
         settings.bookmarkParticipatingBrowsers = [.safari, .chrome]
         settings.setBookmarkFolder("Bookmarks Bar/Synced", for: .safari)
         try expect(!BookmarkMaintenancePolicy.allowsSafariCleanup(settings: settings), "cleanup ran outside a selected Safari folder")
+    }
+
+    // MARK: Backup restore
+
+    /// Safari target bound to Favorites/Synced: {A, Renamed-here}, Outside.
+    private static func restoreTargetContext() throws -> (BookmarkNativeTreeContext, [String: Any]) {
+        var plist = syntheticSafariPlist()
+        var children = plist["Children"] as? [[String: Any]] ?? []
+        for index in children.indices where children[index]["WebBookmarkUUID"] as? String == "BAR" {
+            children[index]["Children"] = [
+                safariFolder("SYNC", "Synced", [safariLeaf("A", "A", "https://a.test/"),
+                                                safariLeaf("B", "B edited here", "https://b.test/"),
+                                                safariLeaf("EXTRA", "Not in backup", "https://extra.test/")]),
+                safariLeaf("OUT", "Outside", "https://out.test/")
+            ]
+        }
+        plist["Children"] = children
+        let read = SafariPlist.nativeContext(plist: plist, data: try plistData(plist), folderPath: "Bookmarks Bar/Synced")
+        return (try unwrap(read.context, "restore target context failed"), plist)
+    }
+
+    /// The backup of the same folder: A, B (original title), C (deleted since).
+    private static func restoreBackup() -> [Bookmark] {
+        [leaf("A", "A", "https://a.test/", parent: "2", browser: .safari),
+         leaf("B", "B", "https://b.test/", parent: "2", browser: .safari),
+         leaf("C", "C", "https://c.test/", parent: "2", browser: .safari)]
+    }
+
+    private static func testIncrementalRestoreOnlyAdds() throws {
+        let (context, plist) = try restoreTargetContext()
+        let plan = BookmarkRestorePlanner.plan(desired: restoreBackup(), context: context, replacing: false)
+        try expect(plan.validationError == nil, "incremental restore failed: \(plan.validationError ?? "")")
+        try expect(plan.operations.count == 1 && plan.operations[0].kind == .create && plan.operations[0].title == "C",
+                   "incremental restore did more than add the missing bookmark")
+        let written = try unwrap(SafariPlist.applying(plan.operations, to: plist, scopeRootId: context.scopeRootId).plist,
+                                 "incremental restore was not executable")
+        let parsed = SafariPlist.parseBookmarks(written)
+        try expect(parsed.contains { $0.id == "B" && $0.title == "B edited here" }, "incremental restore overwrote an existing title")
+        try expect(parsed.contains { $0.id == "EXTRA" }, "incremental restore removed a bookmark")
+        try expect(parsed.contains { $0.title == "C" && $0.parentId == "SYNC" }, "missing bookmark was not restored into the folder")
+    }
+
+    private static func testReplaceRestoreStaysInFolder() throws {
+        let (context, plist) = try restoreTargetContext()
+        let plan = BookmarkRestorePlanner.plan(desired: restoreBackup(), context: context, replacing: true)
+        try expect(plan.validationError == nil, "replace restore failed: \(plan.validationError ?? "")")
+        try expect(!plan.operations.contains { $0.kind == .removeTree && $0.id == "OUT" }, "replace restore planned a removal outside the folder")
+        let written = try unwrap(SafariPlist.applying(plan.operations, to: plist, scopeRootId: context.scopeRootId).plist,
+                                 "replace restore was not executable")
+        let parsed = SafariPlist.parseBookmarks(written)
+        let inFolder = parsed.filter { $0.parentId == "SYNC" }.map(\.title).sorted()
+        try expect(inFolder == ["A", "B", "C"], "replace restore did not make the folder equal to the backup: \(inFolder)")
+        try expect(parsed.contains { $0.id == "OUT" && $0.title == "Outside" }, "replace restore changed a bookmark outside the folder")
+        let outsideAfter = try outsideOfSynced(written), outsideBefore = try outsideOfSynced(plist)
+        try expect(outsideAfter == outsideBefore, "replace restore changed bytes outside the selected folder")
+    }
+
+    private static func testRestorePayloadDropsRoots() throws {
+        let archive = [bookmark("1", "Bookmarks Bar", parent: "0", folder: true, browser: .chrome),
+                       bookmark("f", "Folder", parent: "1", folder: true, browser: .chrome),
+                       leaf("x", "X", "https://x.test/", parent: "f", browser: .chrome)]
+        let scope = BookmarkRestorePlanner.scope(archive: archive, archiveFolder: nil, targetFolder: nil)
+        let payload = BookmarkRestorePlanner.portableTree(archive: archive, scope: scope)
+        try expect(!payload.contains { $0.id == "1" }, "an archived browser root became a folder to restore")
+        try expect(payload.first { $0.id == "f" }?.parentId == "1", "content lost its portable bookmarks-bar role")
+    }
+
+    /// Whole-library backup: Bar/{Synced/{s1}, Other/{o1}}, Menu/{m1}.
+    private static func wholeLibraryArchive() -> [Bookmark] {
+        [bookmark("1", "Bookmarks Bar", parent: "0", folder: true, browser: .chrome),
+         bookmark("synced", "Synced", parent: "1", folder: true, browser: .chrome),
+         leaf("s1", "S1", "https://s1.test/", parent: "synced", browser: .chrome),
+         bookmark("other", "Other", parent: "1", folder: true, browser: .chrome),
+         leaf("o1", "O1", "https://o1.test/", parent: "other", browser: .chrome),
+         bookmark("2", "Other Bookmarks", parent: "0", folder: true, browser: .chrome),
+         leaf("m1", "M1", "https://m1.test/", parent: "2", browser: .chrome)]
+    }
+
+    private static func testRestoreScopeFollowsSyncFolder() throws {
+        let archive = wholeLibraryArchive()
+        let sub = BookmarkRestorePlanner.scope(archive: archive, archiveFolder: nil, targetFolder: "Bookmarks Bar/Synced")
+        try expect(sub.isRestorable && sub.allowsReplace && sub.effectiveFolder == "Bookmarks Bar/Synced",
+                   "whole-library backup into a sync folder was not scoped to that folder")
+        try expect(sub.restorableIds == ["synced", "s1"], "items outside the sync folder were offered for restore: \(sub.restorableIds)")
+        let payload = BookmarkRestorePlanner.portableTree(archive: archive, scope: sub)
+        try expect(payload.map(\.id) == ["s1"] && payload[0].parentId == "2",
+                   "restore payload was not exactly the sync folder's contents")
+
+        let missing = BookmarkRestorePlanner.scope(archive: archive, archiveFolder: nil, targetFolder: "Bookmarks Bar/Nope")
+        try expect(!missing.isRestorable && !missing.allowsReplace, "a backup without the sync folder was restorable")
+
+        let folderArchive = BookmarkTreeMerger.extractExistingSubtreeIncludingRoot(sourceTree: archive, folderPath: "Bookmarks Bar/Synced") ?? []
+        let same = BookmarkRestorePlanner.scope(archive: folderArchive, archiveFolder: "Bookmarks Bar/Synced", targetFolder: "Bookmarks Bar/Synced")
+        try expect(same.isRestorable && same.allowsReplace, "same-folder backup could not be replaced")
+        let moved = BookmarkRestorePlanner.scope(archive: folderArchive, archiveFolder: "Bookmarks Bar/Synced", targetFolder: "Bookmarks Bar/Other")
+        try expect(moved.isRestorable && !moved.allowsReplace, "replace was allowed across different folders")
+        let backToWhole = BookmarkRestorePlanner.scope(archive: folderArchive, archiveFolder: "Bookmarks Bar/Synced", targetFolder: nil)
+        try expect(backToWhole.effectiveFolder == "Bookmarks Bar/Synced" && backToWhole.allowsReplace,
+                   "a folder backup restored into a whole-library browser was not bound to its own folder")
+    }
+
+    private static func testFolderBackupKeepsAncestors() throws {
+        // Bar/Work/Synced/{s1}, plus siblings that must not be archived.
+        let tree = [bookmark("1", "Bookmarks Bar", parent: "0", folder: true, browser: .chrome),
+                    bookmark("work", "Work", parent: "1", folder: true, browser: .chrome),
+                    leaf("w1", "Work sibling", "https://w1.test/", parent: "work", browser: .chrome),
+                    bookmark("synced", "Synced", parent: "work", folder: true, browser: .chrome),
+                    leaf("s1", "S1", "https://s1.test/", parent: "synced", browser: .chrome),
+                    leaf("b1", "Bar sibling", "https://b1.test/", parent: "1", browser: .chrome)]
+        let path = "Bookmarks Bar/Work/Synced"
+        let archive = try unwrap(BookmarkTreeMerger.extractExistingSubtreeWithAncestors(sourceTree: tree, folderPath: path),
+                                 "nested folder could not be archived")
+        try expect(Set(archive.map(\.id)) == ["1", "work", "synced", "s1"], "archive missed the ancestor chain or included siblings")
+        let scope = BookmarkRestorePlanner.scope(archive: archive, archiveFolder: path, targetFolder: path)
+        try expect(scope.isRestorable && scope.allowsReplace && scope.restorableIds == ["synced", "s1"],
+                   "a nested folder backup was not restorable from its ancestor chain")
+
+        // Backups taken before ancestor chains were stored still restore.
+        let legacy = BookmarkTreeMerger.extractExistingSubtreeIncludingRoot(sourceTree: tree, folderPath: path) ?? []
+        try expect(!legacy.contains { $0.id == "work" }, "fixture is not a legacy archive")
+        let legacyScope = BookmarkRestorePlanner.scope(archive: legacy, archiveFolder: path, targetFolder: path)
+        try expect(legacyScope.isRestorable && legacyScope.restorableIds == ["synced", "s1"], "a legacy folder backup became unrestorable")
+
+        // Native target archives use portable roots so the path resolves.
+        let native = [bookmark("toolbar_____", "Bookmarks Toolbar", parent: "root________", folder: true, browser: .firefox),
+                      bookmark("fw", "Work", parent: "toolbar_____", folder: true, browser: .firefox),
+                      bookmark("fs", "Synced", parent: "fw", folder: true, browser: .firefox),
+                      leaf("fs1", "S1", "https://s1.test/", parent: "fs", browser: .firefox),
+                      leaf("fo", "Outside", "https://out.test/", parent: "toolbar_____", browser: .firefox)]
+        let context = BookmarkNativeTreeContext(inputToken: "t", browser: .firefox, nodes: native,
+                                                rootIds: ["1": "toolbar_____"], sourceToNativeIds: [:], scopeRootId: "fs")
+        let nativeArchive = BookmarkRestorePlanner.archive(of: context)
+        try expect(Set(nativeArchive.map(\.id)) == ["1", "fw", "fs", "fs1"], "native archive was not scoped to the folder and its ancestors")
+        try expect(BookmarkTreeMerger.folderId(tree: nativeArchive, folderPath: path) == "fs", "native archive path did not resolve")
+    }
+
+    private static func testFirefoxArchiveRoots() throws {
+        let archive = [bookmark("firefox-toolbar-root", "Bookmarks Toolbar", parent: "0", folder: true, browser: .firefox),
+                       bookmark("firefox-menu-root", "Bookmarks Menu", parent: "0", folder: true, browser: .firefox),
+                       bookmark("firefox-other-root", "Other Bookmarks", parent: "0", folder: true, browser: .firefox),
+                       bookmark("firefox-mobile-root", "Mobile Bookmarks", parent: "0", folder: true, browser: .firefox),
+                       leaf("t1", "T1", "https://t1.test/", parent: "1", browser: .firefox),
+                       leaf("o1", "O1", "https://o1.test/", parent: "2", browser: .firefox)]
+        let scope = BookmarkRestorePlanner.scope(archive: archive, archiveFolder: nil, targetFolder: nil)
+        let payload = BookmarkRestorePlanner.portableTree(archive: archive, scope: scope)
+        try expect(Set(payload.map(\.id)) == ["t1", "o1"], "Firefox root placeholders were restored as folders: \(payload.map(\.id))")
+        let target = BookmarkNativeTreeContext(
+            inputToken: "t", browser: .firefox,
+            nodes: [bookmark("toolbar_____", "Bookmarks Toolbar", parent: "root________", folder: true, browser: .firefox),
+                    bookmark("unfiled_____", "Other Bookmarks", parent: "root________", folder: true, browser: .firefox)],
+            rootIds: ["1": "toolbar_____", "2": "unfiled_____", "3": "unfiled_____"], sourceToNativeIds: [:], scopeRootId: nil)
+        let plan = BookmarkRestorePlanner.plan(desired: payload, context: target, replacing: true)
+        try expect(plan.validationError == nil, "Firefox restore failed: \(plan.validationError ?? "")")
+        try expect(!plan.operations.contains { $0.parentId == "0" }, "a restore operation targeted the tree root")
+        try expect(Set(plan.operations.compactMap(\.parentId)) == ["toolbar_____", "unfiled_____"], "Firefox content was not placed in its native roots")
+    }
+
+    private static func testPlannerRefusesUnknownParent() throws {
+        let target = context(.chrome, [])
+        let orphan = [bookmark("root-like", "Root-like", parent: "0", folder: true, browser: .safari),
+                      leaf("child", "Child", "https://child.test/", parent: "root-like", browser: .safari)]
+        let plan = NativeBookmarkPlanner.makePlan(desired: orphan, context: target, fullMirror: true)
+        try expect(plan.validationError != nil && plan.operations.isEmpty,
+                   "a plan creating under a parent outside the target tree was executable")
+    }
+
+    private static func testRestoreIgnoresForeignIdMap() throws {
+        var target = context(.chrome, [leaf("55", "Unrelated", "https://unrelated.test/", parent: "chrome-other", browser: .chrome)])
+        target.sourceToNativeIds = ["30": "55"]   // e.g. an Edge ID mapped in Chrome's syncIdMap
+        let backup = [leaf("30", "Restored", "https://restored.test/", parent: "2", browser: .chrome)]
+        for replacing in [false, true] {
+            let plan = BookmarkRestorePlanner.plan(desired: backup, context: target, replacing: replacing)
+            try expect(plan.validationError == nil, "restore failed: \(plan.validationError ?? "")")
+            try expect(!plan.operations.contains { $0.id == "55" && $0.kind == .update },
+                       "a colliding syncIdMap entry overwrote an unrelated bookmark (replacing: \(replacing))")
+            try expect(plan.operations.contains { $0.kind == .create && $0.title == "Restored" },
+                       "the archived bookmark was not restored (replacing: \(replacing))")
+        }
+    }
+
+    private static func testIncrementalRestoreSameTitleElsewhere() throws {
+        let target = context(.chrome, [
+            bookmark("work", "Work", parent: "chrome-other", folder: true, browser: .chrome),
+            leaf("wd", "Docs", "https://work-docs.test/", parent: "work", browser: .chrome),
+            bookmark("home", "Home", parent: "chrome-other", folder: true, browser: .chrome)])
+        let backup = [bookmark("bh", "Home", parent: "2", folder: true, browser: .chrome),
+                      leaf("hd", "Docs", "https://home-docs.test/", parent: "bh", browser: .chrome)]
+        let plan = BookmarkRestorePlanner.plan(desired: backup, context: target, replacing: false)
+        try expect(plan.validationError == nil, "restore failed: \(plan.validationError ?? "")")
+        try expect(plan.operations.contains { $0.kind == .create && $0.title == "Docs" && $0.parentId == "home" },
+                   "a bookmark sharing a title with one in another folder was silently skipped")
+        try expect(!plan.operations.contains { $0.id == "wd" }, "incremental restore touched the unrelated bookmark")
+    }
+
+    private static func testContextScopeBinding() throws {
+        var scoped = context(.firefox, [bookmark("fs", "Synced", parent: "firefox-bar", folder: true, browser: .firefox)])
+        scoped.scopeRootId = "fs"
+        try expect(BookmarkRestorePlanner.contextMatchesRequestedScope(scoped, requestedFolder: "Bookmarks Bar/Synced"), "a correctly bound tree was refused")
+        try expect(!BookmarkRestorePlanner.contextMatchesRequestedScope(scoped, requestedFolder: nil), "a scoped tree was accepted for a whole-library request")
+        var unbound = scoped; unbound.scopeRootId = nil
+        try expect(!BookmarkRestorePlanner.contextMatchesRequestedScope(unbound, requestedFolder: "Bookmarks Bar/Synced"),
+                   "a tree without the requested folder scope was accepted")
+        var invisible = scoped; invisible.scopeRootId = "menu-folder-not-in-nodes"
+        try expect(!BookmarkRestorePlanner.contextMatchesRequestedScope(invisible, requestedFolder: "Bookmarks Menu/Synced"),
+                   "a scope node missing from the reported tree was accepted")
+        try expect(BookmarkRestorePlanner.contextMatchesRequestedScope(unbound, requestedFolder: nil), "an unscoped whole-library tree was refused")
     }
 }

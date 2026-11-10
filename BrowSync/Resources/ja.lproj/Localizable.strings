@@ -630,3 +630,13 @@
 "Ignored Bookmark Changes" = "無視したブックマークの変更";
 "%d ignored changes are not offered again until they change." = "無視した %d 件の変更は、内容が変わるまで再表示されません。";
 "Review" = "確認";
+"Restored in %@: %d added, %d removed, %d updated. Other browsers follow through normal sync, using your sync direction, folders and Safe Mode." = "%@ に復元しました：追加 %d 件、削除 %d 件、更新 %d 件。他のブラウザは通常の同期により、同期方向・フォルダ・セーフモードの設定に従って反映されます。";
+"Restore failed" = "復元に失敗しました";
+"The backup was not restored and nothing was reported as written. See the sync log for details." = "バックアップは復元されず、書き込まれた内容もありません。詳細は同期ログを確認してください。";
+"Replace the bookmarks in %@ › %@ with this backup? Items there that are not in the backup are removed; nothing outside it changes. Other browsers follow through normal sync." = "%@ › %@ のブックマークをこのバックアップで置き換えますか？バックアップにない項目は削除されます。このフォルダ以外は変更されません。他のブラウザは通常の同期で反映されます。";
+"Add the items missing from %@ › %@ from this backup? Existing bookmarks are kept unchanged. Other browsers follow through normal sync." = "このバックアップから %@ › %@ に不足している項目を追加しますか？既存のブックマークは変更されません。他のブラウザは通常の同期で反映されます。";
+"%@ is the read-only source of one-way sync. This restore will write to it." = "%@ は一方向同期の読み取り専用ソースです。この復元はこのブラウザに書き込みます。";
+"Replace Restore needs the backup and the sync folder to cover the same folder." = "置き換え復元には、バックアップと同期フォルダが同じフォルダに対応している必要があります。";
+"This backup does not contain %@'s sync folder %@, so it cannot be restored there." = "このバックアップには %@ の同期フォルダ %@ が含まれていないため、そこへは復元できません。";
+"Only %@ is restored into %@. Grayed items are outside it and will not be restored." = "%@ のみが %@ に復元されます。グレーの項目は範囲外で、復元されません。";
+"The backup was not restored. If the browser had already started writing, some items may have changed; it is re-read and the next sync shows any difference. See the sync log for details." = "バックアップは復元されませんでした。ブラウザがすでに書き込みを始めていた場合、一部の項目が変更されている可能性があります。ブラウザを再読み込みし、次回の同期で差分を表示します。詳細は同期ログを確認してください。";
