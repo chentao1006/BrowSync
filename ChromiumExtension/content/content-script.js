@@ -315,16 +315,45 @@
 
   // ── Keep Background Alive ──────────────────────────────────────────────────
   let keepAlivePort = null;
+  let keepAliveRetryTimer = null;
+  // A content script survives an extension reload on an already-open page,
+  // but its runtime bridge does not. Never reconnect from that stale script:
+  // it can only throw "Extension context invalidated" until the page reloads
+  // and the new extension injects a fresh copy.
+  function extensionContextIsAlive() {
+    try { return Boolean(api && api.runtime && api.runtime.id); }
+    catch (_) { return false; }
+  }
+  function scheduleKeepAliveReconnect() {
+    if (!extensionContextIsAlive() || keepAliveRetryTimer) return;
+    keepAliveRetryTimer = setTimeout(() => {
+      keepAliveRetryTimer = null;
+      connectKeepAlive();
+    }, 5000);
+  }
   function connectKeepAlive() {
-    keepAlivePort = api.runtime.connect({ name: 'browsync-keepalive' });
-    keepAlivePort.onDisconnect.addListener(() => {
+    if (!extensionContextIsAlive() || keepAlivePort) return;
+    try {
+      keepAlivePort = api.runtime.connect({ name: 'browsync-keepalive' });
+      keepAlivePort.onDisconnect.addListener(() => {
+        keepAlivePort = null;
+        scheduleKeepAliveReconnect();
+      });
+    } catch (_) {
+      // Context invalidation is terminal for this injected copy. Do not log
+      // or retry; a navigation/reload installs a fresh content script.
       keepAlivePort = null;
-      setTimeout(connectKeepAlive, 5000);
-    });
+      scheduleKeepAliveReconnect();
+    }
   }
   connectKeepAlive();
 
-  setInterval(() => {
+  const keepAliveHeartbeat = setInterval(() => {
+    if (!extensionContextIsAlive()) {
+      clearInterval(keepAliveHeartbeat);
+      if (keepAliveRetryTimer) clearTimeout(keepAliveRetryTimer);
+      return;
+    }
     if (!stateSyncActive) return;
     if (keepAlivePort) {
       try {
@@ -333,7 +362,9 @@
         connectKeepAlive();
       }
     } else {
-      api.runtime.sendMessage({ source: 'browsync-content', type: 'heartbeat_ping' }).catch(() => {});
+      try {
+        api.runtime.sendMessage({ source: 'browsync-content', type: 'heartbeat_ping' }).catch(() => {});
+      } catch (_) {}
     }
   }, 15000);
 
