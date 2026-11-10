@@ -650,3 +650,5 @@
 "Before each sync, the synced folder of every changed browser is backed up automatically and kept for 7 days. Manual backups are kept until you delete them." = "동기화할 때마다 변경된 각 브라우저의 동기화 폴더를 자동으로 백업하고 7일간 보관합니다. 수동 백업은 삭제할 때까지 보관됩니다.";
 "The backup was not restored. If the browser had already started writing, some items may have changed; it is re-read and the next sync shows any difference. See the sync log for details." = "백업이 복원되지 않았습니다. 브라우저가 이미 기록을 시작했다면 일부 항목이 바뀌었을 수 있으며, 다시 읽어 다음 동기화에서 차이를 표시합니다. 자세한 내용은 동기화 로그를 확인하세요.";
 "Before turning on bookmark sync for the first time, back up every browser's bookmarks. Back Up Now saves each participating browser's synced folder; you can also export bookmarks with each browser's own tools." = "북마크 동기화를 처음 켜기 전에 각 브라우저의 북마크를 백업하세요. \"지금 백업\"은 참여하는 각 브라우저의 동기화 폴더를 저장합니다. 각 브라우저의 자체 기능으로 북마크를 내보낼 수도 있습니다.";
+"Keep All" = "모두 유지";
+"Choose the version every browser should keep. The other versions are replaced in every browser." = "모든 브라우저에 남길 버전을 선택하세요. 다른 버전은 모든 브라우저에서 대체됩니다.";

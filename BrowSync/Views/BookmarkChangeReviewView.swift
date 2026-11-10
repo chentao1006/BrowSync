@@ -69,13 +69,16 @@ private struct BookmarkChangeRow: Identifiable {
 struct BookmarkChangeReviewView: View {
     @EnvironmentObject var langBundle: LanguageBundle
     let reviewRoutes: [BookmarkReviewRoute]
-    let onApplySelected: ([String: Set<String>], [String: [String: BookmarkConflictResolution]]) -> Void
+    /// Selected rows per route, two-version choices per route, and version
+    /// choices (version key or keep-all) per multi-version conflict.
+    let onApplySelected: ([String: Set<String>], [String: [String: BookmarkConflictResolution]], [String: String]) -> Void
     let onCancel: () -> Void
     /// When set, every row offers "Ignore" on hover.
     var onIgnoreRow: ((String, String) -> Void)? = nil
     var onIgnoreConflict: ((String) -> Void)? = nil
     @State private var selectedNodeIds: [String: Set<String>] = [:]
     @State private var conflictChoices: [String: [String: BookmarkConflictResolution]] = [:]
+    @State private var versionChoices: [String: String] = [:]
     @State private var hiddenRows: [String: Set<String>] = [:]
     @State private var hiddenConflicts: Set<String> = []
     @State private var hoveredItem: String?
@@ -112,7 +115,7 @@ struct BookmarkChangeReviewView: View {
     private var allConflictsHaveChoices: Bool {
         reviewRoutes.allSatisfy { route in
             visibleConflicts(route).allSatisfy { conflict in
-                conflictChoices[route.id]?[conflict.id] != nil
+                conflict.versions.isEmpty ? conflictChoices[route.id]?[conflict.id] != nil : versionChoices[conflict.id] != nil
             }
         }
     }
@@ -243,7 +246,7 @@ struct BookmarkChangeReviewView: View {
                 Button(String(localized: "Cancel This Sync", bundle: langBundle.bundle), action: onCancel)
                 Spacer()
                 Button(String(localized: "Apply Selected Changes", bundle: langBundle.bundle), role: aggregateImpact.removed + aggregateImpact.moved + aggregateImpact.reordered + aggregateImpact.modified > 0 ? .destructive : nil) {
-                    onApplySelected(selectedNodeIds, conflictChoices)
+                    onApplySelected(selectedNodeIds, conflictChoices, versionChoices)
                 }
                     .buttonStyle(.borderedProminent)
                     .tint(aggregateImpact.removed + aggregateImpact.moved + aggregateImpact.reordered + aggregateImpact.modified > 0 ? .red : .accentColor)
@@ -390,10 +393,26 @@ struct BookmarkChangeReviewView: View {
                     ignoreButton(visible: hoveredItem == "conflict|" + conflict.id) {
                         hiddenConflicts.insert(conflict.id)
                         conflictChoices[routeId]?.removeValue(forKey: conflict.id)
+                        versionChoices.removeValue(forKey: conflict.id)
                         onIgnoreConflict(conflict.id)
                     }
                 }
             }
+            if !conflict.versions.isEmpty {
+                Text(String(localized: "Choose the version every browser should keep. The other versions are replaced in every browser.", bundle: langBundle.bundle))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(conflict.versions) { version in
+                    versionChoiceRow(conflict: conflict, key: version.key, browsers: version.browsers,
+                                     title: version.title, url: version.url)
+                }
+                versionChoiceRow(conflict: conflict, key: BookmarkSyncConflict.keepAll, browsers: [],
+                                 title: conflict.versions.count > 2
+                                    ? String(localized: "Keep All", bundle: langBundle.bundle)
+                                    : String(localized: "Keep Both", bundle: langBundle.bundle),
+                                 url: nil)
+            } else {
             HStack(spacing: 8) {
                 if !conflict.sourceBrowsers.isEmpty { browserIcons(conflict.sourceBrowsers) }
                 Text(conflict.source.title).fontWeight(.medium)
@@ -420,6 +439,7 @@ struct BookmarkChangeReviewView: View {
                     choice: .both, conflict: conflict, routeId: routeId
                 )
             }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
@@ -429,6 +449,39 @@ struct BookmarkChangeReviewView: View {
             if inside { hoveredItem = "conflict|" + conflict.id }
             else if hoveredItem == "conflict|" + conflict.id { hoveredItem = nil }
         }
+    }
+
+    /// One selectable version of a multi-version conflict: holders' icons,
+    /// title and URL, so versions that differ only by URL are distinguishable.
+    private func versionChoiceRow(conflict: BookmarkConflict, key: String, browsers: [Browser],
+                                  title: String, url: String?) -> some View {
+        let selected = versionChoices[conflict.id] == key
+        return Button {
+            versionChoices[conflict.id] = key
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                    .imageScale(.small)
+                    .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                if !browsers.isEmpty { browserIcons(browsers, size: 14) }
+                Text(title).fontWeight(.medium)
+                    .lineLimit(1)
+                if let url {
+                    Text(url).font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(selected ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help([title, url].compactMap { $0 }.joined(separator: "\n"))
+        .accessibilityLabel([title, url, browsers.map(\.displayName).joined(separator: ", ")].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", "))
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func conflictChoiceButton(
@@ -505,7 +558,7 @@ final class BookmarkChangeReviewWindowController: NSObject, NSWindowDelegate {
         clientId: String,
         reviewRoutes: [BookmarkReviewRoute],
         activate: Bool = true,
-        onApplySelected: @escaping ([String: Set<String>], [String: [String: BookmarkConflictResolution]]) -> Void,
+        onApplySelected: @escaping ([String: Set<String>], [String: [String: BookmarkConflictResolution]], [String: String]) -> Void,
         onCancel: @escaping () -> Void,
         onIgnoreRow: ((String, String) -> Void)? = nil,
         onIgnoreConflict: ((String) -> Void)? = nil
@@ -516,9 +569,9 @@ final class BookmarkChangeReviewWindowController: NSObject, NSWindowDelegate {
             // The decision runs after the button action has returned: it may
             // close this window or present the next review in it, which must
             // not tear down the hosting view while SwiftUI is still in the action.
-            onApplySelected: { [weak self] selection, conflicts in
+            onApplySelected: { [weak self] selection, conflicts, versions in
                 self?.dismiss()
-                DispatchQueue.main.async { onApplySelected(selection, conflicts) }
+                DispatchQueue.main.async { onApplySelected(selection, conflicts, versions) }
             },
             onCancel: { [weak self] in
                 self?.dismiss()

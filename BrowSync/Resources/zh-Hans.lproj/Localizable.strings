@@ -710,3 +710,5 @@
 "Before each sync, the synced folder of every changed browser is backed up automatically and kept for 7 days. Manual backups are kept until you delete them." = "每次同步前，会自动备份每个有改动的浏览器的同步文件夹，保留 7 天。手动备份会一直保留，直到你删除。";
 "The backup was not restored. If the browser had already started writing, some items may have changed; it is re-read and the next sync shows any difference. See the sync log for details." = "此备份未能恢复。如果浏览器已开始写入，部分项目可能已改变；BrowSync 会重新读取它，下次同步会显示所有差异。详情请查看同步日志。";
 "Before turning on bookmark sync for the first time, back up every browser's bookmarks. Back Up Now saves each participating browser's synced folder; you can also export bookmarks with each browser's own tools." = "首次开启书签同步前，请先备份各浏览器的书签。点“立即备份”会保存每个参与同步的浏览器的同步文件夹；你也可以用各浏览器自带的功能导出书签。";
+"Keep All" = "全部保留";
+"Choose the version every browser should keep. The other versions are replaced in every browser." = "选择所有浏览器都要保留的版本，其它版本会在所有浏览器中被替换。";

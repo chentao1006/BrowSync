@@ -756,7 +756,7 @@ final class SyncService: ObservableObject {
             clientId: clientId,
             reviewRoutes: pendingReviewRoutes,
             activate: activate,
-            onApplySelected: { [weak self] selection, conflicts in self?.applySelectedPendingBookmarkReviews(selection, conflictResolutions: conflicts) },
+            onApplySelected: { [weak self] selection, conflicts, _ in self?.applySelectedPendingBookmarkReviews(selection, conflictResolutions: conflicts) },
             onCancel: { [weak self] in self?.cancelPendingBookmarkReview() }
         )
     }
@@ -1159,7 +1159,7 @@ final class SyncService: ObservableObject {
             clientId: key,
             reviewRoutes: pendingReviewRoutes,
             activate: activate,
-            onApplySelected: { [weak self] selection, conflicts in self?.applySelectedPendingBookmarkReviews(selection, conflictResolutions: conflicts) },
+            onApplySelected: { [weak self] selection, conflicts, _ in self?.applySelectedPendingBookmarkReviews(selection, conflictResolutions: conflicts) },
             onCancel: { [weak self] in self?.cancelPendingBookmarkReview() }
         )
     }
@@ -2531,7 +2531,7 @@ final class SyncService: ObservableObject {
         BookmarkChangeReviewWindowController.shared.present(
             clientId: pendingBookmarkConflictRouteID,
             reviewRoutes: pendingReviewRoutes,
-            onApplySelected: { [weak self] selection, conflicts in
+            onApplySelected: { [weak self] selection, conflicts, _ in
                 self?.applySelectedPendingBookmarkReviews(selection, conflictResolutions: conflicts)
             },
             onCancel: { [weak self] in self?.cancelPendingBookmarkReview() }
@@ -3565,7 +3565,7 @@ extension SyncService {
             // ordinary change, not a stable conflict.
             let pending = pendingBookmarkURLs(session)
             stable = BookmarkAggregatePlanner.stableConflicts(snapshots: session.observed).filter { conflict in
-                [conflict.first.bookmark, conflict.second.bookmark].allSatisfy { node in
+                conflict.versions.map(\.bookmark).allSatisfy { node in
                     BookmarkSyncConflict.canonicalURL(node.url).map { !pending.contains($0) } ?? true
                 }
             }
@@ -3820,12 +3820,13 @@ extension SyncService {
             routes.append(route)
         }
         let conflicts = session.conflicts.filter { !session.ignored.contains(BookmarkIgnore.conflictKey($0.id)) }.map { conflict in
-            func label(_ side: BookmarkConflictSide) -> String { side.sortedBrowsers.map(\.displayName).joined(separator: ", ") }
-            var first = conflict.first.bookmark; first.sourceBrowser = conflict.first.sortedBrowsers.first ?? first.sourceBrowser
-            var second = conflict.second.bookmark; second.sourceBrowser = conflict.second.sortedBrowsers.first ?? second.sourceBrowser
-            return BookmarkConflict(id: conflict.id, source: first, target: second, reason: conflict.reason,
-                                    sourceLabel: label(conflict.first), targetLabel: label(conflict.second),
-                                    sourceBrowsers: conflict.first.sortedBrowsers, targetBrowsers: conflict.second.sortedBrowsers)
+            BookmarkConflict(
+                id: conflict.id, source: conflict.versions[0].bookmark, target: conflict.versions[1].bookmark,
+                reason: conflict.reason,
+                versions: conflict.versions.map { side in
+                    BookmarkConflict.Version(key: side.contentKey, title: side.bookmark.title,
+                                             url: side.bookmark.url.flatMap { $0 }, browsers: side.sortedBrowsers)
+                })
         }
         if !conflicts.isEmpty {
             var group = BookmarkReviewRoute(
@@ -3878,10 +3879,8 @@ extension SyncService {
             clientId: Self.bookmarkSessionReviewKey,
             reviewRoutes: routes,
             activate: activate,
-            onApplySelected: { [weak self] selection, conflictChoices in
-                var choices: [String: BookmarkConflictResolution] = [:]
-                for perRoute in conflictChoices.values { choices.merge(perRoute) { current, _ in current } }
-                self?.applyBookmarkSyncSession(selection: selection, choices: choices)
+            onApplySelected: { [weak self] selection, _, versionChoices in
+                self?.applyBookmarkSyncSession(selection: selection, choices: versionChoices)
             },
             onCancel: { [weak self] in self?.cancelBookmarkSyncSession() },
             onIgnoreRow: { [weak self] routeId, rowId in self?.ignoreBookmarkReviewRow(routeId: routeId, rowId: rowId) },
@@ -3905,7 +3904,7 @@ extension SyncService {
     }
 
     /// `selection` nil applies every operation (no review was needed).
-    private func applyBookmarkSyncSession(selection: [String: Set<String>]?, choices: [String: BookmarkConflictResolution]) {
+    private func applyBookmarkSyncSession(selection: [String: Set<String>]?, choices: [String: String]) {
         guard var session = bookmarkSyncSession, session.phase == .reviewing || session.phase == .applying else { return }
         guard session.settingsFingerprint == bookmarkSettingsFingerprint else {
             discardBookmarkSyncSession(reason: "bookmark sync settings changed before it was applied")

@@ -66,7 +66,8 @@ private enum BookmarkRootMappingTests {
             ("planner refuses operations into a parent outside the target tree", testPlannerRefusesUnknownParent),
             ("extension restores ignore foreign syncIdMap entries", testRestoreIgnoresForeignIdMap),
             ("incremental restore still adds a bookmark whose title exists elsewhere", testIncrementalRestoreSameTitleElsewhere),
-            ("a native tree must be bound to exactly the requested folder", testContextScopeBinding)
+            ("a native tree must be bound to exactly the requested folder", testContextScopeBinding),
+            ("three versions of one bookmark are one conflict, resolved without duplicates", testMultiVersionConflict)
         ]
         for (name, test) in tests {
             do {
@@ -601,13 +602,13 @@ private enum BookmarkRootMappingTests {
         ]
         let conflicts = unifiedConflicts(detect)
         try expect(conflicts.count == 1, "the same dispute seen from both directions was not unified")
-        try expect(conflicts[0].first.browsers.union(conflicts[0].second.browsers) == [.safari, .chrome], "conflict browsers lost")
+        try expect(conflicts[0].versions.reduce(Set<Browser>()) { $0.union($1.browsers) } == [.safari, .chrome], "conflict browsers lost")
 
         // The disputed versions are not offered as ordinary additions to Edge.
         let edgeDisplay = BookmarkAggregatePlanner.plan(target: .edge, context: s.edge, contributions: toEdge, conflicts: conflicts)
         try expect(edgeDisplay.operations.isEmpty, "a disputed version was planned as an ordinary addition")
 
-        let keepChrome = conflicts[0].first.browsers.contains(.chrome) ? BookmarkConflictResolution.source : .target
+        let keepChrome = try unwrap(conflicts[0].versions.first { $0.browsers.contains(.chrome) }, "no Chrome version").contentKey
         let choice = [conflicts[0].id: keepChrome]
         let safariApply = BookmarkAggregatePlanner.plan(target: .safari, context: s.safari, contributions: toSafari,
                                                         conflicts: conflicts, resolutions: choice)
@@ -630,7 +631,7 @@ private enum BookmarkRootMappingTests {
         let conflicts = unifiedConflicts([
             BookmarkAggregatePlanner.plan(target: .chrome, context: s.chrome, contributions: toChrome, conflicts: [])
         ])
-        let choice = [try unwrap(conflicts.first, "no conflict").id: BookmarkConflictResolution.both]
+        let choice = [try unwrap(conflicts.first, "no conflict").id: BookmarkSyncConflict.keepAll]
         let chrome = BookmarkAggregatePlanner.plan(target: .chrome, context: s.chrome, contributions: toChrome,
                                                    conflicts: conflicts, resolutions: choice)
         try expect(chrome.operations.count == 1 && chrome.operations[0].kind == .create
@@ -1128,5 +1129,64 @@ private enum BookmarkRootMappingTests {
         try expect(!BookmarkRestorePlanner.contextMatchesRequestedScope(invisible, requestedFolder: "Bookmarks Menu/Synced"),
                    "a scope node missing from the reported tree was accepted")
         try expect(BookmarkRestorePlanner.contextMatchesRequestedScope(unbound, requestedFolder: nil), "an unscoped whole-library tree was refused")
+    }
+
+    /// The reported case: Safari has the corrected URL A, Firefox the old URL
+    /// B, Chrome a third URL C, all titled "Google Cloud Platform" in the
+    /// same folder. Keeping Safari must leave exactly version A everywhere:
+    /// rewritten in place, never added next to the old one.
+    private static func testMultiVersionConflict() throws {
+        let a = "https://console.cloud.google.com/", b = "https://cloud.google.com/old", c = "https://cloud.google.com/other"
+        func bm(_ id: String, _ title: String, _ url: String?, _ parent: String, _ browser: Browser) -> Bookmark {
+            Bookmark(id: id, title: title, url: url, parentId: parent, isFolder: url == nil, sortIndex: 0,
+                     inBookmarksBar: parent == "1", dateAdded: nil, sourceBrowser: browser)
+        }
+        let snaps: [Browser: [Bookmark]] = [
+            .safari: [bm("SW", "Work", nil, "1", .safari), bm("S1", "Google Cloud Platform", a, "SW", .safari)],
+            .firefox: [bm("FW", "Work", nil, "1", .firefox), bm("F1", "Google Cloud Platform", b, "FW", .firefox)],
+            .chrome: [bm("CW", "Work", nil, "1", .chrome), bm("C1", "Google Cloud Platform", c, "CW", .chrome)]]
+        let conflicts = BookmarkAggregatePlanner.stableConflicts(snapshots: snaps)
+        try expect(conflicts.count == 1 && conflicts[0].versions.count == 3,
+                   "three versions became \(conflicts.count) pairwise conflicts")
+        let keepSafari = try unwrap(conflicts[0].versions.first { $0.browsers.contains(.safari) }, "no Safari version").contentKey
+        let choice = [conflicts[0].id: keepSafari]
+
+        func target(_ browser: Browser, _ prefix: String, _ leaves: [(String, String)]) -> BookmarkNativeTreeContext {
+            var nodes = [bm("\(prefix)-bar", "Bar", nil, "\(prefix)-root", browser), bm("\(prefix)-other", "Other", nil, "\(prefix)-root", browser),
+                         bm("\(prefix)-work", "Work", nil, "\(prefix)-bar", browser)]
+            nodes += leaves.map { bm($0.0, "Google Cloud Platform", $0.1, "\(prefix)-work", browser) }
+            return BookmarkNativeTreeContext(inputToken: "t", browser: browser, nodes: nodes,
+                                             rootIds: ["1": "\(prefix)-bar", "2": "\(prefix)-other", "3": "\(prefix)-other"],
+                                             sourceToNativeIds: [:], scopeRootId: nil)
+        }
+        func ops(_ browser: Browser, _ context: BookmarkNativeTreeContext) -> [BookmarkMutationOperation] {
+            BookmarkAggregatePlanner.plan(target: browser, context: context, contributions: [], conflicts: conflicts, resolutions: choice).operations
+        }
+        let firefox = ops(.firefox, target(.firefox, "ff", [("f1", b)]))
+        try expect(firefox.count == 1 && firefox[0].kind == .update && firefox[0].id == "f1" && firefox[0].url == a,
+                   "Firefox was not rewritten in place to Safari's version: \(firefox.map { "\($0.kind.rawValue) \($0.id) \($0.url ?? "")" })")
+        let chrome = ops(.chrome, target(.chrome, "ch", [("c1", c)]))
+        try expect(chrome.count == 1 && chrome[0].kind == .update && chrome[0].id == "c1" && chrome[0].url == a,
+                   "Chrome was not rewritten in place to Safari's version")
+        try expect(ops(.safari, target(.safari, "sa", [("s1", a)])).isEmpty, "keeping Safari still wrote Safari")
+
+        // A browser that already ended up with both versions keeps only the chosen one.
+        var bothSnaps = snaps
+        bothSnaps[.firefox] = snaps[.firefox]! + [bm("F2", "Google Cloud Platform", a, "FW", .firefox)]
+        let both = BookmarkAggregatePlanner.stableConflicts(snapshots: bothSnaps)
+        let bothChoice = [both[0].id: keepSafari]
+        let cleanup = BookmarkAggregatePlanner.plan(target: .firefox, context: target(.firefox, "ff", [("f1", b), ("f2", a)]),
+                                                    contributions: [], conflicts: both, resolutions: bothChoice).operations
+        try expect(cleanup.count == 1 && cleanup[0].kind == .removeTree && cleanup[0].id == "f1",
+                   "the duplicate old version was not removed: \(cleanup.map { "\($0.kind.rawValue) \($0.id)" })")
+
+        // Keep all: every browser gets each missing version exactly once, nothing removed.
+        let all = ops(.firefox, target(.firefox, "ff", [("f1", b)]))
+        _ = all
+        let keepAll = BookmarkAggregatePlanner.plan(target: .firefox, context: target(.firefox, "ff", [("f1", b)]), contributions: [],
+                                                    conflicts: conflicts, resolutions: [conflicts[0].id: BookmarkSyncConflict.keepAll]).operations
+        try expect(keepAll.filter { $0.kind == .create }.compactMap(\.url).sorted() == [a, c].sorted() && !keepAll.contains { $0.kind == .removeTree }
+                   && !keepAll.contains { $0.kind == .create && $0.url == nil },
+                   "keep all did not add each missing version once without duplicate folders")
     }
 }

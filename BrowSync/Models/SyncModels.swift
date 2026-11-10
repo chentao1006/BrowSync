@@ -682,6 +682,17 @@ struct BookmarkConflict: Identifiable, Equatable {
     /// Browsers holding each version (review icons).
     var sourceBrowsers: [Browser] = []
     var targetBrowsers: [Browser] = []
+    /// Set for a multi-version sync conflict: every version, each with its
+    /// URL and holders. The choice is a version's `key` (or keep all).
+    var versions: [Version] = []
+
+    struct Version: Equatable, Identifiable {
+        let key: String
+        let title: String
+        let url: String?
+        let browsers: [Browser]
+        var id: String { key }
+    }
 }
 
 enum BookmarkConflictResolution: String, CaseIterable, Codable, Identifiable {
@@ -1149,23 +1160,36 @@ struct BookmarkConflictSide: Equatable {
     var sortedBrowsers: [Browser] { browsers.sorted { $0.rawValue < $1.rawValue } }
 }
 
-/// A logical conflict between two versions of one bookmark. It is identified
-/// by content only, so the same dispute seen from Safari → Chrome and from
-/// Chrome → Safari (or from a third browser) is presented and resolved once.
-/// `.source` keeps `first`, `.target` keeps `second`, `.both` keeps both.
+/// One logical bookmark that exists in several versions across browsers.
+/// It is identified by the content of all its versions, so overlapping
+/// disputes (A↔B, B↔C, A↔C) are one conflict with three versions, and the
+/// same dispute seen from several routes is one row. The user keeps exactly
+/// one version (its content key) or every version (`keepAll`).
 struct BookmarkSyncConflict: Identifiable, Equatable {
-    let id: String
-    var first: BookmarkConflictSide
-    var second: BookmarkConflictSide
+    static let keepAll = "*"
+    private(set) var id: String = ""
+    private(set) var versions: [BookmarkConflictSide] = []
     var reason: BookmarkConflict.Reason
 
-    init?(_ a: BookmarkConflictSide, _ b: BookmarkConflictSide, reason: BookmarkConflict.Reason) {
-        guard a.contentKey != b.contentKey else { return nil }
-        let ordered = a.contentKey < b.contentKey ? (a, b) : (b, a)
-        first = ordered.0
-        second = ordered.1
-        id = first.contentKey + "||" + second.contentKey
+    init?(_ sides: [BookmarkConflictSide], reason: BookmarkConflict.Reason) {
         self.reason = reason
+        for side in sides { add(side) }
+        guard versions.count >= 2 else { return nil }
+    }
+
+    init?(_ a: BookmarkConflictSide, _ b: BookmarkConflictSide, reason: BookmarkConflict.Reason) {
+        self.init([a, b], reason: reason)
+    }
+
+    private mutating func add(_ side: BookmarkConflictSide) {
+        if let index = versions.firstIndex(where: { $0.contentKey == side.contentKey }) {
+            versions[index].browsers.formUnion(side.browsers)
+            versions[index].nativeIds.merge(side.nativeIds) { current, _ in current }
+        } else {
+            versions.append(side)
+        }
+        versions.sort { $0.contentKey < $1.contentKey }
+        id = versions.map(\.contentKey).joined(separator: "||")
     }
 
     static func contentKey(_ bookmark: Bookmark) -> String {
@@ -1177,26 +1201,21 @@ struct BookmarkSyncConflict: Identifiable, Equatable {
         return URL(string: raw)?.absoluteString ?? raw
     }
 
-    var contentKeys: Set<String> { [first.contentKey, second.contentKey] }
+    var contentKeys: Set<String> { Set(versions.map(\.contentKey)) }
+
+    func overlaps(_ other: BookmarkSyncConflict) -> Bool { !contentKeys.isDisjoint(with: other.contentKeys) }
 
     mutating func merge(_ other: BookmarkSyncConflict) {
-        guard other.id == id else { return }
-        first.browsers.formUnion(other.first.browsers)
-        second.browsers.formUnion(other.second.browsers)
-        first.nativeIds.merge(other.first.nativeIds) { current, _ in current }
-        second.nativeIds.merge(other.second.nativeIds) { current, _ in current }
+        other.versions.forEach { add($0) }
     }
 
-    func winners(_ resolution: BookmarkConflictResolution) -> [BookmarkConflictSide] {
-        switch resolution {
-        case .source: return [first]
-        case .target: return [second]
-        case .both: return [first, second]
-        }
+    /// The versions a choice keeps; empty for an unknown choice.
+    func winners(_ choice: String) -> [BookmarkConflictSide] {
+        choice == Self.keepAll ? versions : versions.filter { $0.contentKey == choice }
     }
 
     func side(withContentKey key: String) -> BookmarkConflictSide? {
-        first.contentKey == key ? first : (second.contentKey == key ? second : nil)
+        versions.first { $0.contentKey == key }
     }
 }
 
@@ -1237,7 +1256,7 @@ enum BookmarkAggregatePlanner {
         context: BookmarkNativeTreeContext,
         contributions: [BookmarkSourceContribution],
         conflicts known: [BookmarkSyncConflict],
-        resolutions: [String: BookmarkConflictResolution]? = nil,
+        resolutions: [String: String]? = nil,
         ignoredConflicts: Set<String> = []
     ) -> BookmarkTargetPlan {
         var working = context
@@ -1306,13 +1325,14 @@ enum BookmarkAggregatePlanner {
                                   resolution: resolutionRoute, conflicts: discovered)
     }
 
-    /// Adds `conflict` to `list`, merging it with an existing identical one.
+    /// Adds `conflict` to `list`, merging every conflict that shares a
+    /// version with it into one multi-version conflict.
     static func append(_ conflict: BookmarkSyncConflict, to list: inout [BookmarkSyncConflict]) {
-        if let index = list.firstIndex(where: { $0.id == conflict.id }) {
-            list[index].merge(conflict)
-        } else {
-            list.append(conflict)
+        var merged = conflict
+        while let index = list.firstIndex(where: { $0.overlaps(merged) }) {
+            merged.merge(list.remove(at: index))
         }
+        list.append(merged)
     }
 
     /// Conflicts already present in two quiet browsers (no delta involved).
@@ -1450,61 +1470,121 @@ enum BookmarkAggregatePlanner {
         return BookmarkSyncConflict(sourceSide, targetSide, reason: conflict.reason)
     }
 
-    /// Applies the user's choices to one target: every chosen version this
-    /// target does not hold yet is introduced (with its folder chain) and a
-    /// competing version found here is updated or kept as the user decided.
+    /// Applies the user's choices to one target.
+    /// - The chosen version is introduced once (with its folder chain, each
+    ///   folder once per path) where this target does not hold it.
+    /// - With a single chosen version, one losing version held here is
+    ///   rewritten in place; any further losing copy here — or every losing
+    ///   copy when this target already holds the chosen version — is removed,
+    ///   so the target ends with exactly the chosen version.
+    /// - Keep all introduces every missing version and removes nothing.
     private static func resolve(target: Browser, context: BookmarkNativeTreeContext,
                                 conflicts: [BookmarkSyncConflict],
-                                resolutions: [String: BookmarkConflictResolution]) -> BookmarkRoutePlan {
+                                resolutions: [String: String]) -> BookmarkRoutePlan {
         var desired: [Bookmark] = []
         var working = context
         var error: String?
-        for (index, conflict) in conflicts.enumerated() {
-            guard let resolution = resolutions[conflict.id] else {
+        var removals: [String] = []
+        var injectedVersions = Set<String>()
+        var injectedFolders: [String: String] = [:]
+        let byId = Dictionary(context.nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        func inScope(_ node: Bookmark) -> Bool {
+            guard let scope = context.scopeRootId else { return true }
+            var parent = node.parentId
+            var seen = Set<String>()
+            while let current = parent, seen.insert(current).inserted {
+                if current == scope { return true }
+                parent = byId[current]?.parentId
+            }
+            return false
+        }
+        /// Native nodes in this target holding a version (known ID, else content).
+        func nodes(holding side: BookmarkConflictSide) -> [String] {
+            if let known = side.nativeIds[target], byId[known] != nil { return [known] }
+            return context.nodes.filter {
+                !$0.isFolder && inScope($0) && BookmarkSyncConflict.contentKey($0) == side.contentKey
+            }.map(\.id)
+        }
+
+        for conflict in conflicts {
+            guard let choice = resolutions[conflict.id], !conflict.winners(choice).isEmpty else {
                 error = "unresolved bookmark conflict"
                 continue
             }
-            let winners = conflict.winners(resolution)
-            let losers = [conflict.first, conflict.second].filter { side in !winners.contains(side) }
-            for (sideIndex, side) in winners.enumerated() where !side.browsers.contains(target) {
-                let prefix = "conflict\(index)-\(sideIndex)-"
-                for (position, node) in side.chain.enumerated() {
-                    var copy = node
-                    copy.id = prefix + node.id
-                    if let parent = node.parentId, !["0", "1", "2", "3"].contains(parent) {
-                        copy.parentId = prefix + parent
-                    }
-                    copy.sourceBrowser = side.sortedBrowsers.first ?? node.sourceBrowser
-                    if position == side.chain.count - 1, let nativeLoser = losers.first?.nativeIds[target] {
-                        working.sourceToNativeIds[copy.id] = nativeLoser
-                    }
-                    if !desired.contains(where: { $0.id == copy.id }) { desired.append(copy) }
+            let winners = conflict.winners(choice)
+            let losers = conflict.versions.filter { version in !winners.contains { $0.contentKey == version.contentKey } }
+            // What this target holds is decided from its live tree: a version
+            // can be present here without having been one side of a detected
+            // pair (for example after an earlier duplicate was created).
+            var losingNodes = losers.flatMap(nodes(holding:))
+            let holdsWinner = winners.contains { !nodes(holding: $0).isEmpty }
+            if choice != BookmarkSyncConflict.keepAll {
+                if holdsWinner {
+                    removals += losingNodes
+                    losingNodes = []
+                } else if losingNodes.count > 1 {
+                    removals += losingNodes.dropFirst()
+                    losingNodes = Array(losingNodes.prefix(1))
                 }
             }
+            for side in winners where nodes(holding: side).isEmpty {
+                guard injectedVersions.insert(side.contentKey).inserted, let leaf = side.chain.last else { continue }
+                var parent = side.chain.first?.parentId ?? "2"
+                if ["0"].contains(parent) { parent = "2" }
+                var path = parent
+                for folder in side.chain.dropLast() {
+                    path += "/" + folder.title
+                    if let existing = injectedFolders[path] {
+                        parent = existing
+                        continue
+                    }
+                    var copy = folder
+                    copy.id = "conflict-folder-\(injectedFolders.count)"
+                    copy.parentId = parent
+                    injectedFolders[path] = copy.id
+                    desired.append(copy)
+                    parent = copy.id
+                }
+                var copy = leaf
+                copy.id = "conflict-version-\(injectedVersions.count)"
+                copy.parentId = parent
+                copy.sourceBrowser = side.sortedBrowsers.first ?? leaf.sourceBrowser
+                if choice != BookmarkSyncConflict.keepAll, let loser = losingNodes.first {
+                    working.sourceToNativeIds[copy.id] = loser
+                }
+                desired.append(copy)
+            }
         }
+
         let prefix = "\(virtualIdPrefix)conflict-planned-"
         let probe = NativeBookmarkPlanner.makePlan(desired: desired, context: working, fullMirror: false, virtualIdPrefix: prefix)
         var planned: [String: BookmarkConflictResolution] = [:]
         for found in probe.conflicts {
             let key = BookmarkSyncConflict.contentKey(found.source)
             let other = BookmarkSyncConflict.contentKey(found.target)
-            guard let conflict = conflicts.first(where: { $0.contentKeys == [key, other] }),
-                  let resolution = resolutions[conflict.id] else {
+            guard let conflict = conflicts.first(where: { $0.contentKeys.contains(key) && $0.contentKeys.contains(other) }),
+                  let choice = resolutions[conflict.id] else {
                 error = error ?? "bookmark conflict changed since review"
                 continue
             }
-            if resolution == .both {
-                planned[found.id] = .both
-            } else if let winner = conflict.winners(resolution).first {
-                planned[found.id] = winner.contentKey == key ? .source : .target
-            }
+            if choice == BookmarkSyncConflict.keepAll { planned[found.id] = .both }
+            else if choice == key { planned[found.id] = .source }
+            else if choice == other { planned[found.id] = .target }
+            else { error = error ?? "bookmark conflict changed since review" }
         }
         let plan = NativeBookmarkPlanner.makePlan(desired: desired, context: working, fullMirror: false,
                                                   conflictResolutions: planned, virtualIdPrefix: prefix)
         let failure = error ?? plan.validationError ?? (plan.conflicts.isEmpty ? nil : "bookmark conflict changed since review")
-        let operations = failure == nil ? plan.operations : []
-        let end = failure == nil ? advancing(working, to: plan, attributedTo: target) : working
-        return route(source: nil, start: working, end: end, operations: operations, error: failure)
+        guard failure == nil else {
+            return route(source: nil, start: working, end: working, operations: [], error: failure)
+        }
+        let rewritten = Set(plan.operations.map(\.id))
+        var seenRemovals = Set<String>()
+        let removalOps = removals.filter { !rewritten.contains($0) && seenRemovals.insert($0).inserted }
+            .map { BookmarkMutationOperation(id: $0, kind: .removeTree) }
+        let operations = plan.operations + removalOps
+        let end = removing(removalOps.map(\.id), from: advancing(working, to: plan, attributedTo: target))
+        return route(source: nil, start: working, end: end, operations: operations, error: nil)
     }
 }
 
