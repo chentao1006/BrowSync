@@ -699,4 +699,13 @@
 "Replace Restore needs the backup and the sync folder to cover the same folder." = "替换恢复要求备份与同步文件夹对应同一个文件夹。";
 "This backup does not contain %@'s sync folder %@, so it cannot be restored there." = "此备份不包含 %@ 的同步文件夹 %@，无法恢复到那里。";
 "Only %@ is restored into %@. Grayed items are outside it and will not be restored." = "只有 %@ 会恢复到 %@，灰色项目在此范围之外，不会恢复。";
+"Backups" = "备份";
+"Back Up Now" = "立即备份";
+"Backing Up…" = "正在备份…";
+"Manual" = "手动";
+"Backup completed" = "备份完成";
+"Backup failed" = "备份失败";
+"Backed up: %@." = "已备份：%@。";
+"Not backed up: %@. The browser is not connected, has no folder access, or its sync folder is missing." = "未备份：%@。该浏览器未连接、没有文件夹访问权限，或其同步文件夹不存在。";
+"Before each sync, the synced folder of every changed browser is backed up automatically and kept for 7 days. Manual backups are kept until you delete them." = "每次同步前，会自动备份每个有改动的浏览器的同步文件夹，保留 7 天。手动备份会一直保留，直到你删除。";
 "The backup was not restored. If the browser had already started writing, some items may have changed; it is re-read and the next sync shows any difference. See the sync log for details." = "此备份未能恢复。如果浏览器已开始写入，部分项目可能已改变；BrowSync 会重新读取它，下次同步会显示所有差异。详情请查看同步日志。";

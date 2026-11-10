@@ -75,6 +75,10 @@ struct BookmarkBackup: Identifiable, Codable, Equatable {
     let sourceBrowser: String
     let folderPath: String?
     let bookmarks: [Bookmark]
+    /// Taken with "Back Up Now". Manual backups are kept until the user
+    /// deletes them; automatic ones expire after the retention period.
+    /// Absent in backups written by earlier versions (= automatic).
+    var isManual: Bool? = nil
 }
 
 /// Fields that define a restorable bookmark tree. Capture time and source browser
@@ -276,6 +280,24 @@ final class BackupService: ObservableObject {
         }
     }
 
+    /// A user-requested backup: always saved (no burst or duplicate
+    /// suppression) and exempt from age-based expiry.
+    @discardableResult
+    func saveManualBackup(bookmarks: [Bookmark], sourceBrowser: String, folderPath: String?) -> Bool {
+        guard !bookmarks.isEmpty else { return false }
+        let backup = BookmarkBackup(id: UUID().uuidString, createdAt: Date(), sourceBrowser: sourceBrowser,
+                                    folderPath: folderPath, bookmarks: bookmarks, isManual: true)
+        let fileURL = backupsDir.appendingPathComponent("backup_\(backup.id).json")
+        do {
+            try JSONEncoder().encode(backup).write(to: fileURL)
+            recentBookmarkBackups.insert(backup, at: 0)
+            return true
+        } catch {
+            logger.error("Failed to save manual bookmark backup: \(error)")
+            return false
+        }
+    }
+
     func removeRecentBookmarkBackup(id: String) {
         let fileURL = backupsDir.appendingPathComponent("backup_\(id).json")
         do {
@@ -305,12 +327,12 @@ final class BackupService: ObservableObject {
 
     private func trimRecentBookmarkBackups() {
         let cutoff = Date().addingTimeInterval(-Self.bookmarkBackupRetention)
-        let expired = recentBookmarkBackups.filter { $0.createdAt < cutoff }
+        let expired = recentBookmarkBackups.filter { $0.createdAt < cutoff && $0.isManual != true }
         for backup in expired {
             let fileURL = backupsDir.appendingPathComponent("backup_\(backup.id).json")
             try? FileManager.default.removeItem(at: fileURL)
         }
-        recentBookmarkBackups.removeAll { $0.createdAt < cutoff }
+        recentBookmarkBackups.removeAll { $0.createdAt < cutoff && $0.isManual != true }
     }
     
     // MARK: - Trash Bin Management

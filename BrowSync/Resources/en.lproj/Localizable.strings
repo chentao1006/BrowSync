@@ -671,4 +671,13 @@
 "Replace Restore needs the backup and the sync folder to cover the same folder." = "Replace Restore needs the backup and the sync folder to cover the same folder.";
 "This backup does not contain %@'s sync folder %@, so it cannot be restored there." = "This backup does not contain %@'s sync folder %@, so it cannot be restored there.";
 "Only %@ is restored into %@. Grayed items are outside it and will not be restored." = "Only %@ is restored into %@. Grayed items are outside it and will not be restored.";
+"Backups" = "Backups";
+"Back Up Now" = "Back Up Now";
+"Backing Up…" = "Backing Up…";
+"Manual" = "Manual";
+"Backup completed" = "Backup completed";
+"Backup failed" = "Backup failed";
+"Backed up: %@." = "Backed up: %@.";
+"Not backed up: %@. The browser is not connected, has no folder access, or its sync folder is missing." = "Not backed up: %@. The browser is not connected, has no folder access, or its sync folder is missing.";
+"Before each sync, the synced folder of every changed browser is backed up automatically and kept for 7 days. Manual backups are kept until you delete them." = "Before each sync, the synced folder of every changed browser is backed up automatically and kept for 7 days. Manual backups are kept until you delete them.";
 "The backup was not restored. If the browser had already started writing, some items may have changed; it is re-read and the next sync shows any difference. See the sync log for details." = "The backup was not restored. If the browser had already started writing, some items may have changed; it is re-read and the next sync shows any difference. See the sync log for details.";

@@ -639,4 +639,13 @@
 "Replace Restore needs the backup and the sync folder to cover the same folder." = "대체 복원은 백업과 동기화 폴더가 같은 폴더여야 합니다.";
 "This backup does not contain %@'s sync folder %@, so it cannot be restored there." = "이 백업에는 %@의 동기화 폴더 %@이(가) 없어 그곳에 복원할 수 없습니다.";
 "Only %@ is restored into %@. Grayed items are outside it and will not be restored." = "%@만 %@에 복원됩니다. 회색 항목은 범위 밖이므로 복원되지 않습니다.";
+"Backups" = "백업";
+"Back Up Now" = "지금 백업";
+"Backing Up…" = "백업 중…";
+"Manual" = "수동";
+"Backup completed" = "백업 완료";
+"Backup failed" = "백업 실패";
+"Backed up: %@." = "백업됨: %@.";
+"Not backed up: %@. The browser is not connected, has no folder access, or its sync folder is missing." = "백업되지 않음: %@. 브라우저가 연결되지 않았거나, 폴더 접근 권한이 없거나, 동기화 폴더가 없습니다.";
+"Before each sync, the synced folder of every changed browser is backed up automatically and kept for 7 days. Manual backups are kept until you delete them." = "동기화할 때마다 변경된 각 브라우저의 동기화 폴더를 자동으로 백업하고 7일간 보관합니다. 수동 백업은 삭제할 때까지 보관됩니다.";
 "The backup was not restored. If the browser had already started writing, some items may have changed; it is re-read and the next sync shows any difference. See the sync log for details." = "백업이 복원되지 않았습니다. 브라우저가 이미 기록을 시작했다면 일부 항목이 바뀌었을 수 있으며, 다시 읽어 다음 동기화에서 차이를 표시합니다. 자세한 내용은 동기화 로그를 확인하세요.";

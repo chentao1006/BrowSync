@@ -639,4 +639,13 @@
 "Replace Restore needs the backup and the sync folder to cover the same folder." = "置き換え復元には、バックアップと同期フォルダが同じフォルダに対応している必要があります。";
 "This backup does not contain %@'s sync folder %@, so it cannot be restored there." = "このバックアップには %@ の同期フォルダ %@ が含まれていないため、そこへは復元できません。";
 "Only %@ is restored into %@. Grayed items are outside it and will not be restored." = "%@ のみが %@ に復元されます。グレーの項目は範囲外で、復元されません。";
+"Backups" = "バックアップ";
+"Back Up Now" = "今すぐバックアップ";
+"Backing Up…" = "バックアップ中…";
+"Manual" = "手動";
+"Backup completed" = "バックアップ完了";
+"Backup failed" = "バックアップ失敗";
+"Backed up: %@." = "バックアップ済み：%@。";
+"Not backed up: %@. The browser is not connected, has no folder access, or its sync folder is missing." = "バックアップされていません：%@。ブラウザが接続されていない、フォルダへのアクセス権がない、または同期フォルダが見つかりません。";
+"Before each sync, the synced folder of every changed browser is backed up automatically and kept for 7 days. Manual backups are kept until you delete them." = "同期のたびに、変更のあった各ブラウザの同期フォルダを自動でバックアップし、7 日間保持します。手動バックアップは削除するまで保持されます。";
 "The backup was not restored. If the browser had already started writing, some items may have changed; it is re-read and the next sync shows any difference. See the sync log for details." = "バックアップは復元されませんでした。ブラウザがすでに書き込みを始めていた場合、一部の項目が変更されている可能性があります。ブラウザを再読み込みし、次回の同期で差分を表示します。詳細は同期ログを確認してください。";

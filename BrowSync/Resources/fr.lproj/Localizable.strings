@@ -637,4 +637,13 @@
 "Replace Restore needs the backup and the sync folder to cover the same folder." = "Le remplacement exige que la sauvegarde et le dossier synchronisé désignent le même dossier.";
 "This backup does not contain %@'s sync folder %@, so it cannot be restored there." = "Cette sauvegarde ne contient pas le dossier synchronisé %2$@ de %1$@ ; elle ne peut pas y être restaurée.";
 "Only %@ is restored into %@. Grayed items are outside it and will not be restored." = "Seul %@ est restauré dans %@. Les éléments grisés sont en dehors et ne seront pas restaurés.";
+"Backups" = "Sauvegardes";
+"Back Up Now" = "Sauvegarder maintenant";
+"Backing Up…" = "Sauvegarde…";
+"Manual" = "Manuelle";
+"Backup completed" = "Sauvegarde terminée";
+"Backup failed" = "Échec de la sauvegarde";
+"Backed up: %@." = "Sauvegardé : %@.";
+"Not backed up: %@. The browser is not connected, has no folder access, or its sync folder is missing." = "Non sauvegardé : %@. Le navigateur n'est pas connecté, n'a pas accès au dossier ou son dossier synchronisé est introuvable.";
+"Before each sync, the synced folder of every changed browser is backed up automatically and kept for 7 days. Manual backups are kept until you delete them." = "Avant chaque synchronisation, le dossier synchronisé de chaque navigateur modifié est sauvegardé automatiquement et conservé 7 jours. Les sauvegardes manuelles sont conservées jusqu'à ce que vous les supprimiez.";
 "The backup was not restored. If the browser had already started writing, some items may have changed; it is re-read and the next sync shows any difference. See the sync log for details." = "La sauvegarde n'a pas été restaurée. Si le navigateur avait déjà commencé à écrire, certains éléments ont pu changer ; il est relu et la prochaine synchronisation affichera toute différence. Consultez le journal de synchronisation.";

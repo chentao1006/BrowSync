@@ -118,6 +118,15 @@ final class SyncService: ObservableObject {
     /// Restores waiting for a native tree (by request ID) or a verified
     /// write result (by message ID).
     var pendingRestoreContexts: [String: PendingBookmarkRestore] = [:]
+    /// "Back Up Now": browsers whose fresh snapshot is awaited.
+    struct ManualBackupRun {
+        let id = UUID()
+        var waiting: Set<Browser> = []
+        var succeeded: [Browser] = []
+        var failed: [Browser] = []
+        var completions: [(_ succeeded: [Browser], _ failed: [Browser]) -> Void]
+    }
+    var manualBackupRun: ManualBackupRun?
     var pendingRestoreWrites: [String: PendingBookmarkRestore] = [:]
     /// Restore dispatches whose result did not arrive in time. A late result
     /// still means the browser may have changed: its tree is re-read.
@@ -2154,6 +2163,7 @@ final class SyncService: ObservableObject {
                     source: clientId,
                     previousCount: previousCount
                 )
+                if let browser = Browser(rawValue: browserId) { resolveManualBackup(browser, saved: false) }
                 return
             }
             let browserId = clientId.components(separatedBy: "-").first ?? clientId
@@ -2166,12 +2176,20 @@ final class SyncService: ObservableObject {
             // scope before persisting it. The observation itself is never a
             // plan; the newest two persisted observations are diffed below.
             guard let sourceAdjustedBookmarks = folderAdjustedBookmarksForSource(bms, browser: sourceBrowserForFolder) else {
+                resolveManualBackup(sourceBrowserForFolder, saved: false)
                 return
             }
             // Record the source-side state produced by this local operation
             // before it is dispatched to any target. Target-side pre-write
             // backups are captured independently immediately before replay.
-            if let sourceBackup = backupBookmarksForSource(bms, browser: sourceBrowserForFolder) {
+            if manualBackupRun?.waiting.contains(sourceBrowserForFolder) == true {
+                // Answer to "Back Up Now": an unconditional, kept backup.
+                let saved = backupBookmarksForSource(bms, browser: sourceBrowserForFolder).map {
+                    backupService?.saveManualBackup(bookmarks: $0, sourceBrowser: clientId,
+                                                    folderPath: settings.bookmarkFolder(for: sourceBrowserForFolder)) ?? false
+                } ?? false
+                resolveManualBackup(sourceBrowserForFolder, saved: saved)
+            } else if let sourceBackup = backupBookmarksForSource(bms, browser: sourceBrowserForFolder) {
                 let saved = backupService?.savePreSyncBackup(
                     bookmarks: sourceBackup,
                     sourceBrowser: clientId,
@@ -4450,6 +4468,76 @@ extension SyncService {
         // The restore is now a local change of that browser; a session
         // propagates it under the user's direction, folders and Safe Mode.
         scheduleBookmarkSyncSession()
+    }
+}
+
+// MARK: - Manual backup
+
+extension SyncService {
+    /// Backs up every participating browser's synced folder now (with its
+    /// ancestor chain). Safari is read directly; other browsers are asked for
+    /// a fresh snapshot. A browser that is not connected, or whose sync folder
+    /// is missing, is reported as not backed up — an old snapshot is never
+    /// passed off as a current backup.
+    func backUpBookmarksNow(completion: @escaping (_ succeeded: [Browser], _ failed: [Browser]) -> Void) {
+        // A second request while one runs (e.g. the settings view was
+        // recreated) joins it, so every caller hears the outcome.
+        if manualBackupRun != nil {
+            manualBackupRun?.completions.append(completion)
+            return
+        }
+        var run = ManualBackupRun(completions: [completion])
+        let browsers = settings.bookmarkParticipatingBrowsers.sorted {
+            $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending
+        }
+        for browser in browsers {
+            if browser == .safari {
+                let raw = SandboxAccessManager.shared.hasSafariAccess ? safariBookmarks.readBookmarks().map {
+                    Bookmark(id: $0.id, title: $0.title, url: $0.url, parentId: $0.parentId, isFolder: $0.isFolder,
+                             sortIndex: $0.sortIndex, inBookmarksBar: $0.inBookmarksBar, dateAdded: Date(), sourceBrowser: .safari)
+                } : []
+                let saved = !raw.isEmpty && (backupBookmarksForSource(raw, browser: .safari).map {
+                    backupService?.saveManualBackup(bookmarks: $0, sourceBrowser: "safari",
+                                                    folderPath: settings.bookmarkFolder(for: .safari)) ?? false
+                } ?? false)
+                if saved { run.succeeded.append(.safari) } else { run.failed.append(.safari) }
+            } else if let client = daemon?.connectedClients.first(where: { $0.browser == browser }) {
+                run.waiting.insert(browser)
+                requestFreshBookmarkSnapshot(for: client.id)
+            } else {
+                run.failed.append(browser)
+            }
+        }
+        manualBackupRun = run
+        log("Manual bookmark backup started for \(browsers.map(\.displayName).joined(separator: ", ")).")
+        guard !run.waiting.isEmpty else { return finishManualBackup() }
+        let id = run.id
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            await MainActor.run {
+                guard let self, var run = self.manualBackupRun, run.id == id, !run.waiting.isEmpty else { return }
+                run.failed.append(contentsOf: run.waiting)
+                run.waiting.removeAll()
+                self.manualBackupRun = run
+                self.finishManualBackup()
+            }
+        }
+    }
+
+    func resolveManualBackup(_ browser: Browser, saved: Bool) {
+        guard var run = manualBackupRun, run.waiting.remove(browser) != nil else { return }
+        if saved { run.succeeded.append(browser) } else { run.failed.append(browser) }
+        manualBackupRun = run
+        if run.waiting.isEmpty { finishManualBackup() }
+    }
+
+    private func finishManualBackup() {
+        guard let run = manualBackupRun else { return }
+        manualBackupRun = nil
+        let order: (Browser, Browser) -> Bool = { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
+        let succeeded = run.succeeded.sorted(by: order), failed = run.failed.sorted(by: order)
+        log("Manual bookmark backup finished: saved \(succeeded.map(\.displayName)), not saved \(failed.map(\.displayName)).")
+        run.completions.forEach { $0(succeeded, failed) }
     }
 }
 

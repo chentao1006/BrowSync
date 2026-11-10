@@ -43,6 +43,8 @@ struct BookmarkSyncTabView: View {
     @State private var showAutoSyncUpgradeAlert = false
     @State private var showRecentlyDeletedWindow = false
     @State private var showRecentBackupsWindow = false
+    @State private var isBackingUp = false
+    @State private var manualBackupResult: (succeeded: [Browser], failed: [Browser])?
     
     @State private var showFolderManager = false
     @State private var handledFolderManagerOpenRequest = 0
@@ -365,20 +367,60 @@ struct BookmarkSyncTabView: View {
         }
     }
 
+    private var manualBackupMessage: String {
+        guard let result = manualBackupResult else { return "" }
+        var lines: [String] = []
+        if !result.succeeded.isEmpty {
+            lines.append(String(format: String(localized: "Backed up: %@.", bundle: langBundle.bundle),
+                                result.succeeded.map(\.displayName).joined(separator: ", ")))
+        }
+        if !result.failed.isEmpty {
+            lines.append(String(format: String(localized: "Not backed up: %@. The browser is not connected, has no folder access, or its sync folder is missing.", bundle: langBundle.bundle),
+                                result.failed.map(\.displayName).joined(separator: ", ")))
+        }
+        return lines.joined(separator: "\n\n")
+    }
+
     private var recentBackupsSection: some View {
         Section {
             HStack {
-                Text(String(localized: "A complete copy of every changed source and destination folder is saved before synchronization. Backups are kept for 7 days.", bundle: langBundle.bundle))
+                Text(String(localized: "Before each sync, the synced folder of every changed browser is backed up automatically and kept for 7 days. Manual backups are kept until you delete them.", bundle: langBundle.bundle))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer()
+                Button(isBackingUp
+                       ? String(localized: "Backing Up…", bundle: langBundle.bundle)
+                       : String(localized: "Back Up Now", bundle: langBundle.bundle)) {
+                    isBackingUp = true
+                    appState.syncService.backUpBookmarksNow { succeeded, failed in
+                        isBackingUp = false
+                        manualBackupResult = (succeeded, failed)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(isBackingUp || syncSettings.bookmarkParticipatingBrowsers.wrappedValue.isEmpty)
                 Button(String(localized: "View", bundle: langBundle.bundle)) {
                     showRecentBackupsWindow = true
                 }
                 .buttonStyle(.bordered)
             }
         } header: {
-            Text(String(localized: "Recent Automatic Backups", bundle: langBundle.bundle))
+            Text(String(localized: "Backups", bundle: langBundle.bundle))
+        }
+        .alert(manualBackupResult?.succeeded.isEmpty == false
+               ? String(localized: "Backup completed", bundle: langBundle.bundle)
+               : String(localized: "Backup failed", bundle: langBundle.bundle),
+               isPresented: Binding(get: { manualBackupResult != nil }, set: { if !$0 { manualBackupResult = nil } })) {
+            Button(String(localized: "OK", bundle: langBundle.bundle), role: .cancel) { manualBackupResult = nil }
+            if manualBackupResult?.succeeded.isEmpty == false {
+                Button(String(localized: "View", bundle: langBundle.bundle)) {
+                    manualBackupResult = nil
+                    showRecentBackupsWindow = true
+                }
+            }
+        } message: {
+            Text(manualBackupMessage)
         }
     }
 
@@ -648,7 +690,7 @@ struct RecentBookmarkBackupsWindow: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(String(localized: "Recent Automatic Backups", bundle: langBundle))
+                Text(String(localized: "Backups", bundle: langBundle))
                     .font(.title3.bold())
                 Spacer()
             }
@@ -779,8 +821,18 @@ struct RecentBookmarkBackupsWindow: View {
                             .frame(width: 20, height: 20)
                     }
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("\(source.displayName) / \(backupFolderDisplayName(backup))")
-                            .font(.headline)
+                        HStack(spacing: 6) {
+                            Text("\(source.displayName) / \(backupFolderDisplayName(backup))")
+                                .font(.headline)
+                            if backup.isManual == true {
+                                Text(String(localized: "Manual", bundle: langBundle))
+                                    .font(.caption2.weight(.semibold))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.accentColor.opacity(0.15), in: Capsule())
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                        }
                         Text(String(format: String(localized: "Backup Contents Summary", bundle: langBundle), itemCounts.bookmarkCount, itemCounts.folderCount))
                             .font(.caption)
                             .foregroundStyle(.secondary)
