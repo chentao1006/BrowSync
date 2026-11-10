@@ -136,14 +136,29 @@ struct BookmarkChangeReviewView: View {
         }
     }
 
+    /// How many rows the review would actually show for this preview. Every
+    /// caller that decides to open the window must use this, so a plan can
+    /// never open an empty review.
+    static func visibleRowCount(for preview: BookmarkChangePreview) -> Int {
+        changeRows(for: preview).count
+    }
+
     private func changeRows(for preview: BookmarkChangePreview) -> [BookmarkChangeRow] {
+        Self.changeRows(for: preview)
+    }
+
+    private static func changeRows(for preview: BookmarkChangePreview) -> [BookmarkChangeRow] {
         let before = flattened(preview.before)
         let after = flattened(preview.after)
         let ids = Set(before.keys).union(after.keys)
         return ids.compactMap { id in
             let old = before[id]
             let new = after[id]
-            let change = new?.node.change != .unchanged ? new?.node.change : old?.node.change
+            // The "after" side describes additions, moves and edits; a
+            // removal exists only "before". Comparing an absent optional
+            // with `.unchanged` used to pick nil and drop every removal row.
+            let afterChange = new.flatMap { $0.node.change == .unchanged ? nil : $0.node.change }
+            let change = afterChange ?? old?.node.change
             guard let change, change != .unchanged,
                   // Sibling indexes are intentionally not synchronized. A
                   // legacy preview may still carry a reorder row, but it must
@@ -160,7 +175,7 @@ struct BookmarkChangeReviewView: View {
         }
     }
 
-    private func flattened(_ roots: [BookmarkReviewNode]) -> [String: (node: BookmarkReviewNode, path: String)] {
+    private static func flattened(_ roots: [BookmarkReviewNode]) -> [String: (node: BookmarkReviewNode, path: String)] {
         var result: [String: (node: BookmarkReviewNode, path: String)] = [:]
         func visit(_ node: BookmarkReviewNode, parents: [String]) {
             let title = node.title.isEmpty ? (node.url ?? "") : node.title

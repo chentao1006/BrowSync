@@ -841,8 +841,8 @@ final class SyncService: ObservableObject {
     /// A review is valid only when it has concrete, visible operations. A
     /// transport count alone is not sufficient to authorize a write.
     private func hasReviewableChanges(_ preview: BookmarkChangePreview) -> Bool {
-        preview.before.contains(where: \.containsChange)
-            || preview.after.contains(where: \.containsChange)
+        // Same rule the window uses to build its rows.
+        BookmarkChangeReviewView.visibleRowCount(for: preview) > 0
     }
 
     private var isResolvingReviewBatch = false
@@ -3870,7 +3870,7 @@ extension SyncService {
     func presentBookmarkSyncSessionReview(activate: Bool = true) {
         guard let session = bookmarkSyncSession, session.phase == .reviewing else { return }
         let routes = bookmarkSyncSessionRoutes
-        guard !routes.isEmpty else {
+        guard routes.contains(where: { !$0.conflicts.isEmpty || BookmarkChangeReviewView.visibleRowCount(for: $0.preview) > 0 }) else {
             discardBookmarkSyncSession(reason: "the plan has no reviewable rows")
             return
         }
