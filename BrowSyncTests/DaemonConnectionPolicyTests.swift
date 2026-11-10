@@ -29,7 +29,11 @@ struct DaemonConnectionPolicyTests {
             expect(policy.evaluate(headers: [("Origin", invalid)]) == .reject, "Reject \(invalid)")
         }
         expect(policy.evaluate(headers: headers) == .allow, "Valid extension Origin passes syntax gate")
-        expect(policy.evaluate(headers: [("Origin", "chrome-extension://fakeextension")]) == .reject, "Another Chromium extension cannot connect")
+        let developmentChromiumOrigin = "chrome-extension://fakeextension"
+        expect(policy.evaluate(headers: [("Origin", developmentChromiumOrigin)]) == .requestApproval(developmentChromiumOrigin), "Unpacked Chromium extension needs consent")
+        expect(policy.evaluate(headers: [("Origin", developmentChromiumOrigin)]) == .reject, "Chromium retries do not duplicate dialogs")
+        policy.resolveOrigin(developmentChromiumOrigin, allow: true)
+        expect(policy.evaluate(headers: [("Origin", developmentChromiumOrigin)]) == .allow, "Approved unpacked Chromium extension reconnects")
         let firefoxOrigin = "moz-extension://12345678-abcd-1234-abcd-123456789abc"
         expect(policy.evaluate(headers: [("Origin", firefoxOrigin)]) == .requestApproval(firefoxOrigin), "Firefox extension source needs consent")
         expect(policy.evaluate(headers: [("Origin", firefoxOrigin)]) == .reject, "Firefox retries do not duplicate dialogs")

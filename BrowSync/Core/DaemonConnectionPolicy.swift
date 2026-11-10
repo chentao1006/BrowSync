@@ -75,9 +75,11 @@ final class DaemonConnectionPolicy: @unchecked Sendable {
         defer { lock.unlock() }
         if let session, session != self.session { return .reject }
         if origin.hasPrefix("safari-web-extension://") { return .allow }
-        if origin.hasPrefix("chrome-extension://") {
-            return origin == Self.chromiumExtensionOrigin ? .allow : .reject
-        }
+        // The signed Web Store extension has a stable known Origin. An
+        // unpacked development build gets a different Chromium-generated ID;
+        // require the same explicit, persisted local approval used for Firefox
+        // instead of returning a silent 400 at the handshake boundary.
+        if origin == Self.chromiumExtensionOrigin { return .allow }
         if deniedOriginsStore.contains(origin) { return .reject }
         if approvedOrigins.contains(origin) { return .allow }
         guard !pendingOrigins.contains(origin), !deniedOriginsStore.contains(origin),

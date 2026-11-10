@@ -291,7 +291,7 @@ final class DaemonServer: ObservableObject {
         }
         let origin = originApprovalQueue.removeFirst()
         let bundle = LanguageBundle(language: AppState.shared.settingsService.general.language).bundle
-        let browser = Browser.firefox
+        let browser: Browser = origin.hasPrefix("chrome-extension://") ? .chrome : .firefox
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = String(format: String(localized: "BrowSync: Allow %@ to Connect?", bundle: bundle), browser.displayName)
@@ -304,7 +304,7 @@ final class DaemonServer: ObservableObject {
         showApprovalAlert(alert) { [weak self] allowed in
             guard let self, self.approvalGeneration == generation else { return }
             self.connectionPolicy.resolveOrigin(origin, allow: allowed)
-            if allowed { self.connectionPolicy.approveFirefoxAfterOriginConsent() }
+            if allowed, browser == .firefox { self.connectionPolicy.approveFirefoxAfterOriginConsent() }
             self.deniedExtensionOrigins = self.connectionPolicy.deniedOrigins
             self.presentNextOriginApproval()
         }
