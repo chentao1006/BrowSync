@@ -237,8 +237,14 @@ enum BookmarkSnapshotDiffer {
         let byId = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var ids = delta.changedNodeIds
         var queue = Array(ids)
-        while let id = queue.popLast(), let parent = byId[id]?.parentId,
-              !["0", "1", "2", "3"].contains(parent), ids.insert(parent).inserted {
+        // Walk every changed node's chain. A chain that reaches a root or an
+        // already-collected folder ends only that chain, not the whole walk;
+        // otherwise a second change in another folder lost its parent and the
+        // target plan failed closed with "missing target parent identity".
+        while let id = queue.popLast() {
+            guard let parent = byId[id]?.parentId,
+                  !["0", "1", "2", "3"].contains(parent),
+                  ids.insert(parent).inserted else { continue }
             queue.append(parent)
         }
         // A newly added folder carries its new subtree.
@@ -721,6 +727,11 @@ struct NativeBookmarkChange: Equatable {
     var kind: Kind
     var parentId: String?
     var containingPath: String
+    /// True for the node as the plan leaves it (added, or a move/edit's new
+    /// state); false for the node as it is now (removed, or a move/edit's
+    /// old state). A move or edit has one row of each, so a review can show
+    /// "old → new" instead of the new state twice.
+    var isResult = false
 }
 
 enum NativeBookmarkPlanner {
@@ -766,7 +777,8 @@ enum NativeBookmarkPlanner {
         context: BookmarkNativeTreeContext,
         fullMirror: Bool,
         conflictResolutions: [String: BookmarkConflictResolution] = [:],
-        virtualIdPrefix: String = "browsync-app-planned-"
+        virtualIdPrefix: String = "browsync-app-planned-",
+        movedSourceIds: Set<String> = []
     ) -> NativeBookmarkPlan {
         var existing = Dictionary(uniqueKeysWithValues: context.nodes.map { ($0.id, $0) })
         let children = Dictionary(grouping: context.nodes) { $0.parentId ?? "" }
@@ -900,6 +912,18 @@ enum NativeBookmarkPlanner {
                     continue
                 }
                 var mapped = resolved[bookmark.id].flatMap { existing[$0] == nil ? nil : $0 }
+                // A bookmark created in this target and never mapped has no
+                // ID lineage here. When the source moved it, the move is the
+                // evidence that it already exists: take the target's only
+                // in-scope copy with the same title and URL, so the move is
+                // replayed as a move instead of a duplicate creation.
+                if mapped == nil, !bookmark.isFolder, movedSourceIds.contains(bookmark.id) {
+                    let copies = existing.values.filter {
+                        !$0.isFolder && !claimed.contains($0.id) && isInBoundScope($0)
+                            && $0.title == bookmark.title && canonicalURL($0.url) == canonicalURL(bookmark.url)
+                    }
+                    if copies.count == 1 { mapped = copies[0].id }
+                }
                 if let conflict = conflictCandidate(bookmark, parentId: parentId, mappedId: mapped) {
                     switch conflictResolutions[conflict.id] {
                     case .source:
@@ -1071,12 +1095,15 @@ enum NativeBookmarkPlanner {
         }
         let afterChanges = operations.compactMap { op -> NativeBookmarkChange? in
             guard let bookmark = resulting[op.id] else { return nil }
+            var result: NativeBookmarkChange
             switch op.kind {
-            case .create: return change(bookmark, kind: .added, nodes: resulting)
-            case .move: return change(bookmark, kind: .moved, nodes: resulting)
-            case .update: return change(bookmark, kind: .modified, nodes: resulting)
+            case .create: result = change(bookmark, kind: .added, nodes: resulting)
+            case .move: result = change(bookmark, kind: .moved, nodes: resulting)
+            case .update: result = change(bookmark, kind: .modified, nodes: resulting)
             case .removeTree: return nil
             }
+            result.isResult = true
+            return result
         }
         return NativeBookmarkPlan(
             inputToken: context.inputToken,
@@ -1144,6 +1171,10 @@ struct BookmarkSourceContribution: Equatable {
     var desired: [Bookmark]
     /// Nodes removed in the source (a removed folder stands for its subtree).
     var removals: [Bookmark]
+    /// Source IDs of bookmarks the source moved to another folder. A move
+    /// proves the bookmark already exists, so a target without an ID mapping
+    /// for it may locate it by content instead of creating a duplicate.
+    var moved: Set<String> = []
 }
 
 /// One version of a disputed bookmark and every browser that holds it.
@@ -1287,7 +1318,8 @@ enum BookmarkAggregatePlanner {
 
             var plan = NativeBookmarkPlanner.makePlan(
                 desired: desired, context: working, fullMirror: false,
-                virtualIdPrefix: "\(virtualIdPrefix)\(contribution.source.rawValue)-planned-"
+                virtualIdPrefix: "\(virtualIdPrefix)\(contribution.source.rawValue)-planned-",
+                movedSourceIds: contribution.moved
             )
             var attempts = 0
             while !plan.conflicts.isEmpty && attempts < 8 {
@@ -1301,7 +1333,8 @@ enum BookmarkAggregatePlanner {
                 desired.removeAll { conflicted.contains($0.id) }
                 plan = NativeBookmarkPlanner.makePlan(
                     desired: desired, context: working, fullMirror: false,
-                    virtualIdPrefix: "\(virtualIdPrefix)\(contribution.source.rawValue)-planned-"
+                    virtualIdPrefix: "\(virtualIdPrefix)\(contribution.source.rawValue)-planned-",
+                    movedSourceIds: contribution.moved
                 )
             }
             if let error = plan.validationError ?? (plan.conflicts.isEmpty ? nil : "unresolved bookmark conflict") {
@@ -1905,6 +1938,37 @@ enum BookmarkRestorePlanner {
             }
             return node
         }
+    }
+
+    /// A Recently Deleted restore: only the recorded items, additive, each at
+    /// its recorded parent. A parent must be another restored item, a node
+    /// that exists in the target, or a portable root (1/2/3). Items whose
+    /// parent cannot be found (another browser's ID space, or a folder that
+    /// no longer exists) are returned as unplaceable, together with their
+    /// restored descendants, instead of being dropped into a guessed folder.
+    static func deletedItemsPlan(_ items: [Bookmark], context: BookmarkNativeTreeContext)
+        -> (plan: NativeBookmarkPlan, unplaceable: Set<String>) {
+        let itemIds = Set(items.map(\.id))
+        let targetIds = Set(context.nodes.map(\.id))
+        let mappedIds = Set(context.sourceToNativeIds.compactMap { targetIds.contains($0.value) ? $0.key : nil })
+        func placeable(_ parent: String?) -> Bool {
+            guard let parent else { return true }
+            return ["1", "2", "3"].contains(parent) || itemIds.contains(parent)
+                || targetIds.contains(parent) || mappedIds.contains(parent)
+        }
+        var unplaceable = Set(items.filter { !placeable($0.parentId) }.map(\.id))
+        var changed = true
+        while changed {
+            changed = false
+            for item in items where !unplaceable.contains(item.id) {
+                if let parent = item.parentId, unplaceable.contains(parent) {
+                    unplaceable.insert(item.id)
+                    changed = true
+                }
+            }
+        }
+        let desired = items.filter { !unplaceable.contains($0.id) }
+        return (plan(desired: desired, context: context, replacing: false), unplaceable)
     }
 
     /// Incremental restore only creates what is missing: it never removes,

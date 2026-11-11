@@ -1438,16 +1438,11 @@ final class SyncService: ObservableObject {
         var verified = true
 
         if targets.contains(.safari) {
-            guard BookmarkWritePolicy.allowsWrite(to: .safari, settings: settings, explicitRestore: true),
-                  SandboxAccessManager.shared.hasSafariAccess else { return false }
-            var current = safariBookmarks.readBookmarks()
-            current.append(contentsOf: bookmarks)
-            recordInternalWrite()
-            let safariVerified = applyRestoreToSafari(current, replacing: false, skipDuplicateReview: true)
-            if safariVerified {
-                backupService?.markDeletedBookmarksRestored(ids: Set(bookmarks.map(\.id)), from: .safari)
+            let restored = restoreDeletedBookmarksToSafari(bookmarks)
+            if !restored.isEmpty {
+                backupService?.markDeletedBookmarksRestored(ids: restored, from: .safari)
             }
-            verified = safariVerified && verified
+            verified = verified && restored == Set(bookmarks.map(\.id))
         }
 
         let payload = bookmarks.map { bookmark in
@@ -1482,6 +1477,71 @@ final class SyncService: ObservableObject {
             verified = false
         }
         return verified
+    }
+
+    /// Restores Recently Deleted items into Safari through the scoped native
+    /// planner and a verified write (the explicit "Restore to Safari" is the
+    /// approval, so no second Safe Mode review). Returns the IDs that are
+    /// verifiably present in Safari afterwards; everything else stays in the
+    /// trash. The legacy whole-tree merge must not be used here: it treated
+    /// Safari's own top-level folders as foreign browser roots, dropped every
+    /// item inside them and still reported success.
+    private func restoreDeletedBookmarksToSafari(_ bookmarks: [SyncBookmark]) -> Set<String> {
+        func fail(_ reason: String) -> Set<String> {
+            log("Recently Deleted restore into Safari was not performed: \(reason). The items stay in Recently Deleted.")
+            return []
+        }
+        guard BookmarkWritePolicy.allowsWrite(to: .safari, settings: settings, explicitRestore: true) else {
+            return fail("bookmark sync is off or Safari is not participating")
+        }
+        guard SandboxAccessManager.shared.hasSafariAccess else { return fail("Safari folder access has not been granted") }
+        if let phase = bookmarkSyncSession?.phase, phase == .applying || phase == .finalizing {
+            return fail("a bookmark sync is writing right now; try again when it finishes")
+        }
+        let read = safariBookmarks.nativePlanContext(folderPath: settings.bookmarkFolder(for: .safari))
+        guard let context = read.context else { return fail(read.error ?? "Safari bookmarks are unavailable") }
+        let items = bookmarks.map {
+            Bookmark(id: $0.id, title: $0.title, url: $0.url, parentId: $0.parentId, isFolder: $0.isFolder,
+                     inBookmarksBar: $0.inBookmarksBar, dateAdded: nil, sourceBrowser: .safari)
+        }
+        let (plan, unplaceable) = BookmarkRestorePlanner.deletedItemsPlan(items, context: context)
+        if !unplaceable.isEmpty {
+            let titles = items.filter { unplaceable.contains($0.id) }.map(\.title).joined(separator: ", ")
+            log("Recently Deleted restore into Safari skipped \(unplaceable.count) item(s) whose original folder is not in Safari (\(titles)). They stay in Recently Deleted.")
+        }
+        if let error = plan.validationError { return fail(error) }
+        let operations = restoreOperations(plan.operations)
+        if !operations.isEmpty {
+            backupSafariBeforeRestore()
+            lastNetworkSyncTime = Date()
+            recordInternalWrite()
+            let result = safariBookmarks.applyNativePlan(operations, inputToken: context.inputToken,
+                                                         scopeRootId: context.scopeRootId, explicitRestore: true)
+            guard result.applied else { return fail(result.error ?? "the Safari write could not be verified") }
+            refreshSafariSnapshot()
+        }
+        // Report only what Safari now verifiably holds.
+        let live = safariBookmarks.readBookmarks()
+        let liveLeaves = Set(live.filter { !$0.isFolder }.map { "\($0.title)|\($0.url ?? "")" })
+        let liveFolders = Set(live.filter(\.isFolder).map(\.title))
+        let present = Set(items.filter { item in
+            !unplaceable.contains(item.id)
+                && (item.isFolder ? liveFolders.contains(item.title)
+                                  : liveLeaves.contains("\(item.title)|\(item.url.flatMap { $0 } ?? "")"))
+        }.map(\.id))
+        let missing = items.count - unplaceable.count - present.count
+        if missing > 0 {
+            log("Recently Deleted restore into Safari could not verify \(missing) item(s); they stay in Recently Deleted.")
+        }
+        log("Restored \(present.count) Recently Deleted item(s) into Safari (\(operations.filter { $0.kind == .create }.count) created).")
+        if !operations.isEmpty {
+            if let phase = bookmarkSyncSession?.phase, phase == .collecting || phase == .reviewing {
+                discardBookmarkSyncSession(reason: "Recently Deleted items were restored into Safari")
+            }
+            // The restore is now Safari's local change; a session propagates it.
+            scheduleBookmarkSyncSession()
+        }
+        return present
     }
 
     /// Whether Safari's tree may be sent to this browser right now.
@@ -2730,9 +2790,11 @@ final class SyncService: ObservableObject {
                                       isFolder: change.isFolder, change: kind, children: [],
                                       containingPath: change.containingPath)
         }
+        // Each move/edit has an old-state and a new-state row; keep them on
+        // their own sides so the review shows "old → new".
         let preview = BookmarkChangePreview(
-            before: plan.changes.filter { $0.kind != .added }.map(reviewNode),
-            after: plan.changes.filter { $0.kind != .removed }.map(reviewNode)
+            before: plan.changes.filter { !$0.isResult }.map(reviewNode),
+            after: plan.changes.filter(\.isResult).map(reviewNode)
         )
         guard hasReviewableChanges(preview) else {
             log("Rejected an inconsistent native bookmark plan into [\(clientId)]: its operations had no reviewable rows. Nothing was dispatched.")
@@ -3692,7 +3754,8 @@ extension SyncService {
             return BookmarkSourceContribution(
                 source: source,
                 desired: bookmarksPreparedForTarget(payload, sourceBrowser: source, targetBrowser: target),
-                removals: removals)
+                removals: removals,
+                moved: Set(delta?.changes.filter { $0.kind == .moved }.map(\.nodeId) ?? []))
         }
     }
 
@@ -3814,8 +3877,8 @@ extension SyncService {
                 destructiveSignature: plan.routes.map(\.impact.destructiveSignature).joined(separator: ","))
             var route = BookmarkReviewRoute(
                 id: Self.sessionRouteId(target), source: "", target: target.displayName, impact: impact,
-                preview: BookmarkChangePreview(before: changes.filter { $0.kind != .added }.map(reviewNode),
-                                               after: changes.filter { $0.kind != .removed }.map(reviewNode)))
+                preview: BookmarkChangePreview(before: changes.filter { !$0.isResult }.map(reviewNode),
+                                               after: changes.filter(\.isResult).map(reviewNode)))
             route.targetBrowser = target
             routes.append(route)
         }

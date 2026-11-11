@@ -37,6 +37,8 @@ private enum BookmarkRootMappingTests {
             ("native app refuses mapped identity outside selected scope", testNativePlannerRefusesMappedOutsideScope),
             ("native app plans mapped deletions without escaping scope", testNativeRemovalPlan),
             ("recently deleted restore accepts existing parent", testRestoreAcceptsExistingParent),
+            ("recently deleted restore into Safari keeps top-level folders", testDeletedItemsRestoreIntoSafariFolder),
+            ("an unmapped move is replayed as a move, not a duplicate", testUnmappedMoveIsAMove),
             ("snapshot diff identifies deletion", testSnapshotDiffDeletion),
             ("snapshot diff distinguishes move and reorder", testSnapshotDiffMoveAndReorder),
             ("snapshot delta payload includes parent chain", testSnapshotDeltaPayloadIncludesParents),
@@ -464,6 +466,74 @@ private enum BookmarkRootMappingTests {
         try expect(plan.operations[0].parentId == "existing-parent", "restore changed the recorded parent")
     }
 
+    private static func testDeletedItemsRestoreIntoSafariFolder() throws {
+        // Safari's context: Favorites ("1") holds a top-level folder. Folders
+        // directly under a root once made the legacy merge drop the restore.
+        let nodes = [
+            bookmark("1", "Favorites", parent: "0", folder: true, browser: .safari),
+            bookmark("2", "Bookmarks Menu", parent: "0", folder: true, browser: .safari),
+            bookmark("DEV", "Dev", parent: "1", folder: true, browser: .safari),
+            bookmark("KEEP", "Keep", parent: "DEV", browser: .safari)
+        ]
+        let context = BookmarkNativeTreeContext(inputToken: "safari-v1", browser: .safari, nodes: nodes,
+                                                rootIds: ["1": "1", "2": "2", "3": "2"],
+                                                sourceToNativeIds: ["DEV": "DEV", "KEEP": "KEEP"], scopeRootId: nil)
+        let github = bookmark("GH", "GitHub", parent: "DEV", browser: .safari)
+        let folder = bookmark("OLD", "Old", parent: "1", folder: true, browser: .safari)
+        let inner = bookmark("IN", "Inner", parent: "OLD", browser: .safari)
+        let foreign = bookmark("70", "Foreign", parent: "69", browser: .safari)
+        let (plan, unplaceable) = BookmarkRestorePlanner.deletedItemsPlan([github, folder, inner, foreign], context: context)
+        try expect(plan.validationError == nil, "restore was refused: \(plan.validationError ?? "")")
+        try expect(unplaceable == ["70"], "only the item with an unknown parent is unplaceable: \(unplaceable)")
+        let creates = plan.operations.filter { $0.kind == .create }
+        try expect(plan.operations.count == creates.count, "a Recently Deleted restore removed, moved or renamed something")
+        try expect(creates.contains { $0.title == "GitHub" && $0.parentId == "DEV" }, "GitHub was not restored into its folder")
+        let created = try unwrap(creates.first { $0.title == "Old" }, "deleted folder was not recreated")
+        try expect(created.parentId == "1", "deleted folder left Favorites")
+        try expect(creates.contains { $0.title == "Inner" && $0.parentId == created.id }, "folder content was not restored inside it")
+        try expect(!creates.contains { $0.title == "Foreign" }, "an item was placed into a guessed folder")
+    }
+
+    private static func testUnmappedMoveIsAMove() throws {
+        // Chrome created Vercel; Safari holds it under its own UUID, which
+        // Chrome's syncIdMap never learned. Safari then moves it to Dev.
+        let chrome = [
+            bookmark("1", "Bar", parent: "0", folder: true, browser: .chrome),
+            bookmark("69", "Dev", parent: "1", folder: true, browser: .chrome),
+            bookmark("81", "Ops", parent: "1", folder: true, browser: .chrome),
+            Bookmark(id: "86", title: "Vercel", url: "https://vercel.com/", parentId: "81", isFolder: false,
+                     sortIndex: 0, inBookmarksBar: false, dateAdded: nil, sourceBrowser: .chrome)
+        ]
+        let context = BookmarkNativeTreeContext(inputToken: "t", browser: .chrome, nodes: chrome,
+                                                rootIds: ["1": "1", "2": "1", "3": "1"], sourceToNativeIds: [:], scopeRootId: nil)
+        let dev = bookmark("DEV", "Dev", parent: "1", folder: true, browser: .safari)
+        let vercel = Bookmark(id: "VERCEL", title: "Vercel", url: "https://vercel.com/", parentId: "DEV", isFolder: false,
+                              sortIndex: 0, inBookmarksBar: false, dateAdded: nil, sourceBrowser: .safari)
+        func ops(moved: Set<String>) -> [BookmarkMutationOperation] {
+            BookmarkAggregatePlanner.plan(target: .chrome, context: context,
+                                          contributions: [BookmarkSourceContribution(source: .safari, desired: [dev, vercel],
+                                                                                     removals: [], moved: moved)],
+                                          conflicts: []).operations
+        }
+        let move = ops(moved: ["VERCEL"])
+        try expect(move.count == 1 && move[0].kind == .move && move[0].id == "86" && move[0].parentId == "69",
+                   "an unmapped move became: \(move.map { "\($0.kind.rawValue) \($0.id) -> \($0.parentId ?? "")" })")
+        // The review shows where it moved from and to: one old-state and one
+        // result row, each with its own folder path.
+        let changes = BookmarkAggregatePlanner.plan(
+            target: .chrome, context: context,
+            contributions: [BookmarkSourceContribution(source: .safari, desired: [dev, vercel], removals: [], moved: ["VERCEL"])],
+            conflicts: []).routes.flatMap(\.changes).filter { $0.kind == .moved }
+        let from = changes.filter { !$0.isResult }.map(\.containingPath)
+        let to = changes.filter(\.isResult).map(\.containingPath)
+        try expect(from.count == 1 && from[0].hasSuffix("/Ops") && to.count == 1 && to[0].hasSuffix("/Dev"),
+                   "a move did not describe both folders: from \(from) to \(to)")
+        // Without move evidence (a genuine addition) the existing copy is left alone.
+        let add = ops(moved: [])
+        try expect(add.count == 1 && add[0].kind == .create && add[0].parentId == "69",
+                   "an addition took over another folder's copy")
+    }
+
     private static func snapshot(_ id: String, _ bookmarks: [Bookmark]) -> BookmarkSnapshotRecord {
         BookmarkSnapshotRecord(id: id, capturedAt: Date(), sourceBrowser: "chrome", bookmarks: bookmarks)
     }
@@ -497,6 +567,19 @@ private enum BookmarkRootMappingTests {
         let delta = BookmarkSnapshotDiffer.diff(older: snapshot("old", [folder]), newer: snapshot("new", [folder, child]))
         let payload = BookmarkSnapshotDiffer.payload(for: delta, current: [folder, child])
         try expect(Set(payload.map(\.id)) == ["folder", "child"], "changed child payload omitted its parent chain")
+
+        // Changes in several folders: one chain reaching a root must not stop
+        // the walk before another change's parent is collected.
+        let dev = bookmark("dev", "Dev", parent: "1", folder: true)
+        let ops = bookmark("ops", "Ops", parent: "1", folder: true)
+        let moved = bookmark("moved", "Moved", parent: "ops")
+        var movedNow = moved; movedNow.parentId = "dev"
+        let added = bookmark("added", "Added", parent: "ops")
+        let multi = BookmarkSnapshotDiffer.diff(older: snapshot("old", [dev, ops, moved]),
+                                                newer: snapshot("new", [dev, ops, movedNow, added]))
+        let multiPayload = BookmarkSnapshotDiffer.payload(for: multi, current: [dev, ops, movedNow, added])
+        try expect(Set(multiPayload.map(\.id)) == ["dev", "ops", "moved", "added"],
+                   "payload for changes in several folders omitted a parent: \(multiPayload.map(\.id).sorted())")
     }
 
     private static func testStableSnapshotConflict() throws {
