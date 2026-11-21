@@ -148,7 +148,7 @@ final class PurchaseService: ObservableObject {
                     await self.refreshEntitlements()
                     await transaction.finish()
                 } catch {
-                    await self.setStatus("Could not verify the purchase.")
+                    self.setStatus("Could not verify the purchase.")
                 }
             }
         }
