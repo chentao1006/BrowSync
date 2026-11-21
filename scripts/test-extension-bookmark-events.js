@@ -22,10 +22,11 @@ function waitForMicrotasks() {
   return new Promise(resolve => setTimeout(resolve, 0));
 }
 
-async function loadWorker(relativePath, browser) {
+async function loadWorker(relativePath, browser, reportedBrowser = browser, priorValues = {}, failIdentityRead = false, oldApp = false) {
   const sent = [];
+  const sockets = [];
   let mutationAttempts = 0;
-  const roots = browser === 'firefox'
+  const roots = browser !== 'chrome'
     ? { tree: 'root________', bar: 'toolbar_____', menu: 'menu________', other: 'unfiled_____', mobile: 'mobile____' }
     : { tree: '0', bar: '1', other: '2', mobile: '3' };
   const values = {
@@ -34,11 +35,12 @@ async function loadWorker(relativePath, browser) {
       bookmarkParticipatingBrowsers: { [browser]: true },
       bookmarkSyncFolders: {}
     },
-    syncIdMap: { "source-item": "item" }
+    syncIdMap: { "source-item": "item" },
+    ...priorValues
   };
   const nodes = new Map([
     [roots.tree, { id: roots.tree, title: 'root' }],
-    [roots.bar, { id: roots.bar, title: browser === 'firefox' ? 'Bookmarks Toolbar' : 'Bookmarks Bar', parentId: roots.tree }],
+    [roots.bar, { id: roots.bar, title: browser !== 'chrome' ? 'Bookmarks Toolbar' : 'Bookmarks Bar', parentId: roots.tree }],
     [roots.other, { id: roots.other, title: 'Other Bookmarks', parentId: roots.tree }],
     ...(roots.menu ? [[roots.menu, { id: roots.menu, title: 'Bookmarks Menu', parentId: roots.tree }]] : []),
     ...(roots.mobile ? [[roots.mobile, { id: roots.mobile, title: 'Mobile Bookmarks', parentId: roots.tree }]] : []),
@@ -61,11 +63,43 @@ async function loadWorker(relativePath, browser) {
   class TestWebSocket {
     static CONNECTING = 0;
     static OPEN = 1;
-    constructor() { this.readyState = TestWebSocket.OPEN; }
-    send(raw) { sent.push(JSON.parse(raw)); }
+    constructor() {
+      sockets.push(this);
+      this.messages = [];
+      this.readyState = TestWebSocket.OPEN;
+      queueMicrotask(() => this.onopen());
+    }
+    close() {
+      this.readyState = 3;
+      void this.onclose();
+    }
+    send(raw) {
+      const message = JSON.parse(raw);
+      this.messages.push(message);
+      sent.push(message);
+      if (message.type === 'register') {
+        // Current apps mark their ack; older apps send a bare ack.
+        const ack = { type: 'ack', browser, messageId: message.messageId, ...(oldApp ? {} : { capabilities: ['hostPairing'] }) };
+        queueMicrotask(() => {
+          this.onmessage({ data: JSON.stringify({ ...ack, messageId: 'stale-registration', browser: 'wrong' }) });
+          this.onmessage({ data: JSON.stringify({ type: 'pull', category: 'bookmark_plan_context', payload: { raw: { requestId: 'before-registration' } } }) });
+          let settingsResponse;
+          for (const listener of events.message.listeners) {
+            listener({ type: 'UPDATE_SETTING', setting: 'bookmarkSync', value: false }, {},
+                     result => { settingsResponse = result; });
+          }
+          assert.equal(settingsResponse?.ok, false, 'A popup setting must wait for confirmed pairing');
+          this.onmessage({ data: JSON.stringify(ack) });
+        });
+      }
+    }
   }
   const local = {
     async get(keys) {
+      if (failIdentityRead && Array.isArray(keys) && keys.includes('installationID')) {
+        failIdentityRead = false;
+        throw new Error('Synthetic temporary storage error');
+      }
       if (typeof keys === 'string') return { [keys]: values[keys] };
       if (Array.isArray(keys)) return Object.fromEntries(keys.map(key => [key, values[key]]));
       return { ...values };
@@ -77,6 +111,7 @@ async function loadWorker(relativePath, browser) {
     storage: { local, onChanged: listenerEvent() },
     runtime: {
       onStartup: events.startup, onInstalled: events.installed, onConnect: events.connect, onMessage: events.message,
+      async getBrowserInfo() { return { name: reportedBrowser === 'futurebrowser' ? 'Future Browser' : reportedBrowser }; },
       getURL: value => `moz-extension://synthetic/${value}`
     },
     bookmarks: {
@@ -138,16 +173,18 @@ async function loadWorker(relativePath, browser) {
     cookies: { onChanged: events.cookieChanged, async getAll() { return []; }, async set() {}, async remove() {} }
   };
   const sandbox = {
-    chrome, browser: chrome, WebSocket: TestWebSocket, navigator: { userAgent: browser === 'firefox' ? 'Firefox/159.0' : 'Chrome/156.0' },
-    crypto: { randomUUID: () => 'synthetic-id' }, URL, URLSearchParams, console,
+    chrome, browser: chrome, WebSocket: TestWebSocket, navigator: { userAgent: browser !== 'chrome' ? 'Firefox/159.0' : 'Chrome/156.0' },
+    crypto: { randomUUID: require('node:crypto').randomUUID }, URL, URLSearchParams, console,
     setTimeout, clearTimeout, setInterval, clearInterval, TextEncoder, TextDecoder, structuredClone
   };
   const source = fs.readFileSync(path.join(process.cwd(), relativePath), 'utf8');
-  vm.runInNewContext(`${source}\nglobalThis.__browSyncWorkerTest = { mayExecuteAppBookmarkPlan, applySync, handlePullRequest };`, sandbox,
+  await vm.runInNewContext(`(async () => {
+${source}\nglobalThis.__browSyncWorkerTest = { mayExecuteAppBookmarkPlan, applySync, handlePullRequest };
+})()`, sandbox,
                      { filename: relativePath, timeout: 2_000 });
   await waitForMicrotasks();
   return {
-    events, sent, values, roots, internals: sandbox.__browSyncWorkerTest,
+    events, sent, sockets, values, roots, internals: sandbox.__browSyncWorkerTest,
     mutationAttempts: () => mutationAttempts,
     mutateTree(id, changes) { Object.assign(nodes.get(id), changes); }
   };
@@ -159,8 +196,27 @@ async function invoke(listener, ...args) {
   await waitForMicrotasks();
 }
 
-async function testWorker(relativePath, browser) {
-  const worker = await loadWorker(relativePath, browser);
+async function testWorker(relativePath, browser, reportedBrowser = browser) {
+  const worker = await loadWorker(relativePath, browser, reportedBrowser);
+  const registration = worker.sent.find(message => message.type === 'register');
+  assert.equal(registration?.installationID, worker.values.installationID);
+  assert.equal(registration?.legacyBrowserID, undefined, 'A fresh installation has no legacy identity');
+  assert.equal(worker.values.wsState, 'open');
+  // Requests the app sent before its ack run after it, as the confirmed browser.
+  const earlyContext = worker.sent.find(message => message.category === 'bookmark_plan_context');
+  assert.equal(earlyContext?.payload?.raw?.requestId, 'before-registration', 'A request sent before the ack is answered after it');
+  assert.equal(earlyContext?.browser, browser, 'An early request is answered under the confirmed identity');
+  assert.ok(worker.sent.indexOf(earlyContext) > worker.sent.indexOf(registration));
+  if (relativePath.startsWith('Firefox')) {
+    // Older apps accept Gecko builds only as "firefox".
+    assert.equal(registration?.browser, 'firefox');
+    assert.equal(registration?.instanceId, 'firefox-main');
+    assert.equal(registration?.browserProduct, reportedBrowser);
+  } else {
+    assert.equal(registration?.browser, reportedBrowser);
+    assert.equal(registration?.instanceId, reportedBrowser + '-main');
+  }
+  assert.equal(worker.values.currentBrowserId, browser);
   assert.equal(worker.events.created.listeners.length, 1, `${relativePath}: missing onCreated listener`);
   assert.equal(worker.events.removed.listeners.length, 1, `${relativePath}: missing onRemoved listener`);
   assert.equal(worker.events.changed.listeners.length, 1, `${relativePath}: missing onChanged listener`);
@@ -327,10 +383,54 @@ async function testWorker(relativePath, browser) {
                `${relativePath}: stale app plan was reported as verified`);
 }
 
+async function testPairingRestart(path, host, reported, previous, expectedLegacy) {
+  const initial = await loadWorker(path, host, reported, { currentBrowserId: previous, installationID: 'invalid' }, true);
+  assert.equal(initial.sockets[0].readyState, 3);
+  assert.deepEqual(initial.sockets[0].messages, [], 'No traffic before the installation ID can be persisted');
+  await invoke(initial.events.alarm.listeners[0], { name: 'browsync-reconnect' });
+  const registered = initial.sent.find(message => message.type === 'register');
+  assert.match(registered.installationID, /^[0-9a-f-]{36}$/i);
+  assert.equal(registered.legacyBrowserID, expectedLegacy, 'Only an identity the old app assigned is reported');
+  assert.equal(initial.values.legacyBrowserId, null, 'The legacy identity is cleared once registration is confirmed');
+  assert.equal(initial.values.currentBrowserId, host);
+  const restarted = await loadWorker(path, host, reported, structuredClone(initial.values));
+  const reRegistered = restarted.sent.find(message => message.type === 'register');
+  assert.equal(reRegistered.installationID, registered.installationID);
+  assert.equal(reRegistered.legacyBrowserID, undefined, 'The legacy identity is reported only once');
+  assert.equal(restarted.values.currentBrowserId, host);
+  assert.equal(restarted.values.wsState, 'open');
+}
+
 (async () => {
+  for (const worker of ['ChromiumExtension/background/service-worker.js', 'FirefoxExtension/background/service-worker.js']) {
+    // Event pages must register listeners synchronously; a classic-script parse
+    // rejects top-level await, which would delay every listener.
+    assert.doesNotThrow(() => new vm.Script(fs.readFileSync(path.join(process.cwd(), worker), 'utf8'), { filename: worker }),
+                        `${worker}: no top-level await before listener registration`);
+  }
   await testWorker('ChromiumExtension/background/service-worker.js', 'chrome');
   await testWorker('FirefoxExtension/background/service-worker.js', 'firefox');
-  console.log('PASS: Chromium and Firefox bookmark event wiring with synthetic trees');
+  await testWorker('FirefoxExtension/background/service-worker.js', 'librewolf');
+  await testWorker('FirefoxExtension/background/service-worker.js', 'futurebrowser');
+  await testWorker('FirefoxExtension/background/service-worker.js', 'librewolf', 'firefox');
+  // Old Gecko builds were always connected as "firefox".
+  await testPairingRestart('FirefoxExtension/background/service-worker.js', 'librewolf', 'firefox', 'firefox', 'firefox');
+  // Old Chromium builds stored their user-agent guess on every start: no proof.
+  await testPairingRestart('ChromiumExtension/background/service-worker.js', 'custom.chromium', 'chrome', 'chrome', undefined);
+  // A different stored value came from an old app's ack.
+  await testPairingRestart('ChromiumExtension/background/service-worker.js', 'custom.chromium', 'chrome', 'arc', 'arc');
+  // An older app does not apply the legacy identity: keep it for a later app update.
+  for (const worker of ['ChromiumExtension/background/service-worker.js', 'FirefoxExtension/background/service-worker.js']) {
+    const viaOldApp = await loadWorker(worker, 'firefox', 'firefox', { currentBrowserId: 'arc', installationID: 'invalid' }, false, true);
+    const registration = viaOldApp.sent.find(message => message.type === 'register');
+    assert.equal(registration?.legacyBrowserID, 'arc');
+    assert.equal(viaOldApp.values.legacyBrowserId, 'arc', `${worker}: an older app's ack keeps the legacy identity`);
+    assert.equal(viaOldApp.values.wsState, 'open', `${worker}: an older app's ack still confirms the registration`);
+    // A fresh installation remembers the ID an older app filed it under.
+    const freshViaOldApp = await loadWorker(worker, 'chrome', 'chrome', {}, false, true);
+    assert.equal(freshViaOldApp.values.legacyBrowserId, 'chrome', `${worker}: an older app's acked ID is kept for a later app update`);
+  }
+  console.log('PASS: Chromium, Firefox and LibreWolf bookmark event wiring with synthetic trees');
 })().catch(error => {
   console.error(`FAIL: ${error.stack || error}`);
   process.exitCode = 1;

@@ -59,6 +59,9 @@ function localizePopup() {
 async function updateStatus() {
   const { wsState } = await chrome.storage.local.get('wsState');
   const connected = wsState === 'open';
+  for (const section of document.querySelectorAll('.settings-section, #siteSyncSection')) {
+    section.inert = !connected;
+  }
   
   const { isWorking } = await chrome.storage.local.get('isWorking');
   
@@ -184,14 +187,6 @@ async function updateOptionalFeature(toggle, setting, permissions) {
     }, 500);
   }
 }
-function detectCurrentBrowserId() {
-  const ua = navigator.userAgent.toLowerCase();
-  if (ua.includes('firefox/')) return 'firefox';
-  if (ua.includes('edg/')) return 'edge';
-  if (ua.includes('safari/') && !ua.includes('chrome/') && !ua.includes('chromium/')) return 'safari';
-  return 'chrome';
-}
-
 function displayBrowserName(browserId, detail) {
   if (detail?.displayName?.trim()) return detail.displayName.trim();
   return String(browserId).replace(/[-_]+/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
@@ -264,7 +259,8 @@ async function loadSettings() {
   if (!appSettings) return;
   await applyAppLanguage(appSettings.interfaceLanguage);
 
-  const browserId = currentBrowserId || detectCurrentBrowserId();
+  const browserId = currentBrowserId;
+  if (!browserId) return;
 
   const isBookmarkSync = appSettings.bookmarkParticipatingBrowsers?.[browserId] === true;
   const isStateSync = appSettings.stateParticipatingBrowsers?.[browserId] === true;
@@ -628,6 +624,7 @@ if (btnRefreshTabs) {
 
 chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === 'local') {
+    if (changes.wsState) void updateStatus();
     if ((changes.appSettings || changes.currentBrowserId) && pendingOptionalFeatureUpdates.size === 0) {
       void loadSettings();
     }

@@ -883,7 +883,43 @@ final class SyncService: ObservableObject {
         presentNextPendingSafariWrite()
     }
 
-    private func cancelPendingBookmarkReview() {
+    /// A different extension installation now owns `browser`'s ID. Pending
+    /// plans and held writes were computed from the replaced installation's
+    /// tree and its observations no longer describe this browser.
+    func extensionInstallationReplaced(for browser: Browser) {
+        // The aggregate session may hold the replaced installation's tree as
+        // deltas or as a baseline it is about to save; it must not survive.
+        bookmarkSessionScheduleTask?.cancel()
+        if var session = bookmarkSyncSession, session.phase == .applying || session.phase == .finalizing {
+            // Writes are already dispatched (and approved). Let the other
+            // targets finish so their baselines advance, but retire this
+            // browser: its write result and its post-write tree would now come
+            // from the new installation, and its source baselines must not be
+            // re-saved from the replaced installation's tree.
+            session.verified.remove(browser)
+            session.outstandingWrites = session.outstandingWrites.filter { $0.value != browser }
+            session.awaitingFreshSnapshots.remove(browser)
+            session.finalizedSources.insert(browser)
+            bookmarkSyncSession = session
+            log("\(browser.displayName) left the running bookmark sync: another BrowSync extension installation now syncs it.")
+            if session.phase == .applying, session.outstandingWrites.isEmpty {
+                completeBookmarkSessionWrites()
+            } else {
+                endBookmarkSyncSessionIfDone()
+            }
+        } else {
+            discardBookmarkSyncSession(reason: "another BrowSync extension installation now syncs \(browser.displayName)")
+        }
+        clearPendingBookmarkWrites()
+        // A manual sync still collecting snapshots has the replaced tree. Stop
+        // it without the late-observation window: the new installation's
+        // first snapshot is exactly what the next sync needs.
+        cancelActiveManualSyncIfNeededForSession()
+        backupService?.forgetBookmarkObservations(of: browser)
+        log("Bookmark observations of \(browser.displayName) came from another extension installation and were discarded; it rejoins like a new browser.")
+    }
+
+    private func clearPendingBookmarkWrites() {
         let safari = Array(pendingSafariWrites.keys)
         let browsers = Array(pendingBrowserWrites.keys)
         isResolvingReviewBatch = true
@@ -891,6 +927,10 @@ final class SyncService: ObservableObject {
         browsers.forEach { clearPendingBrowserWrite(key: $0) }
         pendingBookmarkConflictResolution = nil
         isResolvingReviewBatch = false
+    }
+
+    private func cancelPendingBookmarkReview() {
+        clearPendingBookmarkWrites()
         cancelActiveManualSyncIfNeeded()
         log("Cancelled the current bookmark sync review. No rejection was remembered; future syncs will recompute all differences.")
     }
@@ -3947,7 +3987,8 @@ extension SyncService {
             },
             onCancel: { [weak self] in self?.cancelBookmarkSyncSession() },
             onIgnoreRow: { [weak self] routeId, rowId in self?.ignoreBookmarkReviewRow(routeId: routeId, rowId: rowId) },
-            onIgnoreConflict: { [weak self] id in self?.ignoreBookmarkConflict(id: id) }
+            onIgnoreConflict: { [weak self] id in self?.ignoreBookmarkConflict(id: id) },
+            onTurnOffSafeMode: settings.bookmarkSafeMode ? { AppState.shared.setBookmarkSafeMode(false) } : nil
         )
     }
 
@@ -4270,13 +4311,33 @@ extension SyncService {
         var evidence: [BookmarkDeletionEvidence] = []
         func collect(_ item: DeletedBookmark) {
             if !item.isFolder, let link = BookmarkSyncConflict.canonicalURL(item.url) {
-                for browser in item.browsers { evidence.append(.init(url: link, browser: browser, deletedAt: item.deletedAt)) }
+                for browser in item.browsers {
+                    // A replaced extension installation's deletions say nothing
+                    // about the tree that now reports under this ID.
+                    if let since = backupService?.bookmarkObservationsSince(browser.rawValue), item.deletedAt < since { continue }
+                    evidence.append(.init(url: link, browser: browser, deletedAt: item.deletedAt))
+                }
             }
             item.children?.forEach(collect)
         }
         backupService?.deletedBookmarksForSyncEvidence().forEach(collect)
         return BookmarkReconciler.reconcile(observed: session.observed, live: session.contexts, history: history,
-                                            deletions: evidence, pendingURLs: pendingBookmarkURLs(session))
+                                            deletions: evidence, pendingURLs: pendingBookmarkURLsByBrowser(session))
+    }
+
+    /// URLs touched by pending changes, per browser that is their source or target.
+    private func pendingBookmarkURLsByBrowser(_ session: BookmarkSyncSession) -> [Browser: Set<String>] {
+        var pending: [Browser: Set<String>] = [:]
+        for (key, delta) in session.deltas {
+            let ends = key.components(separatedBy: ">").compactMap(Browser.init(rawValue:))
+            for change in delta.changes {
+                for node in [change.before, change.after].compactMap({ $0 }) where !node.isFolder {
+                    guard let link = BookmarkSyncConflict.canonicalURL(node.url) else { continue }
+                    for browser in ends { pending[browser, default: []].insert(link) }
+                }
+            }
+        }
+        return pending
     }
 
     /// URLs touched by any pending source → target change.

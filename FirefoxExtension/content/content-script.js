@@ -12,26 +12,11 @@
   let resolveStateSyncReady;
   const stateSyncReady = new Promise(resolve => { resolveStateSyncReady = resolve; });
 
-  function detectCurrentBrowserId() {
-    const ua = navigator.userAgent.toLowerCase();
-    if (ua.includes('firefox/')) return 'firefox';
-    if (ua.includes('edg/')) return 'edge';
-    if (ua.includes('opr/') || ua.includes('opera/')) return 'opera';
-    if (ua.includes('vivaldi/')) return 'vivaldi';
-    if (ua.includes('yabrowser/')) return 'yandex';
-    if (ua.includes('brave/') || navigator.brave) return 'brave';
-    if (ua.includes('orion/')) return 'orion';
-    if (ua.includes('helium/')) return 'helium';
-    if (ua.includes('browseros/')) return 'browseros';
-    if (ua.includes('safari/') && !ua.includes('chrome/') && !ua.includes('chromium/')) return 'safari';
-    return 'chrome';
-  }
-
   async function refreshStateSyncActivity() {
     const { appSettings = {}, currentBrowserId, stateSyncRuntimeEnabled } = await api.storage.local
       .get(['appSettings', 'currentBrowserId', 'stateSyncRuntimeEnabled'])
       .catch(() => ({}));
-    const browserId = currentBrowserId || detectCurrentBrowserId();
+    const browserId = currentBrowserId;
     const wasActive = stateSyncActive;
     stateSyncActive = stateSyncRuntimeEnabled === true &&
       appSettings.stateSyncEnabled !== false &&

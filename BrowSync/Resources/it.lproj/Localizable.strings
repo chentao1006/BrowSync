@@ -650,3 +650,17 @@
 "Before turning on bookmark sync for the first time, back up every browser's bookmarks. Back Up Now saves each participating browser's synced folder; you can also export bookmarks with each browser's own tools." = "Prima di attivare per la prima volta la sincronizzazione dei segnalibri, esegui il backup dei segnalibri di ogni browser. «Esegui backup ora» salva la cartella sincronizzata di ogni browser partecipante; puoi anche esportare i segnalibri con gli strumenti di ciascun browser.";
 "Keep All" = "Mantieni tutte";
 "Choose the version every browser should keep. The other versions are replaced in every browser." = "Scegli la versione che ogni browser deve mantenere. Le altre versioni vengono sostituite in tutti i browser.";
+
+"Choose the browser where you enabled BrowSync" = "Scegli il browser in cui hai attivato BrowSync";
+"BrowSync extension in a Firefox-based browser" = "Estensione BrowSync in un browser basato su Firefox";
+"BrowSync extension in a Chromium-based browser" = "Estensione BrowSync in un browser basato su Chromium";
+"If this browser already has another paired BrowSync installation (another profile, or the extension before it was reinstalled), allowing this one replaces it. The other installation stops syncing until you reauthorize it in Settings." = "Se questo browser è già associato a un'altra installazione di BrowSync (un altro profilo o l'estensione prima della reinstallazione), consentire questa la sostituisce. L'altra installazione smette di sincronizzare finché non la autorizzi di nuovo nelle Impostazioni.";
+"%@ is also running, but BrowSync does not know it as a browser. If you enabled BrowSync there, choose Don't Allow, add it in the Browsers tab, then reauthorize the extension in Settings." = "Anche %@ è in esecuzione, ma BrowSync non lo riconosce come browser. Se hai attivato BrowSync lì, scegli «Non consentire», aggiungilo nella scheda Browser e poi autorizza di nuovo l'estensione nelle Impostazioni.";
+"BrowSync extension in an unrecognized browser" = "Estensione BrowSync in un browser non riconosciuto";
+"Add this browser in the Browsers tab. The extension connects after you approve it." = "Aggiungi questo browser nella scheda Browser. L'estensione si connette dopo che l'hai autorizzata.";
+"Automatically confirm from now on" = "Conferma automaticamente d'ora in poi";
+"Turn Off Safe Mode?" = "Disattivare la modalità sicura?";
+"Turn Off Safe Mode" = "Disattiva la modalità sicura";
+"From the next sync on, bookmark changes are applied without this review. Large changes and conflicts are still held for review. You can turn Safe Mode back on under Sync Strategy." = "Dalla prossima sincronizzazione, le modifiche ai segnalibri vengono applicate senza questa revisione. Le modifiche consistenti e i conflitti vengono comunque trattenuti per la revisione. Puoi riattivare la modalità sicura in Strategia di sincronizzazione.";
+"BrowSync: Allow a Firefox-based Browser to Connect?" = "BrowSync: consentire la connessione a un browser basato su Firefox?";
+"BrowSync: Allow a Chromium-based Browser to Connect?" = "BrowSync: consentire la connessione a un browser basato su Chromium?";

@@ -76,6 +76,12 @@ struct BookmarkChangeReviewView: View {
     /// When set, every row offers "Ignore" on hover.
     var onIgnoreRow: ((String, String) -> Void)? = nil
     var onIgnoreConflict: ((String) -> Void)? = nil
+    /// Set when the review opened because Safe Mode is on: offers turning it
+    /// off for future syncs. Runs after Apply's decision, so the current review
+    /// stays valid under the settings it was computed with.
+    var onTurnOffSafeMode: (() -> Void)? = nil
+    @State private var autoConfirmFromNowOn = false
+    @State private var isConfirmingAutoConfirm = false
     @State private var selectedNodeIds: [String: Set<String>] = [:]
     @State private var conflictChoices: [String: [String: BookmarkConflictResolution]] = [:]
     @State private var versionChoices: [String: String] = [:]
@@ -241,12 +247,26 @@ struct BookmarkChangeReviewView: View {
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor)))
 
             HStack {
+                if onTurnOffSafeMode != nil {
+                    Toggle(String(localized: "Automatically confirm from now on", bundle: langBundle.bundle), isOn: Binding(
+                        get: { autoConfirmFromNowOn },
+                        set: { enabled in
+                            // Turning Safe Mode off is confirmed separately.
+                            if enabled { isConfirmingAutoConfirm = true } else { autoConfirmFromNowOn = false }
+                        }))
+                        .toggleStyle(.checkbox)
+                        .controlSize(.regular)
+                }
+                Spacer()
                 // No Escape shortcut: rejecting must be a deliberate click.
                 // Closing the window instead leaves the change pending.
+                // The checkbox is honored only with Apply: cancelled changes are
+                // offered again, and without Safe Mode the next sync would
+                // apply exactly what the user just declined.
                 Button(String(localized: "Cancel This Sync", bundle: langBundle.bundle), action: onCancel)
-                Spacer()
                 Button(String(localized: "Apply Selected Changes", bundle: langBundle.bundle), role: aggregateImpact.removed + aggregateImpact.moved + aggregateImpact.reordered + aggregateImpact.modified > 0 ? .destructive : nil) {
                     onApplySelected(selectedNodeIds, conflictChoices, versionChoices)
+                    if autoConfirmFromNowOn { onTurnOffSafeMode?() }
                 }
                     .buttonStyle(.borderedProminent)
                     .tint(aggregateImpact.removed + aggregateImpact.moved + aggregateImpact.reordered + aggregateImpact.modified > 0 ? .red : .accentColor)
@@ -257,6 +277,14 @@ struct BookmarkChangeReviewView: View {
         .padding(20)
         .frame(minWidth: 700, minHeight: 480)
         .onAppear { selectAllChanges() }
+        .alert(String(localized: "Turn Off Safe Mode?", bundle: langBundle.bundle), isPresented: $isConfirmingAutoConfirm) {
+            Button(String(localized: "Turn Off Safe Mode", bundle: langBundle.bundle), role: .destructive) {
+                autoConfirmFromNowOn = true
+            }
+            Button(String(localized: "Cancel", bundle: langBundle.bundle), role: .cancel) {}
+        } message: {
+            Text(String(localized: "From the next sync on, bookmark changes are applied without this review. Large changes and conflicts are still held for review. You can turn Safe Mode back on under Sync Strategy.", bundle: langBundle.bundle))
+        }
     }
 
     @ViewBuilder
@@ -561,7 +589,8 @@ final class BookmarkChangeReviewWindowController: NSObject, NSWindowDelegate {
         onApplySelected: @escaping ([String: Set<String>], [String: [String: BookmarkConflictResolution]], [String: String]) -> Void,
         onCancel: @escaping () -> Void,
         onIgnoreRow: ((String, String) -> Void)? = nil,
-        onIgnoreConflict: ((String) -> Void)? = nil
+        onIgnoreConflict: ((String) -> Void)? = nil,
+        onTurnOffSafeMode: (() -> Void)? = nil
     ) {
         let langBundle = LanguageBundle(language: AppState.shared.settingsService.general.language)
         let view = BookmarkChangeReviewView(
@@ -578,7 +607,9 @@ final class BookmarkChangeReviewWindowController: NSObject, NSWindowDelegate {
                 DispatchQueue.main.async { onCancel() }
             },
             onIgnoreRow: onIgnoreRow,
-            onIgnoreConflict: onIgnoreConflict
+            onIgnoreConflict: onIgnoreConflict,
+            // Queued after the decision above, so it runs once that is done.
+            onTurnOffSafeMode: onTurnOffSafeMode.map { turnOff in { DispatchQueue.main.async { turnOff() } } }
         )
         .environmentObject(langBundle)
 

@@ -13,12 +13,18 @@ final class ConnectedClient {
     let id: String           // instanceId from register message
     let browser: Browser
     let connection: NWConnection
+    let installationID: UUID?
     var lastSeen: Date
     var stateCache: [String: Data] = [:]  // site -> last sync payload
     /// From the register message; empty for extension builds that predate it.
     var capabilities: Set<String> = []
+    /// An old Gecko build in a non-Firefox host (e.g. LibreWolf). It keeps
+    /// calling itself "firefox" and ignores the assigned ID, so messages to it
+    /// present this browser's settings under "firefox".
+    var presentsAsFirefox = false
 
-    init(id: String, browser: Browser, connection: NWConnection) {
+    init(id: String, browser: Browser, connection: NWConnection, installationID: UUID?) {
+        self.installationID = installationID
         self.id = id
         self.browser = browser
         self.connection = connection
@@ -37,6 +43,16 @@ private final class ApprovalAlertAction: NSObject {
     @objc func deny() { decide(false) }
 }
 
+private final class HostPickerAction: NSObject {
+    let allowButton: NSButton
+
+    init(_ allowButton: NSButton) { self.allowButton = allowButton }
+
+    @objc func selected(_ sender: NSPopUpButton) {
+        allowButton.isEnabled = sender.indexOfSelectedItem > 0
+    }
+}
+
 // MARK: - Daemon Server Delegate
 
 protocol DaemonServerDelegate: AnyObject {
@@ -47,6 +63,11 @@ protocol DaemonServerDelegate: AnyObject {
     func daemonServer(_ server: DaemonServer, didReceiveSettings message: WSMessage, from clientId: String)
     func daemonServer(_ server: DaemonServer, didReceiveOpenSettingsFrom clientId: String)
     func daemonServer(_ server: DaemonServer, didReceiveOpenURL message: WSMessage, from clientId: String)
+    /// Another extension installation replaced the one paired with `browser`.
+    func daemonServer(_ server: DaemonServer, didReplaceInstallationOf browser: Browser)
+    /// Bookmark observations stored under `browser` came from another app.
+    /// That browser is not installed, so nothing of its own is pending.
+    func daemonServer(_ server: DaemonServer, didFindForeignObservationsOf browser: Browser)
 }
 
 // MARK: - Daemon Server
@@ -64,6 +85,29 @@ final class DaemonServer: ObservableObject {
     private var restartTask: Task<Void, Never>?
     private let connectionPolicy = DaemonConnectionPolicy()
     private var originApprovalQueue: [String] = []
+    private static let pairingDefaultsKey = "extensionHostPairingsByInstallation"
+    /// Pairing values: a host bundle ID, `deniedPairing` (shown in Settings),
+    /// or `explicitPairing` (reauthorized; the next pairing must be confirmed
+    /// in a prompt, never inferred from an earlier browser approval).
+    private static let deniedPairing = ""
+    private static let explicitPairing = "?"
+    @Published private var hostPairings = UserDefaults.standard.dictionary(forKey: DaemonServer.pairingDefaultsKey) as? [String: String] ?? [:]
+    private var pairingUnderReview: String?
+    private static let resolvedLegacyIdentitiesKey = "resolvedLegacyExtensionIdentities"
+    /// "<host bundle ID>><legacy browser ID>" pairs whose misfiled
+    /// observations were already discarded, so it happens once per pair.
+    private var resolvedLegacyIdentities = Set(UserDefaults.standard.stringArray(forKey: DaemonServer.resolvedLegacyIdentitiesKey) ?? [])
+    /// When the user last allowed a Gecko extension Origin without knowing its
+    /// host app. With exactly one running Gecko host, that consent also pairs
+    /// the extension, so LibreWolf users see one prompt instead of two.
+    private var geckoOriginConsentAt: Date?
+    private var unmatchedPairingsLogged: Set<String> = []
+    /// Apps connected while an Origin's handshake awaited approval.
+    private var originApprovalHosts: [String: [(clientPort: UInt16, bundleID: String?)]] = [:]
+    /// Unpaired installations whose host matches no registered running
+    /// browser, keyed by pairing key, with the product they reported. Not
+    /// persisted: the worker keeps retrying and pairs once the host is known.
+    @Published private(set) var unmatchedExtensionReports: [String: String] = [:]
     private var browserApprovalQueue: [Browser] = []
     private var approvalAlert: NSAlert?
     private var approvalAlertAction: ApprovalAlertAction?
@@ -106,12 +150,17 @@ final class DaemonServer: ObservableObject {
                 wsOptions.maximumMessageSize = 50_000_000
                 wsOptions.autoReplyPing = true
                 let policy = connectionPolicy
+                let serverPort = Self.port
                 wsOptions.setClientRequestHandler(.global(qos: .userInitiated)) { [weak self] _, headers in
                     switch policy.evaluate(headers: headers, session: session) {
                     case .allow:
                         return NWProtocolWebSocket.Response(status: .accept, subprotocol: nil)
                     case .requestApproval(let origin):
-                        Task { @MainActor [weak self] in self?.requestOriginApproval(origin, session: session) }
+                        // The handshake's TCP connection is open now; it is
+                        // closed by the rejection below. Record which apps are
+                        // connected so the prompt can name the browser.
+                        let hosts = LoopbackPeer.connectedHosts(serverPort: serverPort)
+                        Task { @MainActor [weak self] in self?.requestOriginApproval(origin, session: session, connectedHosts: hosts) }
                     case .reject:
                         break
                     }
@@ -194,7 +243,7 @@ final class DaemonServer: ObservableObject {
 
     // MARK: - Browser Authorization
 
-    private func approvalContent(for browser: Browser, message: String) -> NSView {
+    private func approvalContent(for browser: Browser?, message: String) -> NSView {
         func iconView(_ image: NSImage, size: CGFloat) -> NSImageView {
             let view = NSImageView(image: image)
             view.imageScaling = .scaleProportionallyUpOrDown
@@ -209,7 +258,7 @@ final class DaemonServer: ObservableObject {
         let appIcon = iconView(NSApp.applicationIconImage, size: 64)
         let linkIcon = iconView(NSImage(systemSymbolName: "link", accessibilityDescription: nil) ?? NSImage(), size: 26)
         linkIcon.contentTintColor = .secondaryLabelColor
-        let browserImage = browser.appURL.map { NSWorkspace.shared.icon(forFile: $0.path) }
+        let browserImage = browser?.appURL.map { NSWorkspace.shared.icon(forFile: $0.path) }
             ?? NSImage(systemSymbolName: "globe", accessibilityDescription: nil) ?? NSImage()
         let browserIcon = iconView(browserImage, size: 64)
 
@@ -265,10 +314,12 @@ final class DaemonServer: ObservableObject {
         }
         approvalAlert = alert
         approvalAlertAction = action
+        // Allow is the default (Return) button; Escape always denies.
         alert.buttons[0].target = action
-        alert.buttons[0].action = #selector(ApprovalAlertAction.deny)
+        alert.buttons[0].action = #selector(ApprovalAlertAction.allow)
         alert.buttons[1].target = action
-        alert.buttons[1].action = #selector(ApprovalAlertAction.allow)
+        alert.buttons[1].action = #selector(ApprovalAlertAction.deny)
+        alert.buttons[1].keyEquivalent = "\u{1b}"
 
         if let window = NSApp.windows.first(where: {
             $0.title == "BrowSync" && $0.isVisible && $0.attachedSheet == nil
@@ -281,10 +332,39 @@ final class DaemonServer: ObservableObject {
         }
     }
 
-    private func requestOriginApproval(_ origin: String, session: UUID) {
+    private func requestOriginApproval(_ origin: String, session: UUID,
+                                       connectedHosts: [(clientPort: UInt16, bundleID: String?)] = []) {
         guard !listeners.isEmpty, connectionPolicy.isOriginPending(origin, session: session) else { return }
+        originApprovalHosts[origin] = connectedHosts
         originApprovalQueue.append(origin)
         presentNextOriginApproval()
+    }
+
+    /// The one registered browser of `origin`'s engine with an open, not yet
+    /// registered connection while that origin's handshake was pending; nil
+    /// when none or several match.
+    private func originHost(_ origin: String, registry: [Browser]) -> Browser? {
+        let registeredPorts = Set(clients.values.compactMap { client -> UInt16? in
+            guard case .hostPort(_, let port) = client.connection.endpoint else { return nil }
+            return port.rawValue
+        })
+        let gecko = origin.hasPrefix("moz-extension://")
+        let pending = (originApprovalHosts[origin] ?? []).filter { !registeredPorts.contains($0.clientPort) }
+        // Any unresolved connection could be the requester itself.
+        guard !pending.isEmpty, pending.allSatisfy({ $0.bundleID != nil }) else { return nil }
+        let bundleIDs = pending.compactMap(\.bundleID)
+        // An unregistered app of the same engine could be the requester.
+        let unknownSameEngine = bundleIDs.contains { bundleID in
+            Browser.owner(ofBundleID: bundleID, in: registry) == nil &&
+                NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+                    .map { Browser.isBrowserApp(at: $0, gecko: gecko) } == true
+        }
+        let hosts = Set(bundleIDs.compactMap { Browser.owner(ofBundleID: $0, in: registry) }
+            .filter { $0 != .safari && $0.usesFirefoxExtension == gecko })
+        // A denied browser is not offered: allowing would only approve the Origin.
+        guard !unknownSameEngine, hosts.count == 1, let host = hosts.first,
+              !connectionPolicy.deniedBrowserIDs.contains(host.id) else { return nil }
+        return host
     }
 
     private func presentNextOriginApproval() {
@@ -294,20 +374,43 @@ final class DaemonServer: ObservableObject {
         }
         let origin = originApprovalQueue.removeFirst()
         let bundle = LanguageBundle(language: AppState.shared.settingsService.general.language).bundle
-        let browser: Browser = origin.hasPrefix("chrome-extension://") ? .chrome : .firefox
+        let registry = Browser.registeredBrowsers(including: AppState.shared.settingsService.general.customBrowsers)
+        let isGecko = origin.hasPrefix("moz-extension://")
+        // An extension Origin names no host app (a Gecko origin is a profile
+        // UUID); the connection's owner does. Without it, Firefox is assumed
+        // only when no other Gecko browser is installed.
+        let verifiedHost = originHost(origin, registry: registry)
+        originApprovalHosts.removeValue(forKey: origin)
+        // Without a verified host (the connection table may only list our own
+        // sockets), the only running browser of the origin's engine is named.
+        let running = NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)
+        let sameEngine = Browser.runningBrowsers(in: registry, runningBundleIDs: running).filter {
+            $0 != .safari && $0.usesFirefoxExtension == isGecko && !connectionPolicy.deniedBrowserIDs.contains($0.id)
+        }
+        let browser: Browser? = verifiedHost ?? (sameEngine.count == 1 ? sameEngine.first : nil)
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = String(format: String(localized: "BrowSync: Allow %@ to Connect?", bundle: bundle), browser.displayName)
+        alert.messageText = browser.map {
+            String(format: String(localized: "BrowSync: Allow %@ to Connect?", bundle: bundle), $0.displayName)
+        } ?? (isGecko
+            ? String(localized: "BrowSync: Allow a Firefox-based Browser to Connect?", bundle: bundle)
+            : String(localized: "BrowSync: Allow a Chromium-based Browser to Connect?", bundle: bundle))
         let message = String(localized: "Only allow this request if you just enabled BrowSync in your browser. The extension can use your enabled sync features. Your choice is remembered on this Mac for future connections.", bundle: bundle)
         alert.informativeText = ""
         alert.accessoryView = approvalContent(for: browser, message: message)
-        alert.addButton(withTitle: String(localized: "Don't Allow", bundle: bundle))
         alert.addButton(withTitle: String(localized: "Allow Connection", bundle: bundle))
+        alert.addButton(withTitle: String(localized: "Don't Allow", bundle: bundle))
         let generation = approvalGeneration
         showApprovalAlert(alert) { [weak self] allowed in
             guard let self, self.approvalGeneration == generation else { return }
             self.connectionPolicy.resolveOrigin(origin, allow: allowed)
-            if allowed, browser == .firefox { self.connectionPolicy.approveFirefoxAfterOriginConsent() }
+            if allowed, let browser {
+                // The prompt named this browser: that is its consent too, so
+                // pairing does not ask a second time.
+                self.connectionPolicy.approveBrowserAfterConsent(browser.id)
+                self.deniedBrowserIDs = self.connectionPolicy.deniedBrowserIDs
+            }
+            if allowed, browser == nil, isGecko { self.geckoOriginConsentAt = Date() }
             self.deniedExtensionOrigins = self.connectionPolicy.deniedOrigins
             self.presentNextOriginApproval()
         }
@@ -336,8 +439,8 @@ final class DaemonServer: ObservableObject {
         let message = String(localized: "Only allow this request if you just enabled BrowSync in your browser. The extension can use your enabled sync features. Your choice is remembered on this Mac for future connections.", bundle: bundle)
         alert.informativeText = ""
         alert.accessoryView = approvalContent(for: browser, message: message)
-        alert.addButton(withTitle: String(localized: "Don't Allow", bundle: bundle))
         alert.addButton(withTitle: String(localized: "Allow Connection", bundle: bundle))
+        alert.addButton(withTitle: String(localized: "Don't Allow", bundle: bundle))
         let generation = approvalGeneration
         showApprovalAlert(alert) { [weak self] allowed in
             guard let self, self.approvalGeneration == generation else { return }
@@ -349,6 +452,9 @@ final class DaemonServer: ObservableObject {
 
     private func cancelApprovalDialogs() {
         approvalGeneration = UUID()
+        pairingUnderReview = nil
+        geckoOriginConsentAt = nil
+        originApprovalHosts.removeAll()
         originApprovalQueue.removeAll()
         browserApprovalQueue.removeAll()
         connectionPolicy.cancelPendingApprovals()
@@ -367,6 +473,9 @@ final class DaemonServer: ObservableObject {
     func resetExtensionApprovals() {
         stop()
         connectionPolicy.reset()
+        hostPairings.removeAll()
+        unmatchedExtensionReports.removeAll()
+        UserDefaults.standard.removeObject(forKey: Self.pairingDefaultsKey)
         deniedBrowserIDs = []
         deniedExtensionOrigins = []
         start()
@@ -531,8 +640,11 @@ final class DaemonServer: ObservableObject {
             }) else { return }
             client.lastSeen = Date()
 
-            // Notify delegate
-            delegate?.daemonServer(self, didReceiveSync: message, from: client.id)
+            // An old Gecko build in another browser labels its data "firefox";
+            // state sync attributes data by this field.
+            var received = message
+            if client.presentsAsFirefox { received.browser = client.browser.id }
+            delegate?.daemonServer(self, didReceiveSync: received, from: client.id)
 
             // Send ack
             if let msgId = message.messageId {
@@ -700,6 +812,160 @@ final class DaemonServer: ObservableObject {
 
     // MARK: - Register
 
+    private func savePairing(_ bundleID: String, key: String) {
+        unmatchedExtensionReports.removeValue(forKey: key)
+        hostPairings[key] = bundleID
+        UserDefaults.standard.set(hostPairings, forKey: Self.pairingDefaultsKey)
+    }
+
+    var deniedPairingKeys: [String] {
+        hostPairings.compactMap { $0.value == Self.deniedPairing ? $0.key : nil }.sorted()
+    }
+
+    func retryDeniedPairing(_ key: String) {
+        guard hostPairings[key] == Self.deniedPairing else { return }
+        // The worker's next registration still needs explicit host consent.
+        savePairing(Self.explicitPairing, key: key)
+    }
+
+    /// Other installations (profiles, or the extension before a reinstall)
+    /// paired with the same host app. Only one may own a browser ID: two trees
+    /// under one ID would read as mass edits against the other's baseline.
+    private func otherPairings(of bundleID: String, except key: String) -> [String] {
+        hostPairings.filter { $0.key != key && $0.value == bundleID }.map(\.key).sorted()
+    }
+
+    /// Hands the browser to `key`: every other installation paired with the
+    /// same host is denied (reauthorizable in Settings) and disconnected.
+    private func pairExclusively(_ host: Browser, key: String) {
+        let bundleID = host.bundleIdentifier
+        let replaced = otherPairings(of: bundleID, except: key)
+        for other in replaced {
+            hostPairings[other] = Self.deniedPairing
+            let otherID = other.split(separator: ".").last.map(String.init)
+            for client in clients.values where client.installationID?.uuidString == otherID {
+                removeConnection(client.connection)
+            }
+        }
+        savePairing(bundleID, key: key)
+        // Before the new installation's first snapshot arrives.
+        if !replaced.isEmpty { delegate?.daemonServer(self, didReplaceInstallationOf: host) }
+        // Legacy extensions reported every Gecko host as "firefox". With no
+        // Firefox channel on this Mac, observations stored under that ID came
+        // from a fork (e.g. LibreWolf) and must not become Firefox's baseline.
+        if host.usesFirefoxExtension, host != .firefox, Browser.firefox.appURL == nil {
+            delegate?.daemonServer(self, didFindForeignObservationsOf: .firefox)
+        }
+    }
+
+    private func chooseHost(for key: String, candidates: [Browser], session: UUID, unknownApps: [String] = []) {
+        // The worker retries registration. Only one consent UI may be active.
+        guard approvalAlert == nil, originApprovalQueue.isEmpty, browserApprovalQueue.isEmpty else { return }
+        let bundle = LanguageBundle(language: AppState.shared.settingsService.general.language).bundle
+        let alert = NSAlert()
+        let uniqueHost = candidates.count == 1 ? candidates[0] : nil
+        let title = String(localized: "Choose the browser where you enabled BrowSync", bundle: bundle)
+        alert.messageText = uniqueHost.map {
+            String(format: String(localized: "BrowSync: Allow %@ to Connect?", bundle: bundle), $0.displayName)
+        } ?? title
+        alert.informativeText = String(localized: "Only allow this request if you just enabled BrowSync in your browser. The extension can use your enabled sync features. Your choice is remembered on this Mac for future connections.", bundle: bundle)
+        if candidates.contains(where: { !otherPairings(of: $0.bundleIdentifier, except: key).isEmpty }) {
+            alert.informativeText += "\n\n" + String(localized: "If this browser already has another paired BrowSync installation (another profile, or the extension before it was reinstalled), allowing this one replaces it. The other installation stops syncing until you reauthorize it in Settings.", bundle: bundle)
+        }
+        if !unknownApps.isEmpty {
+            alert.informativeText += "\n\n" + String(format: String(localized: "%@ is also running, but BrowSync does not know it as a browser. If you enabled BrowSync there, choose Don't Allow, add it in the Browsers tab, then reauthorize the extension in Settings.", bundle: bundle),
+                                                       ListFormatter.localizedString(byJoining: unknownApps))
+        }
+        let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 360, height: 28))
+        picker.autoenablesItems = false
+        picker.addItem(withTitle: title)
+        let denied = Set(connectionPolicy.deniedBrowserIDs)
+        for browser in candidates {
+            // Bundle IDs also disambiguate two installations with the same name.
+            let item = NSMenuItem(title: "\(browser.displayName) (\(browser.bundleIdentifier))", action: nil, keyEquivalent: "")
+            // Shown so the user can recognize the host, but a denied browser
+            // must be reauthorized in Settings before it can be chosen.
+            item.isEnabled = !denied.contains(browser.id)
+            picker.menu?.addItem(item)
+        }
+        alert.accessoryView = uniqueHost == nil ? picker : approvalContent(for: uniqueHost, message: alert.informativeText)
+        if uniqueHost != nil { alert.informativeText = "" }
+        let allow = alert.addButton(withTitle: String(localized: "Allow Connection", bundle: bundle))
+        alert.addButton(withTitle: String(localized: "Don't Allow", bundle: bundle))
+        allow.isEnabled = uniqueHost != nil
+        let pickerAction = HostPickerAction(allow)
+        picker.target = pickerAction
+        picker.action = #selector(HostPickerAction.selected(_:))
+        pairingUnderReview = key
+        showApprovalAlert(alert) { [weak self, pickerAction] allowed in
+            guard let self, self.activeApprovalSession == session else { return }
+            self.pairingUnderReview = nil
+            defer { self.presentNextOriginApproval() }
+            guard allowed else {
+                self.savePairing(Self.deniedPairing, key: key)
+                return
+            }
+            guard pickerAction.allowButton.isEnabled else { return }
+            let index = uniqueHost == nil ? picker.indexOfSelectedItem - 1 : 0
+            guard candidates.indices.contains(index) else { return }
+            let selected = candidates[index]
+            let registry = Browser.registeredBrowsers(including: AppState.shared.settingsService.general.customBrowsers)
+            let running = NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)
+            guard Browser.runningBrowsers(in: registry, runningBundleIDs: running).contains(selected) else { return }
+            switch self.connectionPolicy.evaluateBrowser(selected.id, session: session) {
+            case .requestApproval:
+                self.connectionPolicy.resolveBrowser(selected.id, allow: true)
+            case .allow: break
+            case .reject: return
+            }
+            self.pairExclusively(selected, key: key)
+        }
+    }
+
+    /// Observations an earlier app stored for `host` under another browser's
+    /// ID are discarded once; that browser then rejoins like a new participant
+    /// (only narrowing sync authority). Once per (host, legacy ID), so the same
+    /// evidence seen again later — a legacy build updating its extension —
+    /// never wipes data stored since.
+    private func forgetMisfiledObservations(of legacyID: String, host: Browser, registry: [Browser]) {
+        guard legacyID != host.id, let legacy = registry.first(where: { $0.id == legacyID }), legacy != .safari,
+              markLegacyIdentityResolved(legacyID, host: host) else { return }
+        logger.info("Observations stored as \(legacyID, privacy: .public) came from \(host.id, privacy: .public); discarding them once")
+        if legacy.isInstalledApp {
+            delegate?.daemonServer(self, didReplaceInstallationOf: legacy)
+        } else {
+            delegate?.daemonServer(self, didFindForeignObservationsOf: legacy)
+        }
+    }
+
+    @discardableResult
+    private func markLegacyIdentityResolved(_ legacyID: String, host: Browser) -> Bool {
+        guard resolvedLegacyIdentities.insert("\(host.bundleIdentifier)>\(legacyID)").inserted else { return false }
+        UserDefaults.standard.set(resolvedLegacyIdentities.sorted(), forKey: Self.resolvedLegacyIdentitiesKey)
+        return true
+    }
+
+    private func connectionHostBundleID(_ connection: NWConnection) -> String? {
+        guard case .hostPort(_, let port) = connection.endpoint else { return nil }
+        return LoopbackPeer.hostBundleID(clientPort: port.rawValue, serverPort: Self.port)
+    }
+
+    private static func appDisplayName(_ bundleID: String) -> String {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return bundleID }
+        let bundle = Bundle(url: url)
+        return bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? url.deletingPathExtension().lastPathComponent
+    }
+
+    private func unregisteredRunningBrowserApps(gecko: Bool, registry: [Browser]) -> [String] {
+        let running = NSWorkspace.shared.runningApplications.compactMap { app -> (bundleID: String, url: URL, name: String)? in
+            guard app.activationPolicy == .regular, let id = app.bundleIdentifier, let url = app.bundleURL else { return nil }
+            return (id, url, app.localizedName ?? url.deletingPathExtension().lastPathComponent)
+        }
+        return Browser.unregisteredRunningBrowserApps(gecko: gecko, registry: registry, running: running)
+    }
+
     private func handleRegister(_ message: WSMessage, connection: NWConnection) {
         guard pendingConnections[ObjectIdentifier(connection)] != nil,
               let browserRaw = message.browser, let originalInstanceId = message.instanceId,
@@ -710,31 +976,173 @@ final class DaemonServer: ObservableObject {
         }
         
         var realBrowserId = browserRaw
-        let allBrowsers = Browser.standardBrowsers + AppState.shared.settingsService.general.customBrowsers
         
         // Chromium-derived browsers may expose an indistinguishable Chrome UA
         // to an extension service worker. Resolve that fallback against the
         // complete browser registry, not a hand-picked subset of browsers.
-        if realBrowserId == "chrome" {
-            let runningChromiumBrowsers = allBrowsers.filter { browser in
+        let reportsGeckoProduct = message.capabilities?.contains("geckoProductIdentity") == true
+        // The product a Gecko build names (LibreWolf, Zen…); `browser` stays
+        // "firefox" for older apps.
+        let reportedProduct = reportsGeckoProduct ? (message.browserProduct ?? browserRaw) : browserRaw
+        let pairingKey = message.installationID.map { (reportsGeckoProduct ? "gecko." : "chromium.") + $0.uuidString }
+        if let pairingKey, [nil, Self.explicitPairing].contains(hostPairings[pairingKey]), approvalAlert == nil {
+            // A fork can be installed and launched after the last settings scan.
+            // The worker retries every few seconds; do not rescan on each try.
+            Browser.refreshDiscovery(minimumInterval: 10)
+        }
+        let allBrowsers = Browser.registeredBrowsers(including: AppState.shared.settingsService.general.customBrowsers)
+        // The kernel names the app that opened this socket. When it is known it
+        // decides the host, whatever the extension reports: an embedded
+        // Chromium (e.g. an app's built-in browser) also says "chrome".
+        let usesGeckoTransport = reportsGeckoProduct || (pairingKey == nil && browserRaw == "firefox")
+        var verifiedHostBundleID = connectionHostBundleID(connection)
+        if browserRaw == "safari", verifiedHostBundleID?.hasPrefix("com.apple.Safari") == true {
+            // Safari (and Technology Preview) keep their own extension path.
+            verifiedHostBundleID = nil
+        }
+        let verifiedHost = verifiedHostBundleID.flatMap { Browser.owner(ofBundleID: $0, in: allBrowsers) }
+        var legacyGeckoAsFirefox = false
+        if let bundleID = verifiedHostBundleID {
+            let reportKey = pairingKey ?? "legacy.\(bundleID)"
+            // Old Gecko builds ignore the assigned ID and keep enforcing
+            // Firefox's settings, so they may only run as Firefox. Where no
+            // Firefox is installed they keep the "firefox" identity they had
+            // with earlier apps (both sides then agree on it); with Firefox
+            // installed that would mix two browsers' trees under one ID.
+            // With Firefox installed the build runs as its real host and is
+            // sent that host's settings under "firefox" (see presentsAsFirefox).
+            legacyGeckoAsFirefox = pairingKey == nil && usesGeckoTransport && verifiedHost != .firefox &&
+                verifiedHost?.usesFirefoxExtension == true && Browser.firefox.appURL == nil
+            guard let host = verifiedHost, host != .safari, host.usesFirefoxExtension == usesGeckoTransport else {
+                // Not a registered browser of this extension's engine: never
+                // attribute its bookmarks to another browser.
+                if verifiedHost == nil, hostPairings[reportKey] == nil || pairingKey == nil {
+                    unmatchedExtensionReports[reportKey] = Self.appDisplayName(bundleID)
+                }
+                if unmatchedPairingsLogged.insert(reportKey).inserted {
+                    logger.warning("Refused an extension connection from \(bundleID, privacy: .public): not a registered browser for this extension build")
+                }
+                removeConnection(connection)
+                return
+            }
+            unmatchedExtensionReports.removeValue(forKey: "legacy.\(bundleID)")
+        }
+        if let pairingKey {
+            guard let session = activeApprovalSession, pairingUnderReview != pairingKey else {
+                removeConnection(connection)
+                return
+            }
+            let running = NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)
+            // Denied browsers still count as candidates: dropping them could make
+            // an ambiguous registration look like it belongs to another browser.
+            let candidates = verifiedHost.map { [$0] } ?? Browser.runningBrowsers(in: allBrowsers, runningBundleIDs: running).filter { browser in
+                browser != .safari && browser.usesFirefoxExtension == reportsGeckoProduct
+            }
+            if let verifiedHost, let saved = hostPairings[pairingKey], saved != Self.deniedPairing,
+               saved != Self.explicitPairing, saved != verifiedHost.bundleIdentifier {
+                // Paired by inference before the host could be verified, and
+                // to the wrong app. Show it as denied; reauthorizing asks again.
+                logger.warning("Extension installation paired with \(saved, privacy: .public) runs in \(verifiedHost.bundleIdentifier, privacy: .public); pairing revoked")
+                savePairing(Self.deniedPairing, key: pairingKey)
+                removeConnection(connection)
+                return
+            }
+            let stored = hostPairings[pairingKey]
+            if let stored, stored != Self.deniedPairing, stored != Self.explicitPairing,
+               !allBrowsers.contains(where: { $0.bundleIdentifier == stored }) {
+                // The paired host is running (this installation is connecting)
+                // but no longer registered, e.g. its custom entry was removed.
+                // Show it as denied so the user can reauthorize with a prompt;
+                // forgetting it would let it bind silently to another browser.
+                savePairing(Self.deniedPairing, key: pairingKey)
+                removeConnection(connection)
+                return
+            }
+            let mustConfirm = stored == Self.explicitPairing
+            let savedBundleID = mustConfirm ? nil : stored
+            // A verified host is the answer; the reported product cannot veto it.
+            switch Browser.pairingDecision(candidates: candidates, reportedID: verifiedHost?.id ?? reportedProduct, savedBundleID: savedBundleID,
+                                           trustsReportedID: reportsGeckoProduct || verifiedHost != nil) {
+            case .host(let host):
+                if savedBundleID == nil {
+                    let unknownApps = verifiedHost != nil ? [] : unregisteredRunningBrowserApps(gecko: reportsGeckoProduct, registry: allBrowsers)
+                    // Existing installs approved this browser before pairing
+                    // existed; an unambiguous host keeps that consent instead
+                    // of asking again after the extension update. Replacing
+                    // another installation of this browser, or a pairing the
+                    // user reauthorized, always needs an explicit prompt.
+                    // An unregistered browser of the same engine might be the
+                    // real host of a generic report: never infer consent then.
+                    let mayInferConsent = !mustConfirm && unknownApps.isEmpty &&
+                        otherPairings(of: host.bundleIdentifier, except: pairingKey).isEmpty
+                    let consentedByOrigin = mayInferConsent && reportsGeckoProduct &&
+                        geckoOriginConsentAt.map { Date().timeIntervalSince($0) < 120 } == true &&
+                        connectionPolicy.approveBrowserAfterConsent(host.id)
+                    if consentedByOrigin { geckoOriginConsentAt = nil }
+                    guard consentedByOrigin || (mayInferConsent && connectionPolicy.isBrowserApproved(host.id)) else {
+                        if !connectionPolicy.deniedBrowserIDs.contains(host.id) {
+                            chooseHost(for: pairingKey, candidates: [host], session: session, unknownApps: unknownApps)
+                        }
+                        removeConnection(connection)
+                        return
+                    }
+                    pairExclusively(host, key: pairingKey)
+                }
+                realBrowserId = host.id
+            case .choose:
+                if candidates.contains(where: { !connectionPolicy.deniedBrowserIDs.contains($0.id) }) {
+                    chooseHost(for: pairingKey, candidates: candidates, session: session,
+                               unknownApps: unregisteredRunningBrowserApps(gecko: reportsGeckoProduct, registry: allBrowsers))
+                }
+                removeConnection(connection)
+                return
+            case .unavailable:
+                if savedBundleID == nil {
+                    // Shown in Settings so the user can add the browser.
+                    unmatchedExtensionReports[pairingKey] = reportedProduct
+                }
+                // The worker retries for as long as it runs; log once per installation.
+                if unmatchedPairingsLogged.insert(pairingKey).inserted {
+                    logger.warning("No running registered browser matches an extension installation reporting \(reportedProduct, privacy: .public) (\(candidates.count) candidates)")
+                }
+                removeConnection(connection)
+                return
+            }
+        } else if let verifiedHost {
+            // A legacy build (no installation ID) in a verified host.
+            realBrowserId = legacyGeckoAsFirefox ? Browser.firefox.id : verifiedHost.id
+        } else if realBrowserId == "firefox" {
+            // A legacy Gecko build (no installation ID, always "firefox") whose
+            // host could not be verified. With exactly one Gecko browser
+            // running it must be that one; it then runs as that browser (and
+            // is sent that browser's settings under "firefox"), or keeps the
+            // "firefox" identity it had with earlier apps where Firefox is not
+            // installed. Otherwise earlier apps' behavior is kept: Firefox.
+            let running = NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)
+            let gecko = Browser.runningBrowsers(in: allBrowsers, runningBundleIDs: running).filter(\.usesFirefoxExtension)
+            if gecko.count == 1, let host = gecko.first, host != .firefox, Browser.firefox.appURL != nil {
+                realBrowserId = host.id
+                logger.info("Legacy Gecko extension runs in the only running Gecko browser, \(host.id, privacy: .public)")
+            }
+        } else if realBrowserId == "chrome", !reportsGeckoProduct {
+            // A legacy Chromium build whose host could not be verified: the
+            // inference earlier apps used, so no existing setup stops working.
+            let running = NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)
+            let runningChromiumBrowsers = Browser.runningBrowsers(in: allBrowsers, runningBundleIDs: running).filter { browser in
                 // Safari and Firefox have their own extension transports. Every
                 // other registered browser (including custom ones) is eligible
                 // for the shared Chromium extension transport.
-                browser != .firefox && browser != .safari &&
-                !NSWorkspace.shared.runningApplications.filter({ $0.bundleIdentifier == browser.bundleIdentifier || $0.bundleIdentifier?.hasPrefix(browser.bundleIdentifier + ".") == true }).isEmpty
+                !browser.usesFirefoxExtension && browser != .safari
             }
-
-            let unconnectedCandidates = runningChromiumBrowsers.filter { !self.connectedBrowsers.contains($0) }
-            
+            let unconnectedCandidates = runningChromiumBrowsers.filter { !connectedBrowsers.contains($0) }
             if runningChromiumBrowsers.count == 1 {
                 realBrowserId = runningChromiumBrowsers[0].id
-                logger.info("Daemon: Inferred real browser ID from single running app: \(realBrowserId)")
             } else if unconnectedCandidates.count == 1 {
                 realBrowserId = unconnectedCandidates[0].id
-                logger.info("Daemon: Inferred real browser ID from single unconnected running app: \(realBrowserId)")
             }
         }
-        guard let browser = allBrowsers.first(where: { $0.id == realBrowserId }) else {
+        guard let browser = allBrowsers.first(where: { $0.id == realBrowserId }),
+              !reportsGeckoProduct || browser.usesFirefoxExtension else {
             logger.warning("Unknown browser id: \(realBrowserId)")
             removeConnection(connection)
             return
@@ -757,10 +1165,19 @@ final class DaemonServer: ObservableObject {
             return
         }
         
-        let instanceId = originalInstanceId.replacingOccurrences(of: browserRaw, with: realBrowserId)
+        let instanceId = pairingKey == nil
+            ? originalInstanceId.replacingOccurrences(of: browserRaw, with: realBrowserId)
+            : "\(realBrowserId)-main"
 
         // Disconnect existing client with same instanceId (reconnect)
         if let existing = clients[instanceId] {
+            // A connection from an extension build that predates installation
+            // IDs may be replaced by the updated extension in the same browser.
+            guard existing.installationID == nil || existing.installationID == message.installationID else {
+                logger.warning("Registration refused: another extension profile owns the active browser connection")
+                removeConnection(connection)
+                return
+            }
             existing.connection.cancel()
             clients.removeValue(forKey: instanceId)
         }
@@ -768,18 +1185,41 @@ final class DaemonServer: ObservableObject {
         pendingConnections.removeValue(forKey: ObjectIdentifier(connection))
         pendingSince.removeValue(forKey: ObjectIdentifier(connection))
 
-        let client = ConnectedClient(id: instanceId, browser: browser, connection: connection)
+        if let pairingKey {
+            unmatchedExtensionReports.removeValue(forKey: pairingKey)
+            unmatchedPairingsLogged.remove(pairingKey)
+            // A pre-pairing build of this installation was connected as another
+            // browser (old Gecko builds always said "firefox"): what was stored
+            // under that ID may be this browser's tree. Discarding it only makes
+            // that browser rejoin like a new participant.
+            if let legacyID = message.legacyBrowserID {
+                forgetMisfiledObservations(of: legacyID, host: browser, registry: allBrowsers)
+            }
+        } else if usesGeckoTransport, browser != .firefox {
+            // From now on this host's data is stored under its own ID. When its
+            // extension updates, the "firefox" it then reports comes from the
+            // old build's start-up write, not from an app having filed it
+            // there, so it must not wipe Firefox. (Without such evidence
+            // nothing is discarded: Firefox's unsynced changes stay pending.)
+            markLegacyIdentityResolved(Browser.firefox.id, host: browser)
+        }
+        let client = ConnectedClient(id: instanceId, browser: browser, connection: connection, installationID: message.installationID)
         client.capabilities = Set(message.capabilities ?? [])
+        client.presentsAsFirefox = pairingKey == nil && usesGeckoTransport && browser != .firefox
         clients[instanceId] = client
         connectedBrowsers.insert(browser)
 
         logger.info("✅ Registered: \(instanceId) (\(browser.displayName))")
-        delegate?.daemonServer(self, didConnect: client)
-
         // ACK the registration
         if let msgId = message.messageId {
-            sendWSMessage(WSMessage.ack(messageId: msgId, browserId: realBrowserId), to: client)
+            var ack = WSMessage.ack(messageId: msgId, browserId: realBrowserId)
+            // Tells current extensions this app applied installation pairing
+            // and the legacy identity; older apps' acks lack it.
+            ack.capabilities = ["hostPairing"]
+            sendWSMessage(ack, to: client)
         }
+
+        delegate?.daemonServer(self, didConnect: client)
 
         // The receive loop schedules the next read after routing returns.
     }
@@ -820,11 +1260,15 @@ final class DaemonServer: ObservableObject {
         return secured
     }
 
+    private func presented(_ message: WSMessage, to client: ConnectedClient) -> WSMessage {
+        client.presentsAsFirefox ? message.presentedAsFirefox(realBrowserID: client.browser.id) : message
+    }
+
     func sendWSMessage(_ message: WSMessage, to client: ConnectedClient) {
         if Self.bookmarkPlanningInputCategories.contains(message.category ?? ""),
            message.payload != nil,
            bookmarkMutationInterceptor?(message, client) == true { return }
-        guard let delivered = messageForDelivery(message, to: client.browser) else { return }
+        guard let delivered = messageForDelivery(message, to: client.browser).map({ presented($0, to: client) }) else { return }
         guard let data = try? JSONEncoder().encode(delivered) else { return }
         sendData(data, on: client.connection)
     }
@@ -832,7 +1276,7 @@ final class DaemonServer: ObservableObject {
     /// Control-plane messages never contain bookmark mutations and therefore
     /// bypass the planning interceptor.
     func sendBookmarkControlMessage(_ message: WSMessage, to client: ConnectedClient) {
-        guard let data = try? JSONEncoder().encode(message) else { return }
+        guard let data = try? JSONEncoder().encode(presented(message, to: client)) else { return }
         sendData(data, on: client.connection)
     }
 
@@ -856,7 +1300,7 @@ final class DaemonServer: ObservableObject {
             if Self.bookmarkPlanningInputCategories.contains(message.category ?? ""),
                message.payload != nil,
                bookmarkMutationInterceptor?(message, client) == true { continue }
-            guard let delivered = messageForDelivery(message, to: client.browser) else { continue }
+            guard let delivered = messageForDelivery(message, to: client.browser).map({ presented($0, to: client) }) else { continue }
             guard let data = try? JSONEncoder().encode(delivered) else { continue }
             sendData(data, on: client.connection)
         }
@@ -867,7 +1311,7 @@ final class DaemonServer: ObservableObject {
         if Self.bookmarkPlanningInputCategories.contains(message.category ?? ""),
            message.payload != nil,
            bookmarkMutationInterceptor?(message, client) == true { return }
-        guard let delivered = messageForDelivery(message, to: client.browser) else { return }
+        guard let delivered = messageForDelivery(message, to: client.browser).map({ presented($0, to: client) }) else { return }
         guard let data = try? JSONEncoder().encode(delivered) else { return }
         sendData(data, on: client.connection)
     }

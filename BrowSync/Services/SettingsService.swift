@@ -135,7 +135,9 @@ final class SettingsService: ObservableObject {
     private static let legacyDataMigrationStatusKey = "LegacyNonSandboxDataMigrationStatus"
     private let settingsURL: URL
 
-    @Published var general: GeneralSettings = GeneralSettings()
+    @Published var general: GeneralSettings = GeneralSettings() {
+        didSet { Browser.reserveCustomBrowsers(general.customBrowsers) }
+    }
     @Published var syncSettings: SyncSettings = SyncSettings()
     @Published var routerSettings: RouterSettings = RouterSettings()
 

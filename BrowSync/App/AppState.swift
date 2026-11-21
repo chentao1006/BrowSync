@@ -386,7 +386,8 @@ final class AppState: ObservableObject {
 
     func refreshBrowsers() async {
         isScanning = true
-        let allBrowsers = Browser.standardBrowsers + settingsService.general.customBrowsers
+        Browser.refreshDiscovery()
+        let allBrowsers = Browser.registeredBrowsers(including: settingsService.general.customBrowsers)
         let infos = await scanner.scanAll(browsers: allBrowsers)
 
         // Overlay connection status from daemon
@@ -510,6 +511,18 @@ extension AppState: DaemonServerDelegate {
                                         timestamp: Date().timeIntervalSince1970)
                 server.sendWSMessage(refresh, to: client)
             }
+        }
+    }
+
+    nonisolated func daemonServer(_ server: DaemonServer, didFindForeignObservationsOf browser: Browser) {
+        Task { @MainActor in
+            self.backupService.forgetBookmarkObservations(of: browser)
+        }
+    }
+
+    nonisolated func daemonServer(_ server: DaemonServer, didReplaceInstallationOf browser: Browser) {
+        Task { @MainActor in
+            self.syncService.extensionInstallationReplaced(for: browser)
         }
     }
 
@@ -692,6 +705,16 @@ extension AppState: DaemonServerDelegate {
                 self.broadcastSettings()
             }
         }
+    }
+
+    /// Same effect as the Safe Mode toggle in the Sync Strategy card: saved,
+    /// stale pending writes and approvals invalidated, extensions updated.
+    func setBookmarkSafeMode(_ enabled: Bool) {
+        guard settingsService.syncSettings.bookmarkSafeMode != enabled else { return }
+        settingsService.syncSettings.bookmarkSafeMode = enabled
+        settingsService.save()
+        syncService.discardStalePendingSafariWrites()
+        broadcastSettings()
     }
 
     func broadcastSettings(to client: ConnectedClient? = nil) {

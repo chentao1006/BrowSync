@@ -61,13 +61,34 @@ async function setCookieTimestamp(cookie, updatedAt) {
 
 // ─── Browser detection ────────────────────────────────────────────────────────
 
-function detectBrowserId() {
-  return 'firefox';
+// Gecko forks may expose Firefox's user agent even inside the extension, so
+// report the product name. Event pages must register every listener
+// synchronously at startup: resolve the name lazily, never with top-level await.
+const browserProductID = Promise.resolve()
+  .then(() => browser.runtime.getBrowserInfo())
+  .then(info => String(info?.name || '').toLowerCase().replace(/[^a-z0-9]/g, '') || 'firefox')
+  // A generic "firefox" makes the app decide from the running Gecko apps.
+  .catch(() => 'firefox');
+let DETECTED_BROWSER = 'firefox';
+let CURRENT_BROWSER_ID = DETECTED_BROWSER;
+async function loadInstallationID() {
+  DETECTED_BROWSER = await browserProductID;
+  const stored = await chrome.storage.local.get(['installationID', 'currentBrowserId', 'appSettings', 'legacyBrowserId']);
+  const validID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(stored.installationID || '');
+  const installationID = validID ? stored.installationID : crypto.randomUUID();
+  let legacyBrowserId = stored.legacyBrowserId || null;
+  if (!validID) {
+    // A build without installation IDs that received app settings was
+    // connected under this browser ID. The app uses it once to discard
+    // observations that may belong to this installation's real host.
+    // Older Gecko builds always reported (and stored) "firefox", whatever
+    // the host, and their ack changed nothing.
+    legacyBrowserId = stored.appSettings && stored.currentBrowserId ? String(stored.currentBrowserId) : null;
+    await chrome.storage.local.set({ installationID, legacyBrowserId });
+  }
+  CURRENT_BROWSER_ID = stored.currentBrowserId || DETECTED_BROWSER;
+  return { installationID, legacyBrowserId };
 }
-
-const DETECTED_BROWSER = detectBrowserId();
-const INSTANCE_ID = `${DETECTED_BROWSER}-main`;
-chrome.storage.local.set({ currentBrowserId: DETECTED_BROWSER }).catch(() => {});
 
 const STATE_SYNC_PERMISSIONS = {
   permissions: ['tabs', 'cookies', 'scripting'],
@@ -86,13 +107,13 @@ async function isStateSyncConfigured() {
   const { appSettings = {} } = await chrome.storage.local.get('appSettings').catch(() => ({}));
   // Older BrowSync apps do not send stateSyncEnabled. Treat that as legacy
   // behavior, while an explicit false from a current app remains authoritative.
-  return appSettings.stateSyncEnabled !== false && appSettings.stateParticipatingBrowsers?.[DETECTED_BROWSER] === true;
+  return appSettings.stateSyncEnabled !== false && appSettings.stateParticipatingBrowsers?.[CURRENT_BROWSER_ID] === true;
 }
 
 async function isTabSharingConfigured() {
   const { appSettings = {} } = await chrome.storage.local.get('appSettings').catch(() => ({}));
   return appSettings.tabSharingEnabled === true &&
-    appSettings.tabSharingParticipatingBrowsers?.[DETECTED_BROWSER] === true;
+    appSettings.tabSharingParticipatingBrowsers?.[CURRENT_BROWSER_ID] === true;
 }
 
 async function canSyncState() {
@@ -212,14 +233,21 @@ async function processQueue() {
 
 let ws = null;
 let isConnecting = false;
+let registrationMessageId = null;
+let registrationConfirmed = false;
+// Messages the app sent on this socket before acknowledging the registration
+// (older apps request settings and snapshots first). They run, in order, once
+// the confirmed identity is known; a closed socket discards them.
+const preRegistrationInbox = [];
 let reconnectDelay = 1000;
+let stableConnectionTimer = null;
 const outboundQueue = [];
 
 async function connect() {
   if (isConnecting || (ws && ws.readyState === WebSocket.OPEN)) return;
   isConnecting = true;
   await chrome.storage.local.set({ wsState: 'connecting' }).catch(() => { });
-  console.log('[BrowSync] Connecting to daemon... browser:', DETECTED_BROWSER);
+  console.log('[BrowSync] Connecting to daemon... browser:', CURRENT_BROWSER_ID);
 
   try {
     ws = new WebSocket(DAEMON_URL);
@@ -231,22 +259,30 @@ async function connect() {
     return;
   }
 
-  ws.onopen = async () => {
+  const socket = ws;
+  socket.onopen = async () => {
+    let installationID, legacyBrowserId;
+    try {
+      ({ installationID, legacyBrowserId } = await loadInstallationID());
+    } catch {
+      // A transient storage failure can be retried on the next connection.
+      socket.close();
+      return;
+    }
+    if (ws !== socket || socket.readyState !== WebSocket.OPEN) return;
     console.log('[BrowSync] Connected');
-    reconnectDelay = 1000;
     isConnecting = false;
-    await chrome.storage.local.set({ wsState: 'open' }).catch(() => { });
+    registrationConfirmed = false;
+    registrationMessageId = crypto.randomUUID();
 
-    // The app owns planning/review; this extension only snapshots, validates,
-    // executes explicit operations and verifies their actual result.
-    send({ type: 'register', browser: DETECTED_BROWSER, instanceId: INSTANCE_ID, capabilities: ['bookmarkExecutorV2'] });
+    // Older apps accept Gecko builds only as "firefox"; current apps read the
+    // product from browserProduct and verify the host themselves.
+    send({ type: 'register', browser: 'firefox', instanceId: 'firefox-main', browserProduct: DETECTED_BROWSER,
+      installationID, ...(legacyBrowserId ? { legacyBrowserID: legacyBrowserId } : {}), messageId: registrationMessageId,
+      capabilities: ['bookmarkExecutorV2', 'geckoProductIdentity'] });
     // Do not request an unscoped snapshot on every connection. It makes every
     // browser stream all cookies back to this worker; state is pulled only for
     // the site being opened or explicitly synced.
-    while (outboundQueue.length > 0) {
-      ws.send(JSON.stringify(outboundQueue.shift()));
-    }
-
     if (chrome.alarms) {
       await chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
       await chrome.alarms.clear(RECONNECT_ALARM);
@@ -254,18 +290,28 @@ async function connect() {
     updateBadge();
   };
 
-  ws.onclose = async () => {
+  socket.onclose = async () => {
+    if (ws !== socket) return;
+    ws = null;
+    clearTimeout(stableConnectionTimer);
+    messageQueue.length = 0;
+    preRegistrationInbox.length = 0;
+    registrationConfirmed = false;
+    registrationMessageId = null;
     console.log('[BrowSync] Disconnected');
     isConnecting = false;
     await chrome.storage.local.set({ wsState: 'closed' }).catch(() => { });
-    ws = null;
-    updateBadge();
-    scheduleReconnect();
+    // connect() may have opened a new socket while the storage write awaited.
+    if (!ws) {
+      updateBadge();
+      scheduleReconnect();
+    }
   };
 
   ws.onerror = (e) => console.warn('[BrowSync] WS error:', e);
 
-  ws.onmessage = (event) => {
+  socket.onmessage = (event) => {
+    if (ws !== socket) return;
     try {
       const msg = JSON.parse(event.data.trim());
       messageQueue.push(msg);
@@ -277,7 +323,7 @@ async function connect() {
 }
 
 function send(message) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
+  if (ws && ws.readyState === WebSocket.OPEN && (registrationConfirmed || message.type === 'register')) {
     ws.send(JSON.stringify(message));
   } else {
     outboundQueue.push(message);
@@ -318,7 +364,7 @@ function updateBadge(state = null) {
     return;
   }
   
-  if (ws && ws.readyState === WebSocket.OPEN) {
+  if (registrationConfirmed && ws?.readyState === WebSocket.OPEN) {
     chrome.action.setBadgeText({ text: '' }).catch(() => {});
     chrome.action.setBadgeBackgroundColor({ color: '#22c55e' }).catch(() => {});
     if (chrome.action.setBadgeTextColor) {
@@ -348,6 +394,10 @@ chrome.runtime.onConnect.addListener((port) => {
 
 async function handleIncoming(message) {
   if (!message?.type) return;
+  if (!registrationConfirmed && message.type !== 'ack') {
+    if (preRegistrationInbox.length < 200) preRegistrationInbox.push(message);
+    return;
+  }
 
   switch (message.type) {
     case 'sync':
@@ -395,7 +445,39 @@ async function handleIncoming(message) {
       await handlePullRequest(message.category, message.site, message.payload?.raw || null);
       break;
     case 'ack':
-      // Acknowledged
+      if (message.browser && registrationMessageId && message.messageId === registrationMessageId) {
+        // Events queued under another (provisional or stale) identity carry
+        // that identity's folder scope; never deliver them as this browser.
+        const confirmed = outboundQueue.filter(queued => !queued.browser || queued.browser === message.browser);
+        outboundQueue.length = 0;
+        outboundQueue.push(...confirmed);
+        CURRENT_BROWSER_ID = message.browser;
+        registrationConfirmed = true;
+        // Back off while the app refuses (unpaired, denied or ambiguous host),
+        // and while another installation keeps taking over this browser's
+        // connection (older apps replace it on every registration): only a
+        // registration that stays connected resets the retry delay.
+        clearTimeout(stableConnectionTimer);
+        const confirmedSocket = ws;
+        stableConnectionTimer = setTimeout(() => {
+          if (registrationConfirmed && ws === confirmedSocket) reconnectDelay = 1000;
+        }, 60000);
+        updateBadge();
+        registrationMessageId = null;
+        // Only an app that pairs installations applied the legacy identity;
+        // keep it for a later app update otherwise.
+        const appliedLegacy = Array.isArray(message.capabilities) && message.capabilities.includes('hostPairing');
+        // An older app filed this installation under the acked ID; a later
+        // app update uses that to discard data that may belong elsewhere.
+        const { legacyBrowserId: pendingLegacy } = await chrome.storage.local.get('legacyBrowserId').catch(() => ({}));
+        await chrome.storage.local.set({ currentBrowserId: CURRENT_BROWSER_ID, wsState: 'open',
+          legacyBrowserId: appliedLegacy ? null : (pendingLegacy || message.browser) });
+        // Run what the app sent before its ack, ahead of anything newer.
+        messageQueue.unshift(...preRegistrationInbox.splice(0));
+        while (registrationConfirmed && ws?.readyState === WebSocket.OPEN && outboundQueue.length) {
+          ws.send(JSON.stringify(outboundQueue.shift()));
+        }
+      }
       break;
   }
 }
@@ -419,7 +501,7 @@ async function applySync(message) {
   switch (category) {
     case 'bookmark_apply_plan':
       if (!(await mayExecuteAppBookmarkPlan(message))) {
-        send({ type: 'sync', browser: DETECTED_BROWSER, category: 'bookmark_apply_result',
+        send({ type: 'sync', browser: CURRENT_BROWSER_ID, category: 'bookmark_apply_result',
           payload: { kind: 'raw', raw: { messageId: message.messageId || null, applied: false, verified: false,
             writes: 0, error: 'bookmark write refused by extension safety policy' } },
           messageId: crypto.randomUUID(), timestamp: Date.now() });
@@ -430,7 +512,7 @@ async function applySync(message) {
     case 'bookmarks':
     case 'bookmarks_removed_batch':
     case 'bookmarks_removed':
-      send({ type: 'sync', browser: DETECTED_BROWSER, category: 'bookmark_apply_result',
+      send({ type: 'sync', browser: CURRENT_BROWSER_ID, category: 'bookmark_apply_result',
         payload: { kind: 'raw', raw: { messageId: message.messageId || null, applied: false, verified: false,
           writes: 0, error: 'native app bookmark plan required' } },
         messageId: crypto.randomUUID(), timestamp: Date.now() });
@@ -472,7 +554,7 @@ async function applySync(message) {
       if (payload.kind === 'tabs') {
         const tabs = payload.tabs || [];
         const browserId = message.browser;
-        if (browserId && browserId !== DETECTED_BROWSER) {
+        if (browserId && browserId !== CURRENT_BROWSER_ID) {
            chrome.storage.local.get('remoteTabs').then(data => {
              const remoteTabs = data.remoteTabs || {};
              remoteTabs[browserId] = tabs;
@@ -489,7 +571,7 @@ const appBookmarkPlanInputs = new Map();
 async function mayExecuteAppBookmarkPlan(message) {
   if (message.bookmarkSyncEnabled !== true || message.bookmarkWriteAllowed !== true) return false;
   const explicitRestore = message.isExplicitDeletedBookmarkRestore === true || message.isExplicitBookmarkRestore === true;
-  const target = String(DETECTED_BROWSER).split('-')[0].toLowerCase();
+  const target = String(CURRENT_BROWSER_ID).split('-')[0].toLowerCase();
   const source = String(message.bookmarkSourceBrowser || '').split('-')[0].toLowerCase();
   if (!explicitRestore && message.bookmarkSyncStrategy === 'one_way' && source === target) return false;
   const { appSettings = {} } = await browser.storage.local.get('appSettings').catch(() => ({}));
@@ -535,7 +617,7 @@ async function executeAppBookmarkPlan(raw, messageId) {
   const token = raw.inputToken;
   const expected = appBookmarkPlanInputs.get(token);
   const answer = (applied, verified, writes, failures = [], error = null, operationResults = []) => send({
-    type: 'sync', browser: DETECTED_BROWSER, category: 'bookmark_apply_result',
+    type: 'sync', browser: CURRENT_BROWSER_ID, category: 'bookmark_apply_result',
     payload: { kind: 'raw', raw: { messageId: messageId || null, applied, verified, writes, failures, error, operationResults } },
     messageId: crypto.randomUUID(), timestamp: Date.now()
   });
@@ -645,7 +727,7 @@ async function sendCookiesSnapshot(site) {
     const chunk = allCookies.slice(i, i + 100);
     try {
       send({
-        type: 'sync', browser: DETECTED_BROWSER, category: 'cookies',
+        type: 'sync', browser: CURRENT_BROWSER_ID, category: 'cookies',
         payload: { kind: 'cookies', cookies: chunk },
         messageId: crypto.randomUUID(), timestamp: Date.now()
       });
@@ -719,7 +801,7 @@ async function sendStorageSnapshot(storageType, site) {
   console.log(`[BrowSync] Sending ${allItems.length} ${storageType} items (including backups)...`);
   for (let i = 0; i < allItems.length; i += 200) {
     send({
-      type: 'sync', browser: DETECTED_BROWSER, category: storageType,
+      type: 'sync', browser: CURRENT_BROWSER_ID, category: storageType,
       payload: { kind: storageType, [storageType]: allItems.slice(i, i + 200) },
       messageId: crypto.randomUUID(), timestamp: Date.now()
     });
@@ -737,7 +819,7 @@ async function handlePullRequest(category, site, requestRaw = null) {
       const targetFolder = requestRaw?.targetFolder || null;
       const scopeFolder = targetFolder ? await findBookmarkFolderByPath(targetFolder) : null;
       if (targetFolder && !scopeFolder) {
-        send({ type: 'sync', browser: DETECTED_BROWSER, category: 'bookmark_plan_context',
+        send({ type: 'sync', browser: CURRENT_BROWSER_ID, category: 'bookmark_plan_context',
           payload: { kind: 'raw', raw: { requestId: requestRaw?.requestId || site || null,
             error: 'target folder missing or ambiguous' } }, messageId: crypto.randomUUID(), timestamp: Date.now() });
         break;
@@ -747,7 +829,7 @@ async function handlePullRequest(category, site, requestRaw = null) {
         for (const [index, node] of (children || []).entries()) {
           nodes.push({ id: node.id, title: node.title || '', url: node.url ?? null,
             parentId: node.parentId ?? null, isFolder: !node.url, sortIndex: index,
-            dateAdded: node.dateAdded ?? null, sourceBrowser: DETECTED_BROWSER });
+            dateAdded: node.dateAdded ?? null, sourceBrowser: CURRENT_BROWSER_ID });
           visit(node.children);
         }
       };
@@ -760,14 +842,14 @@ async function handlePullRequest(category, site, requestRaw = null) {
         if (portableRootRole.has(root.id)) {
           nodes.push({ id: root.id, title: root.title || '', url: null,
             parentId: root.parentId ?? null, isFolder: true, sortIndex: root.index ?? 0,
-            dateAdded: root.dateAdded ?? null, sourceBrowser: DETECTED_BROWSER });
+            dateAdded: root.dateAdded ?? null, sourceBrowser: CURRENT_BROWSER_ID });
           visit(root.children);
         }
       }
       const inputToken = crypto.randomUUID();
       appBookmarkPlanInputs.set(inputToken, { full: bookmarkTreeFingerprint(tree),
         outside: bookmarkOutsideScopeFingerprint(tree, scopeFolder?.id || null), scopeRootId: scopeFolder?.id || null });
-      send({ type: 'sync', browser: DETECTED_BROWSER, category: 'bookmark_plan_context',
+      send({ type: 'sync', browser: CURRENT_BROWSER_ID, category: 'bookmark_plan_context',
         payload: { kind: 'raw', raw: { requestId: requestRaw?.requestId || site || null, inputToken, nodes,
           rootIds: { '1': localBarId, '2': localOtherId, '3': localMobileId || localOtherId },
           sourceToNativeIds: syncIdMap, scopeRootId: scopeFolder?.id || null } }, messageId: crypto.randomUUID(), timestamp: Date.now() });
@@ -805,7 +887,7 @@ async function handlePullRequest(category, site, requestRaw = null) {
             parentId: '0',
             isFolder: true,
             dateAdded: Date.now(),
-            sourceBrowser: DETECTED_BROWSER
+            sourceBrowser: CURRENT_BROWSER_ID
           });
         }
       }
@@ -831,7 +913,7 @@ async function handlePullRequest(category, site, requestRaw = null) {
           isFolder: !node.url,
           sortIndex,
           dateAdded: node.dateAdded,
-          sourceBrowser: DETECTED_BROWSER
+          sourceBrowser: CURRENT_BROWSER_ID
         });
       }
 
@@ -853,7 +935,7 @@ async function handlePullRequest(category, site, requestRaw = null) {
       }
       console.log(`[BrowSync] Sending ${flat.length} bookmarks...`);
       send({
-        type: 'sync', browser: DETECTED_BROWSER, category: category === 'bookmark_backup' ? 'bookmark_backup' : 'bookmarks',
+        type: 'sync', browser: CURRENT_BROWSER_ID, category: category === 'bookmark_backup' ? 'bookmark_backup' : 'bookmarks',
         payload: { kind: 'bookmarks', bookmarks: flat },
         messageId: crypto.randomUUID(), timestamp: Date.now()
       });
@@ -882,10 +964,10 @@ async function handlePullRequest(category, site, requestRaw = null) {
       const mapped = filteredTabs.map(tab => ({
         id: String(tab.id), url: tab.url, title: tab.title || '', isActive: tab.active,
         windowId: String(tab.windowId), index: tab.index, favIconURL: tab.favIconUrl,
-        sourceBrowser: DETECTED_BROWSER, capturedAt: Date.now()
+        sourceBrowser: CURRENT_BROWSER_ID, capturedAt: Date.now()
       }));
       send({
-        type: 'sync', browser: DETECTED_BROWSER, category: category,
+        type: 'sync', browser: CURRENT_BROWSER_ID, category: category,
         payload: { kind: 'tabs', tabs: mapped },
         messageId: crypto.randomUUID(), timestamp: Date.now()
       });
@@ -908,7 +990,7 @@ async function handlePullRequest(category, site, requestRaw = null) {
 async function requestSiteStateSync(site) {
   if (!(await canSyncState())) return false;
   send({
-    type: 'pull', browser: DETECTED_BROWSER, category: 'browserData', site,
+    type: 'pull', browser: CURRENT_BROWSER_ID, category: 'browserData', site,
     messageId: crypto.randomUUID(), timestamp: Date.now()
   });
   await handlePullRequest('browserData', site);
@@ -1019,7 +1101,7 @@ async function findBookmarkFolderByPath(folderPath) {
 async function currentBookmarkSyncFolderPath() {
   const { appSettings } = await chrome.storage.local.get('appSettings').catch(() => ({}));
   const folders = appSettings?.bookmarkSyncFolders || {};
-  return folders[DETECTED_BROWSER] || null;
+  return folders[CURRENT_BROWSER_ID] || null;
 }
 
 async function isNodeInsideFolder(nodeId, folderId) {
@@ -1044,7 +1126,7 @@ async function isBookmarkEventInSelectedFolder(event = {}) {
   if (!folder) {
     send({
       type: 'sync',
-      browser: DETECTED_BROWSER,
+      browser: CURRENT_BROWSER_ID,
       category: 'bookmark_folder_missing',
       payload: { kind: 'raw', raw: { folder: folderPath } },
       messageId: crypto.randomUUID(),
@@ -1065,7 +1147,7 @@ function queueRemovedBookmark(deletedBm) {
   console.log('[BrowSync] Explicit bookmark removed:', deletedBm);
   send({
     type: 'sync',
-    browser: DETECTED_BROWSER,
+    browser: CURRENT_BROWSER_ID,
     category: 'bookmarks_removed',
     payload: { kind: 'bookmarksRemoved', bookmarksRemoved: deletedBm },
     messageId: crypto.randomUUID(),
@@ -1082,7 +1164,7 @@ async function handleBookmarkChange(reason, event = {}) {
   
   send({
     type: 'sync',
-    browser: DETECTED_BROWSER,
+    browser: CURRENT_BROWSER_ID,
     category: 'bookmark_changed',
     payload: { kind: 'raw', raw: { reason } },
     messageId: crypto.randomUUID(),
@@ -1124,7 +1206,7 @@ if (chrome.bookmarks) {
       url: removeInfo.node.url || null,
       isFolder: !removeInfo.node.url,
       parentId: mappedParentId || null,
-      sourceBrowser: DETECTED_BROWSER
+      sourceBrowser: CURRENT_BROWSER_ID
     };
     
     queueRemovedBookmark(deletedBm);
@@ -1181,7 +1263,7 @@ function attachCookiesListener() {
       cookieSyncQueue.clear();
       send({
         type: 'sync',
-        browser: DETECTED_BROWSER,
+        browser: CURRENT_BROWSER_ID,
         site: '*',
         category: 'cookies',
         payload: {
@@ -1324,7 +1406,7 @@ async function applyCookieSync(cookies) {
   console.log(`[BrowSync] Cookie sync done: ${successCount} set, ${failCount} failed`);
   send({
     type: 'sync',
-    browser: DETECTED_BROWSER,
+    browser: CURRENT_BROWSER_ID,
     category: 'cookie_apply_result',
     payload: {
       kind: 'raw',
@@ -1340,10 +1422,14 @@ async function applyCookieSync(cookies) {
 // ─── Content script relay (localStorage / sessionStorage) ───────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!registrationConfirmed && message.type?.startsWith('UPDATE_')) {
+    sendResponse({ ok: false });
+    return false;
+  }
   if (message.type === 'UPDATE_SETTING') {
     send({
       type: 'settings',
-      browser: DETECTED_BROWSER,
+      browser: CURRENT_BROWSER_ID,
       payload: { kind: 'raw', raw: { [message.setting]: message.value } },
       messageId: crypto.randomUUID(),
       timestamp: Date.now()
@@ -1358,7 +1444,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       const { appSettings } = await chrome.storage.local.get('appSettings');
       let settings = appSettings || {};
-      const browserId = DETECTED_BROWSER;
+      const browserId = CURRENT_BROWSER_ID;
       if (message.setting === 'bookmarkSync') {
          if (!settings.bookmarkParticipatingBrowsers) settings.bookmarkParticipatingBrowsers = {};
          settings.bookmarkParticipatingBrowsers[browserId] = message.value;
@@ -1380,7 +1466,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'UPDATE_SITE_SETTING') {
     send({
-      type: 'settings', browser: DETECTED_BROWSER,
+      type: 'settings', browser: CURRENT_BROWSER_ID,
       payload: { kind: 'raw', raw: { toggleSiteSync: { domain: message.domain, value: message.value } } },
       messageId: crypto.randomUUID(), timestamp: Date.now()
     });
@@ -1390,7 +1476,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.type === 'UPDATE_SITE_STRATEGY') {
     send({
-      type: 'settings', browser: DETECTED_BROWSER,
+      type: 'settings', browser: CURRENT_BROWSER_ID,
       payload: { kind: 'raw', raw: { updateSiteStrategy: { domain: message.domain, strategy: message.strategy } } },
       messageId: crypto.randomUUID(), timestamp: Date.now()
     });
@@ -1400,7 +1486,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.type === 'UPDATE_SITE_SOURCE_BROWSER') {
     send({
-      type: 'settings', browser: DETECTED_BROWSER,
+      type: 'settings', browser: CURRENT_BROWSER_ID,
       payload: { kind: 'raw', raw: { updateSiteSourceBrowser: { domain: message.domain, browser: message.browser } } },
       messageId: crypto.randomUUID(), timestamp: Date.now()
     });
@@ -1418,7 +1504,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'OPEN_SETTINGS') {
     send({
       type: 'open_settings',
-      browser: DETECTED_BROWSER,
+      browser: CURRENT_BROWSER_ID,
       messageId: crypto.randomUUID(),
       timestamp: Date.now()
     });
@@ -1429,7 +1515,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'OPEN_URL_IN_BROWSER') {
     send({
       type: 'open_url',
-      browser: DETECTED_BROWSER,
+      browser: CURRENT_BROWSER_ID,
       payload: { kind: 'raw', raw: { targetBrowser: message.browser, url: message.url } },
       messageId: crypto.randomUUID(),
       timestamp: Date.now()
@@ -1441,7 +1527,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'PULL_TAB_SHARING') {
     send({
       type: 'pull',
-      browser: DETECTED_BROWSER,
+      browser: CURRENT_BROWSER_ID,
       category: 'tabSharing',
       messageId: crypto.randomUUID(),
       timestamp: Date.now()
@@ -1480,7 +1566,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     send({
       type: 'sync',
-      browser: DETECTED_BROWSER,
+      browser: CURRENT_BROWSER_ID,
       site: sender.tab?.url ? safeHostname(sender.tab.url) : '*',
       category: message.storageType,
       payload: {
@@ -1599,14 +1685,14 @@ async function requestCurrentSiteState(tabId, url) {
   if (navigationSyncSites.has(tabSiteKey)) return;
 
   const { appSettings = {} } = await chrome.storage.local.get('appSettings');
-  if (appSettings.automaticSync !== true || appSettings.stateParticipatingBrowsers?.[DETECTED_BROWSER] !== true) return;
+  if (appSettings.automaticSync !== true || appSettings.stateParticipatingBrowsers?.[CURRENT_BROWSER_ID] !== true) return;
   if (!isSiteStateSyncEnabled(site, appSettings)) return;
 
   recentSitePulls.set(site, now);
   navigationSyncSites.set(tabSiteKey, now);
   pendingSiteReloads.set(tabId, site);
   send({
-    type: 'pull', browser: DETECTED_BROWSER, category: 'browserData', site,
+    type: 'pull', browser: CURRENT_BROWSER_ID, category: 'browserData', site,
     messageId: crypto.randomUUID(), timestamp: now
   });
 }
@@ -1632,7 +1718,7 @@ function attachTabsListener() {
     tabDebounceTimer = setTimeout(() => {
       send({
         type: 'sync',
-        browser: DETECTED_BROWSER,
+        browser: CURRENT_BROWSER_ID,
         site: safeHostname(tab.url),
         category: 'browserState',
         payload: {
@@ -1645,7 +1731,7 @@ function attachTabsListener() {
             windowId: String(tab.windowId),
             index: tab.index,
             favIconURL: tab.favIconUrl,
-            sourceBrowser: DETECTED_BROWSER,
+            sourceBrowser: CURRENT_BROWSER_ID,
             capturedAt: Date.now(),
           }]
         },

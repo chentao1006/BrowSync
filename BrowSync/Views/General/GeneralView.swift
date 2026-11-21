@@ -151,7 +151,7 @@ private struct DeniedExtensionConnectionsView: View {
 
     var body: some View {
         ForEach(daemon.deniedBrowserIDs, id: \.self) { browserID in
-            if let browser = (Browser.standardBrowsers + AppState.shared.settingsService.general.customBrowsers).first(where: { $0.id == browserID }) {
+            if let browser = (Browser.registeredBrowsers(including: AppState.shared.settingsService.general.customBrowsers)).first(where: { $0.id == browserID }) {
                 HStack(spacing: 8) {
                     if let appURL = browser.appURL {
                         Image(nsImage: NSWorkspace.shared.icon(forFile: appURL.path))
@@ -167,14 +167,44 @@ private struct DeniedExtensionConnectionsView: View {
                 }
             }
         }
+        ForEach(daemon.unmatchedExtensionReports.keys.sorted(), id: \.self) { key in
+            HStack(spacing: 8) {
+                Image(systemName: "questionmark.circle")
+                VStack(alignment: .leading) {
+                    Text(String(localized: "BrowSync extension in an unrecognized browser", bundle: langBundle.bundle))
+                    // The product name the extension reported, e.g. "zen".
+                    Text(verbatim: daemon.unmatchedExtensionReports[key] ?? "")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(String(localized: "Add this browser in the Browsers tab. The extension connects after you approve it.", bundle: langBundle.bundle))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        ForEach(daemon.deniedPairingKeys, id: \.self) { key in
+            HStack(spacing: 8) {
+                Image(systemName: "puzzlepiece.extension")
+                VStack(alignment: .leading) {
+                    Text(key.hasPrefix("gecko.")
+                         ? String(localized: "BrowSync extension in a Firefox-based browser", bundle: langBundle.bundle)
+                         : String(localized: "BrowSync extension in a Chromium-based browser", bundle: langBundle.bundle))
+                    // A short installation ID tells two denied profiles apart.
+                    Text(verbatim: String(key.split(separator: ".").last?.prefix(8) ?? ""))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(String(localized: "Reauthorize", bundle: langBundle.bundle)) {
+                    daemon.retryDeniedPairing(key)
+                }
+                .disabled(!daemon.isRunning)
+            }
+        }
         ForEach(daemon.deniedExtensionOrigins, id: \.self) { origin in
             HStack(spacing: 8) {
-                if let appURL = Browser.firefox.appURL {
-                    Image(nsImage: NSWorkspace.shared.icon(forFile: appURL.path))
-                        .resizable()
-                        .frame(width: 24, height: 24)
-                }
-                Text(Browser.firefox.displayName)
+                Image(systemName: "puzzlepiece.extension")
+                Text(origin)
                 Spacer()
                 Button(String(localized: "Reauthorize", bundle: langBundle.bundle)) {
                     daemon.reviewDeniedOrigin(origin)

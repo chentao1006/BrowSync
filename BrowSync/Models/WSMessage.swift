@@ -25,6 +25,12 @@ struct WSMessage: Codable {
     var type: WSMessageType
     var browser: String?
     var instanceId: String?
+    var installationID: UUID?
+    /// Browser ID a pre-installation-ID extension build was connected under.
+    var legacyBrowserID: String?
+    /// Gecko builds keep reporting `browser: "firefox"` so that older apps
+    /// accept them as before; the actual product name is sent here.
+    var browserProduct: String?
     var site: String?
     var category: String?
     var payload: WSPayload?
@@ -237,4 +243,33 @@ struct AnyCodable: Codable {
         default: try container.encodeNil()
         }
     }
+}
+
+// MARK: - Legacy Gecko presentation
+
+extension WSMessage {
+    /// For a client that calls itself "firefox" while running in another Gecko
+    /// browser: its own checks read Firefox's entries, so they must hold this
+    /// browser's participation, folders and one-way source role.
+    func presentedAsFirefox(realBrowserID real: String) -> WSMessage {
+        let firefox = Browser.firefox.id
+        // Real Firefox must not look like this client to it (it splits IDs at "-").
+        func source(_ id: String) -> String { id == real ? firefox : (id == firefox ? Browser.firefox.bundleIdentifier : id) }
+        var presented = self
+        presented.bookmarkSourceBrowser = self.bookmarkSourceBrowser.map(source)
+        // Senders of state and tabs: the client drops data labelled as itself.
+        presented.browser = self.browser.map(source)
+        if self.type == .settings, case .raw(var raw) = self.payload {
+            for key in ["stateParticipatingBrowsers", "bookmarkParticipatingBrowsers", "tabSharingParticipatingBrowsers", "bookmarkSyncFolders"] {
+                guard var map = (raw[key]?.value as? [String: AnyCodable])?.mapValues({ $0.value })
+                        ?? (raw[key]?.value as? [String: Any]) else { continue }
+                map[firefox] = map[real]
+                raw[key] = AnyCodable(map)
+            }
+            if let id = raw["bookmarkSourceBrowser"]?.value as? String { raw["bookmarkSourceBrowser"] = AnyCodable(source(id)) }
+            presented.payload = .raw(raw)
+        }
+        return presented
+    }
+
 }

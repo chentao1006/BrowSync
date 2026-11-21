@@ -1743,12 +1743,19 @@ enum BookmarkReconciler {
     ///  - a lacking browser had it and lost it (its own snapshot history or a
     ///    recorded deletion) → the newer event wins: a holder that added it
     ///    after that loss re-added it, otherwise the deletion is propagated.
+    ///
+    /// `pendingURLs` lists, per browser, URLs touched by pending changes that
+    /// browser is the source or the target of. A missed addition into a
+    /// browser skips only its own pending URLs: a change waiting for an
+    /// offline browser elsewhere must not keep a newly joined browser empty.
+    /// A deletion is propagated only for URLs no pending change touches.
     static func reconcile(observed: [Browser: [Bookmark]],
                           live: [Browser: BookmarkNativeTreeContext],
                           history: [Browser: [BookmarkSnapshotRecord]],
                           deletions: [BookmarkDeletionEvidence],
-                          pendingURLs: Set<String>,
+                          pendingURLs: [Browser: Set<String>],
                           now: Date = Date()) -> BookmarkReconciliation {
+        let anyPending = pendingURLs.values.reduce(into: Set<String>()) { $0.formUnion($1) }
         func url(_ node: Bookmark) -> String? { node.isFolder ? nil : BookmarkSyncConflict.canonicalURL(node.url) }
         func scopedURLs(_ context: BookmarkNativeTreeContext) -> Set<String> {
             let byId = Dictionary(context.nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -1790,7 +1797,7 @@ enum BookmarkReconciler {
 
         var result = BookmarkReconciliation()
         let allURLs = liveURLs.values.reduce(into: Set<String>()) { $0.formUnion($1) }
-        for link in allURLs.sorted() where !pendingURLs.contains(link) {
+        for link in allURLs.sorted() {
             let holders = browsers.filter { liveURLs[$0]?.contains(link) == true }
             let lacking = browsers.filter { liveURLs[$0]?.contains(link) != true }
             guard !holders.isEmpty, !lacking.isEmpty else { continue }
@@ -1802,6 +1809,7 @@ enum BookmarkReconciler {
             let newestAddition = holders.map { firstSeen($0, link) }.max() ?? .distantPast
             if let newestLoss, newestAddition <= newestLoss.1 {
                 // The deletion is newer than every holder's copy.
+                guard !anyPending.contains(link) else { continue }
                 for holder in holders {
                     guard let node = observed[holder]?.first(where: { url($0) == link }) else { continue }
                     result.removals[pairKey(newestLoss.0, holder), default: []].append(node)
@@ -1811,7 +1819,7 @@ enum BookmarkReconciler {
                       let snapshot = observed[holder],
                       let node = snapshot.first(where: { url($0) == link }) else { continue }
                 let chain = BookmarkAggregatePlanner.portableChain(of: node, in: snapshot)
-                for target in lacking {
+                for target in lacking where pendingURLs[target]?.contains(link) != true {
                     var list = result.additions[pairKey(holder, target)] ?? []
                     for item in chain where !list.contains(where: { $0.id == item.id }) { list.append(item) }
                     result.additions[pairKey(holder, target)] = list

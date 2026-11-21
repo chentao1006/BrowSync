@@ -652,3 +652,17 @@
 "Before turning on bookmark sync for the first time, back up every browser's bookmarks. Back Up Now saves each participating browser's synced folder; you can also export bookmarks with each browser's own tools." = "북마크 동기화를 처음 켜기 전에 각 브라우저의 북마크를 백업하세요. \"지금 백업\"은 참여하는 각 브라우저의 동기화 폴더를 저장합니다. 각 브라우저의 자체 기능으로 북마크를 내보낼 수도 있습니다.";
 "Keep All" = "모두 유지";
 "Choose the version every browser should keep. The other versions are replaced in every browser." = "모든 브라우저에 남길 버전을 선택하세요. 다른 버전은 모든 브라우저에서 대체됩니다.";
+
+"Choose the browser where you enabled BrowSync" = "BrowSync를 활성화한 브라우저를 선택하세요";
+"BrowSync extension in a Firefox-based browser" = "Firefox 기반 브라우저의 BrowSync 확장 프로그램";
+"BrowSync extension in a Chromium-based browser" = "Chromium 기반 브라우저의 BrowSync 확장 프로그램";
+"If this browser already has another paired BrowSync installation (another profile, or the extension before it was reinstalled), allowing this one replaces it. The other installation stops syncing until you reauthorize it in Settings." = "이 브라우저에 이미 다른 BrowSync 설치(다른 프로필 또는 재설치 전의 확장 프로그램)가 페어링되어 있으면, 허용 시 그 설치를 대체합니다. 대체된 설치는 설정에서 다시 승인할 때까지 동기화를 중단합니다.";
+"%@ is also running, but BrowSync does not know it as a browser. If you enabled BrowSync there, choose Don't Allow, add it in the Browsers tab, then reauthorize the extension in Settings." = "%@도 실행 중이지만 BrowSync가 브라우저로 인식하지 못합니다. 그곳에서 BrowSync를 활성화했다면 \"허용 안 함\"을 선택하고 브라우저 탭에서 추가한 다음, 설정에서 확장 프로그램을 다시 승인하세요.";
+"BrowSync extension in an unrecognized browser" = "인식되지 않은 브라우저의 BrowSync 확장 프로그램";
+"Add this browser in the Browsers tab. The extension connects after you approve it." = "브라우저 탭에서 이 브라우저를 추가하세요. 승인하면 확장 프로그램이 연결됩니다.";
+"Automatically confirm from now on" = "앞으로 자동으로 확인";
+"Turn Off Safe Mode?" = "안전 모드를 끄시겠습니까?";
+"Turn Off Safe Mode" = "안전 모드 끄기";
+"From the next sync on, bookmark changes are applied without this review. Large changes and conflicts are still held for review. You can turn Safe Mode back on under Sync Strategy." = "다음 동기화부터 북마크 변경 사항이 이 확인 없이 적용됩니다. 대규모 변경과 충돌은 계속 확인을 위해 보류됩니다. 동기화 전략에서 안전 모드를 다시 켤 수 있습니다.";
+"BrowSync: Allow a Firefox-based Browser to Connect?" = "BrowSync: Firefox 기반 브라우저의 연결을 허용하시겠습니까?";
+"BrowSync: Allow a Chromium-based Browser to Connect?" = "BrowSync: Chromium 기반 브라우저의 연결을 허용하시겠습니까?";

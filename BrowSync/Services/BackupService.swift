@@ -186,6 +186,50 @@ final class BackupService: ObservableObject {
         }
     }
 
+    /// A different extension installation (another profile) now reports as
+    /// `browser`. Its tree is unrelated to what this ID observed before, so
+    /// every difference from the old snapshots and source baselines would read
+    /// as local edits and deletions. Forget them: the browser then joins like a
+    /// new participant (reconciliation only, where absence is never deletion).
+    /// Baselines of other sources into this browser, Recently Deleted and the
+    /// user-visible backups are kept.
+    func forgetBookmarkObservations(of browser: Browser) {
+        let filename = browser.rawValue.replacingOccurrences(of: "/", with: "_")
+        let baselinePrefix = "sync_baseline_\(browser.rawValue)_to_"
+        // Recently Deleted keeps the old installation's deletions for the user;
+        // as sync evidence they must not count against the new tree.
+        var since = UserDefaults.standard.dictionary(forKey: Self.observationsSinceKey) as? [String: Double] ?? [:]
+        since[browser.rawValue] = Date().timeIntervalSince1970
+        UserDefaults.standard.set(since, forKey: Self.observationsSinceKey)
+        let files = (try? FileManager.default.contentsOfDirectory(at: backupsDir, includingPropertiesForKeys: nil)) ?? []
+        for file in files where file.pathExtension == "json" {
+            let name = file.lastPathComponent
+            if name == "snapshot_\(filename).json" || Self.isLegacySnapshotFile(name, filename: filename) ||
+                name == "snapshot_history_\(filename).json" || name.hasPrefix(baselinePrefix) {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
+        logger.info("Forgot bookmark observations of \(browser.rawValue) after an extension installation change")
+    }
+
+    private static let observationsSinceKey = "bookmarkObservationsSinceByBrowser"
+
+    /// When the current extension installation started reporting as `browserID`,
+    /// if its earlier observations were discarded. Older deletion evidence
+    /// recorded under this ID belongs to the replaced installation.
+    func bookmarkObservationsSince(_ browserID: String) -> Date? {
+        let since = UserDefaults.standard.dictionary(forKey: Self.observationsSinceKey) as? [String: Double]
+        return since?[browserID].map(Date.init(timeIntervalSince1970:))
+    }
+
+    /// `snapshot_<id>_<timestamp>.json` from older builds. Matching on the bare
+    /// prefix would also catch a sibling ID such as `<id>.beta`.
+    private static func isLegacySnapshotFile(_ name: String, filename: String) -> Bool {
+        let prefix = "snapshot_\(filename)_"
+        guard name.hasPrefix(prefix), name.hasSuffix(".json") else { return false }
+        return name.dropFirst(prefix.count).first?.isNumber == true
+    }
+
     func getSyncBaseline(source: Browser, target: Browser) -> [Bookmark]? {
         let fileURL = backupsDir.appendingPathComponent("sync_baseline_\(source.rawValue)_to_\(target.rawValue).json")
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
@@ -211,9 +255,8 @@ final class BackupService: ObservableObject {
             }
 
             // Backward-compatibility fallback for older builds that may have multiple files.
-            let prefix = "snapshot_\(filename)"
             let files = try FileManager.default.contentsOfDirectory(at: backupsDir, includingPropertiesForKeys: [.creationDateKey])
-            let matchingFiles = files.filter { $0.lastPathComponent.hasPrefix(prefix) && $0.pathExtension == "json" }
+            let matchingFiles = files.filter { Self.isLegacySnapshotFile($0.lastPathComponent, filename: filename) }
             
             let sorted = matchingFiles.sorted { u1, u2 in
                 let d1 = (try? u1.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date.distantPast

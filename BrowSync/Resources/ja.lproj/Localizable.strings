@@ -652,3 +652,17 @@
 "Before turning on bookmark sync for the first time, back up every browser's bookmarks. Back Up Now saves each participating browser's synced folder; you can also export bookmarks with each browser's own tools." = "初めてブックマーク同期をオンにする前に、各ブラウザのブックマークをバックアップしてください。「今すぐバックアップ」は参加している各ブラウザの同期フォルダを保存します。各ブラウザの機能でブックマークを書き出すこともできます。";
 "Keep All" = "すべて保持";
 "Choose the version every browser should keep. The other versions are replaced in every browser." = "すべてのブラウザに残すバージョンを選んでください。他のバージョンはすべてのブラウザで置き換えられます。";
+
+"Choose the browser where you enabled BrowSync" = "BrowSync を有効にしたブラウザを選択";
+"BrowSync extension in a Firefox-based browser" = "Firefox ベースのブラウザの BrowSync 拡張機能";
+"BrowSync extension in a Chromium-based browser" = "Chromium ベースのブラウザの BrowSync 拡張機能";
+"If this browser already has another paired BrowSync installation (another profile, or the extension before it was reinstalled), allowing this one replaces it. The other installation stops syncing until you reauthorize it in Settings." = "このブラウザに別の BrowSync インストール（別のプロファイル、または再インストール前の拡張機能）がすでにペアリングされている場合、許可するとそれが置き換えられます。置き換えられたインストールは、設定で再認証するまで同期を停止します。";
+"%@ is also running, but BrowSync does not know it as a browser. If you enabled BrowSync there, choose Don't Allow, add it in the Browsers tab, then reauthorize the extension in Settings." = "%@ も起動していますが、BrowSync はブラウザとして認識していません。そちらで BrowSync を有効にした場合は「許可しない」を選び、「ブラウザ」タブで追加してから、設定で拡張機能を再認証してください。";
+"BrowSync extension in an unrecognized browser" = "認識されていないブラウザの BrowSync 拡張機能";
+"Add this browser in the Browsers tab. The extension connects after you approve it." = "「ブラウザ」タブでこのブラウザを追加してください。許可すると拡張機能が接続されます。";
+"Automatically confirm from now on" = "今後は自動的に確定する";
+"Turn Off Safe Mode?" = "セーフモードをオフにしますか？";
+"Turn Off Safe Mode" = "セーフモードをオフにする";
+"From the next sync on, bookmark changes are applied without this review. Large changes and conflicts are still held for review. You can turn Safe Mode back on under Sync Strategy." = "次回の同期から、ブックマークの変更はこの確認なしで適用されます。大規模な変更や競合は引き続き確認のために保留されます。セーフモードは「同期戦略」で再びオンにできます。";
+"BrowSync: Allow a Firefox-based Browser to Connect?" = "BrowSync：Firefox ベースのブラウザの接続を許可しますか？";
+"BrowSync: Allow a Chromium-based Browser to Connect?" = "BrowSync：Chromium ベースのブラウザの接続を許可しますか？";

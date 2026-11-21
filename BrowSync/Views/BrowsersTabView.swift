@@ -191,7 +191,7 @@ struct BrowserRow: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(!daemon.isRunning)
-                } else if !info.isConnected, info.browser == .firefox,
+                } else if !info.isConnected, info.browser.usesFirefoxExtension,
                           let deniedOrigin = daemon.deniedExtensionOrigins.first(where: { $0.hasPrefix("moz-extension://") }) {
                     HStack(spacing: 6) {
                         Image(systemName: "xmark.circle.fill")
@@ -237,7 +237,7 @@ struct BrowserRow: View {
                             .padding(.leading, 8)
                         } else {
                             Button(String(localized: "Install Extension", bundle: langBundle.bundle)) {
-                                let storeURLString = info.browser == .firefox
+                                let storeURLString = info.browser.usesFirefoxExtension
                                     ? AppConfig.firefoxExtensionAMOURL
                                     : AppConfig.chromiumExtensionWebStoreURL
                                 if let url = URL(string: storeURLString) {

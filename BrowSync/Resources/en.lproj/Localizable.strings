@@ -684,3 +684,17 @@
 "Before turning on bookmark sync for the first time, back up every browser's bookmarks. Back Up Now saves each participating browser's synced folder; you can also export bookmarks with each browser's own tools." = "Before turning on bookmark sync for the first time, back up every browser's bookmarks. Back Up Now saves each participating browser's synced folder; you can also export bookmarks with each browser's own tools.";
 "Keep All" = "Keep All";
 "Choose the version every browser should keep. The other versions are replaced in every browser." = "Choose the version every browser should keep. The other versions are replaced in every browser.";
+
+"Choose the browser where you enabled BrowSync" = "Choose the browser where you enabled BrowSync";
+"BrowSync extension in a Firefox-based browser" = "BrowSync extension in a Firefox-based browser";
+"BrowSync extension in a Chromium-based browser" = "BrowSync extension in a Chromium-based browser";
+"If this browser already has another paired BrowSync installation (another profile, or the extension before it was reinstalled), allowing this one replaces it. The other installation stops syncing until you reauthorize it in Settings." = "If this browser already has another paired BrowSync installation (another profile, or the extension before it was reinstalled), allowing this one replaces it. The other installation stops syncing until you reauthorize it in Settings.";
+"%@ is also running, but BrowSync does not know it as a browser. If you enabled BrowSync there, choose Don't Allow, add it in the Browsers tab, then reauthorize the extension in Settings." = "%@ is also running, but BrowSync does not know it as a browser. If you enabled BrowSync there, choose Don't Allow, add it in the Browsers tab, then reauthorize the extension in Settings.";
+"BrowSync extension in an unrecognized browser" = "BrowSync extension in an unrecognized browser";
+"Add this browser in the Browsers tab. The extension connects after you approve it." = "Add this browser in the Browsers tab. The extension connects after you approve it.";
+"Automatically confirm from now on" = "Automatically confirm from now on";
+"Turn Off Safe Mode?" = "Turn Off Safe Mode?";
+"Turn Off Safe Mode" = "Turn Off Safe Mode";
+"From the next sync on, bookmark changes are applied without this review. Large changes and conflicts are still held for review. You can turn Safe Mode back on under Sync Strategy." = "From the next sync on, bookmark changes are applied without this review. Large changes and conflicts are still held for review. You can turn Safe Mode back on under Sync Strategy.";
+"BrowSync: Allow a Firefox-based Browser to Connect?" = "BrowSync: Allow a Firefox-based Browser to Connect?";
+"BrowSync: Allow a Chromium-based Browser to Connect?" = "BrowSync: Allow a Chromium-based Browser to Connect?";

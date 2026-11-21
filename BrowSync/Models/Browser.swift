@@ -15,7 +15,8 @@ struct Browser: Codable, Identifiable, Hashable {
     var isCustom: Bool
 
     var appURL: URL? {
-        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
+        ([bundleIdentifier] + Self.bundleAliases[id, default: []]).lazy
+            .compactMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }.first
     }
 
     /// Installed on this Mac (Safari always is).
@@ -28,6 +29,7 @@ struct Browser: Codable, Identifiable, Hashable {
     static let edge = Browser(id: "edge", displayName: "Edge", bundleIdentifier: "com.microsoft.edgemac", sfSymbol: "e.circle", extensionBasePath: "Microsoft Edge", isCustom: false)
     static let brave = Browser(id: "brave", displayName: "Brave", bundleIdentifier: "com.brave.Browser", sfSymbol: "b.circle", extensionBasePath: "BraveSoftware/Brave-Browser", isCustom: false)
     static let firefox = Browser(id: "firefox", displayName: "Firefox", bundleIdentifier: "org.mozilla.firefox", sfSymbol: "f.circle", extensionBasePath: nil, isCustom: false)
+    static let libreWolf = Browser(id: "librewolf", displayName: "LibreWolf", bundleIdentifier: "net.librewolf.librewolf", sfSymbol: "l.circle", extensionBasePath: nil, isCustom: false)
     static let vivaldi = Browser(id: "vivaldi", displayName: "Vivaldi", bundleIdentifier: "com.vivaldi.Vivaldi", sfSymbol: "v.circle", extensionBasePath: "Vivaldi", isCustom: false)
     static let opera = Browser(id: "opera", displayName: "Opera", bundleIdentifier: "com.operasoftware.Opera", sfSymbol: "o.circle", extensionBasePath: "com.operasoftware.Opera", isCustom: false)
     static let yandex = Browser(id: "yandex", displayName: "Yandex", bundleIdentifier: "ru.yandex.desktop.yandex-browser", sfSymbol: "y.circle", extensionBasePath: "Yandex/YandexBrowser", isCustom: false)
@@ -35,10 +37,220 @@ struct Browser: Codable, Identifiable, Hashable {
     static let helium = Browser(id: "helium", displayName: "Helium", bundleIdentifier: "net.imput.helium", sfSymbol: "h.circle", extensionBasePath: "net.imput.helium", isCustom: false)
     static let browseros = Browser(id: "browseros", displayName: "BrowserOS", bundleIdentifier: "com.browseros.browser", sfSymbol: "b.circle", extensionBasePath: "BrowserOS", isCustom: false)
 
-    static let standardBrowsers: [Browser] = [
-        .safari, .chrome, .arc, .edge, .brave, .firefox, .vivaldi, .opera, .yandex, .orion, .helium, .browseros
+    private static let builtInBrowsers: [Browser] = [
+        .safari, .chrome, .arc, .edge, .brave, .firefox, .libreWolf, .vivaldi, .opera, .yandex, .orion, .helium, .browseros
     ]
     
+    // Keep the shipped IDs readable even when a browser is uninstalled:
+    // settings, approvals and archived bookmarks refer to these IDs.
+    private static let discoveryLock = NSLock()
+    private static var discovered = scanInstalledBrowsers()
+    private static var lastDiscovery = Date()
+    /// Bundle IDs the user already added as custom browsers. Discovery must not
+    /// give those apps a second ID, or their existing settings would be orphaned.
+    private static var reservedBundleIDs: Set<String> = []
+
+    private static func scanInstalledBrowsers() -> (browsers: [Browser], gecko: Set<String>) {
+        guard let url = URL(string: "https://example.com") else { return ([], []) }
+        return discoverBrowsers(at: NSWorkspace.shared.urlsForApplications(toOpen: url))
+    }
+
+    /// Rescans installed apps. `minimumInterval` throttles repeated scans
+    /// (an unpaired extension retries registration every few seconds).
+    static func refreshDiscovery(minimumInterval: TimeInterval = 0) {
+        discoveryLock.lock()
+        let isRecent = Date().timeIntervalSince(lastDiscovery) < minimumInterval
+        discoveryLock.unlock()
+        guard !isRecent else { return }
+        let result = scanInstalledBrowsers()
+        discoveryLock.lock()
+        discovered = result
+        lastDiscovery = Date()
+        discoveryLock.unlock()
+    }
+
+    static func reserveCustomBrowsers(_ custom: [Browser]) {
+        discoveryLock.lock()
+        reservedBundleIDs = Set(custom.map(\.bundleIdentifier))
+        discoveryLock.unlock()
+    }
+
+    /// Other bundle IDs shipped for the same built-in browser. Firefox channels
+    /// are listed explicitly: Gecko forks built without a distribution ID
+    /// (older LibreWolf releases) also use `org.mozilla.<name>`.
+    private static let bundleAliases: [String: [String]] = [
+        "firefox": ["org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly"],
+        "librewolf": ["org.mozilla.librewolf"],
+    ]
+
+    private var ownedBundleIDs: [String] {
+        ([bundleIdentifier] + Self.bundleAliases[id, default: []]).map { $0.lowercased() }
+    }
+
+    /// True when an app with `bundleID` is this browser: the exact app, a known
+    /// alias, or a channel of it (Chrome Canary, Edge Beta…), which has always
+    /// shared the stable channel's identity and settings.
+    func ownsBundleID(_ bundleID: String) -> Bool {
+        matchLength(bundleID) != nil
+    }
+
+    /// Length of the owned ID that matched; an exact match ranks above every prefix.
+    private func matchLength(_ bundleID: String) -> Int? {
+        let candidate = bundleID.lowercased()
+        if ownedBundleIDs.contains(candidate) { return Int.max }
+        return ownedBundleIDs.filter { candidate.hasPrefix($0 + ".") }.map(\.count).max()
+    }
+
+    /// The registered browser a running app belongs to. The most specific
+    /// owner wins, so a custom "Chrome Canary" entry is not also Chrome.
+    static func owner(ofBundleID bundleID: String, in browsers: [Browser]) -> Browser? {
+        // On an equal match a user's custom entry wins over a built-in alias.
+        browsers.compactMap { browser in browser.matchLength(bundleID).map { (browser, $0) } }
+            .max { ($0.1, $0.0.isCustom ? 1 : 0) < ($1.1, $1.0.isCustom ? 1 : 0) }?.0
+    }
+
+    /// Registered browsers with a running app, in registry order.
+    static func runningBrowsers(in browsers: [Browser], runningBundleIDs: [String]) -> [Browser] {
+        let owners = Set(runningBundleIDs.compactMap { owner(ofBundleID: $0, in: browsers)?.id })
+        return browsers.filter { owners.contains($0.id) }
+    }
+
+    static func discoverBrowsers(at urls: [URL]) -> (browsers: [Browser], gecko: Set<String>) {
+        var candidates: [String: [Browser]] = [:]
+        var gecko: Set<String> = []
+        for url in urls {
+            guard let bundle = Bundle(url: url), let bundleID = bundle.bundleIdentifier else { continue }
+            let isGecko = isGeckoApp(at: url)
+            // Record the engine before the ownership skip: a custom entry may
+            // own a bundle that a built-in alias also matches.
+            if isGecko { gecko.insert(bundleID) }
+            guard !builtInBrowsers.contains(where: { $0.ownsBundleID(bundleID) }) else { continue }
+            let displayName = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+                ?? url.deletingPathExtension().lastPathComponent
+            guard isGecko || hasChromiumFramework(in: url) else { continue }
+            // A dash separates browser and instance in the existing wire format.
+            let id = bundleID.lowercased().replacingOccurrences(of: "-", with: "%2d")
+            guard !id.isEmpty, !builtInBrowsers.contains(where: { $0.id == id }) else { continue }
+            let candidate = Browser(id: id, displayName: displayName, bundleIdentifier: bundleID,
+                                    sfSymbol: "globe", extensionBasePath: nil, isCustom: false)
+            if candidates[id]?.contains(where: { $0.bundleIdentifier == bundleID }) != true {
+                candidates[id, default: []].append(candidate)
+            }
+        }
+        let unique = candidates.values.compactMap { $0.count == 1 ? $0.first : nil }
+        return (unique.sorted { $0.id < $1.id }, gecko)
+    }
+
+    private static func isGeckoApp(at url: URL) -> Bool {
+        FileManager.default.fileExists(atPath: url.appendingPathComponent("Contents/MacOS/XUL").path)
+    }
+
+    private static func hasChromiumFramework(in url: URL) -> Bool {
+        let frameworks = url.appendingPathComponent("Contents/Frameworks")
+        guard let entries = try? FileManager.default.contentsOfDirectory(at: frameworks, includingPropertiesForKeys: nil) else { return false }
+        // Electron and CEF apps embed the same Chromium resources but cannot
+        // run the extension.
+        let embedders: Set<String> = ["Electron Framework.framework", "Chromium Embedded Framework.framework"]
+        if entries.contains(where: { embedders.contains($0.lastPathComponent) }) { return false }
+        return entries.contains { framework in
+            framework.pathExtension == "framework" &&
+                FileManager.default.fileExists(atPath: framework.appendingPathComponent("Resources/resources.pak").path) &&
+                FileManager.default.fileExists(atPath: framework.appendingPathComponent("Resources/icudtl.dat").path)
+        }
+    }
+
+    /// Whether the app at `url` can run the Gecko (`gecko`) or the Chromium extension.
+    static func isBrowserApp(at url: URL, gecko: Bool) -> Bool {
+        gecko ? isGeckoApp(at: url) : hasChromiumFramework(in: url)
+    }
+
+    /// Names of running apps with the same engine that no registered browser
+    /// owns. While one runs, a generic "chrome"/"firefox" registration may come
+    /// from it, so the only registered candidate cannot be inferred.
+    static func unregisteredRunningBrowserApps(gecko: Bool, registry: [Browser],
+                                               running: [(bundleID: String, url: URL, name: String)]) -> [String] {
+        running.filter { app in
+            owner(ofBundleID: app.bundleID, in: registry) == nil && declaresWebURLs(at: app.url) &&
+                isBrowserApp(at: app.url, gecko: gecko)
+        }.map(\.name).sorted()
+    }
+
+    /// Browsers register for http/https; XUL or Chromium apps that do not
+    /// (Thunderbird, Zotero, NW.js tools) cannot be where a user browses.
+    private static func declaresWebURLs(at url: URL) -> Bool {
+        let types = Bundle(url: url)?.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
+        return types.contains { type in
+            ((type["CFBundleURLSchemes"] as? [String]) ?? []).contains { ["http", "https"].contains($0.lowercased()) }
+        }
+    }
+
+    static var standardBrowsers: [Browser] {
+        discoveryLock.lock()
+        defer { discoveryLock.unlock() }
+        return builtInBrowsers + discovered.browsers.filter { !reservedBundleIDs.contains($0.bundleIdentifier) }
+    }
+
+    static func registeredBrowsers(including custom: [Browser]) -> [Browser] {
+        // A custom browser keeps its own ID even when discovery also finds it.
+        let customBundles = Set(custom.map(\.bundleIdentifier))
+        let standard = standardBrowsers.filter { $0.isBuiltIn || !customBundles.contains($0.bundleIdentifier) }
+        let bundles = Set(standard.map(\.bundleIdentifier))
+        return standard + custom.filter { !bundles.contains($0.bundleIdentifier) }
+    }
+
+    var isBuiltIn: Bool { Self.builtInBrowsers.contains { $0.id == id } }
+
+    enum PairingDecision: Equatable {
+        case host(Browser)
+        case choose
+        case unavailable
+    }
+
+    /// - Parameter trustsReportedID: whether `reportedID` names the product
+    ///   reliably. Gecko reports its product name; Chromium's ID comes from
+    ///   user-agent tokens that sibling apps share (Opera and Opera GX), so it
+    ///   may only veto a candidate, never select one among several.
+    static func pairingDecision(candidates: [Browser], reportedID: String, savedBundleID: String?,
+                                trustsReportedID: Bool) -> PairingDecision {
+        if let savedBundleID {
+            guard let saved = candidates.first(where: { $0.bundleIdentifier == savedBundleID }) else { return .unavailable }
+            return .host(saved)
+        }
+        guard !candidates.isEmpty else { return .unavailable }
+        // "safari" is the Chromium worker's fallback for a WebKit user agent
+        // (Orion without its token); Safari itself never runs this extension.
+        let isGeneric = ["firefox", "chrome", "safari"].contains(reportedID)
+        if candidates.count == 1 {
+            let candidate = candidates[0]
+            // A specific product that is not this candidate means the real host
+            // is missing from the registry or not yet listed as running. Never
+            // bind it, and never ask "Allow <candidate>?" for another app; this
+            // is not persisted, so a later registration can still pair.
+            // Gecko names its product; Chromium user-agent tokens are shared
+            // by sibling apps (Opera GX reports Opera), so they only contradict
+            // a built-in candidate.
+            let contradicts = !isGeneric && reportedID != candidate.id &&
+                (candidate.isBuiltIn || (trustsReportedID && builtInBrowsers.contains { $0.id == reportedID }))
+            return contradicts ? .unavailable : .host(candidate)
+        }
+        if trustsReportedID, !isGeneric {
+            let matches = candidates.filter { $0.id == reportedID }
+            if matches.count == 1 { return .host(matches[0]) }
+        }
+        return .choose
+    }
+
+    var usesFirefoxExtension: Bool {
+        if self == .firefox || self == .libreWolf { return true }
+        Self.discoveryLock.lock()
+        let discoveredGecko = Self.discovered.gecko.contains(bundleIdentifier)
+        Self.discoveryLock.unlock()
+        if discoveredGecko { return true }
+        // A custom entry for an app that is not an https handler is never
+        // scanned; decide from its bundle rather than assume Chromium.
+        return isCustom && appURL.map(Self.isGeckoApp) == true
+    }
+
     // Support legacy allCases for compatibility if it's used heavily without our knowledge.
     static var allCases: [Browser] { standardBrowsers }
     
@@ -80,7 +292,15 @@ struct Browser: Codable, Identifiable, Hashable {
         
         // Otherwise decode as a dictionary
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.id = try container.decode(String.self, forKey: .id)
+        let decodedID = try container.decode(String.self, forKey: .id)
+        let decodedCustom = try container.decodeIfPresent(Bool.self, forKey: .isCustom) ?? false
+        // A discovered browser's name can change with an app update; equality
+        // compares every field, so settings must resolve to the live entry.
+        if !decodedCustom, let standard = Browser.standardBrowsers.first(where: { $0.id == decodedID }) {
+            self = standard
+            return
+        }
+        self.id = decodedID
         self.displayName = try container.decode(String.self, forKey: .displayName)
         self.bundleIdentifier = try container.decode(String.self, forKey: .bundleIdentifier)
         self.sfSymbol = try container.decode(String.self, forKey: .sfSymbol)
@@ -89,7 +309,7 @@ struct Browser: Codable, Identifiable, Hashable {
     }
 
     func encode(to encoder: Encoder) throws {
-        if isCustom {
+        if isCustom || !isBuiltIn {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(id, forKey: .id)
             try container.encode(displayName, forKey: .displayName)

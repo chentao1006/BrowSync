@@ -650,3 +650,17 @@
 "Before turning on bookmark sync for the first time, back up every browser's bookmarks. Back Up Now saves each participating browser's synced folder; you can also export bookmarks with each browser's own tools." = "Sichere vor dem ersten Aktivieren der Lesezeichen-Synchronisierung die Lesezeichen aller Browser. „Jetzt sichern“ speichert den synchronisierten Ordner jedes teilnehmenden Browsers; du kannst Lesezeichen auch mit den Werkzeugen des jeweiligen Browsers exportieren.";
 "Keep All" = "Alle behalten";
 "Choose the version every browser should keep. The other versions are replaced in every browser." = "Wähle die Version, die jeder Browser behalten soll. Die anderen Versionen werden in allen Browsern ersetzt.";
+
+"Choose the browser where you enabled BrowSync" = "Wähle den Browser, in dem du BrowSync aktiviert hast";
+"BrowSync extension in a Firefox-based browser" = "BrowSync-Erweiterung in einem Firefox-basierten Browser";
+"BrowSync extension in a Chromium-based browser" = "BrowSync-Erweiterung in einem Chromium-basierten Browser";
+"If this browser already has another paired BrowSync installation (another profile, or the extension before it was reinstalled), allowing this one replaces it. The other installation stops syncing until you reauthorize it in Settings." = "Wenn dieser Browser bereits mit einer anderen BrowSync-Installation gekoppelt ist (einem anderen Profil oder der Erweiterung vor einer Neuinstallation), wird diese durch das Erlauben ersetzt. Die andere Installation synchronisiert nicht mehr, bis du sie in den Einstellungen erneut autorisierst.";
+"%@ is also running, but BrowSync does not know it as a browser. If you enabled BrowSync there, choose Don't Allow, add it in the Browsers tab, then reauthorize the extension in Settings." = "%@ läuft ebenfalls, ist BrowSync aber nicht als Browser bekannt. Wenn du BrowSync dort aktiviert hast, wähle „Nicht erlauben“, füge den Browser im Tab „Browser“ hinzu und autorisiere die Erweiterung dann in den Einstellungen erneut.";
+"BrowSync extension in an unrecognized browser" = "BrowSync-Erweiterung in einem nicht erkannten Browser";
+"Add this browser in the Browsers tab. The extension connects after you approve it." = "Füge diesen Browser im Tab „Browser“ hinzu. Die Erweiterung verbindet sich, sobald du sie erlaubst.";
+"Automatically confirm from now on" = "Künftig automatisch bestätigen";
+"Turn Off Safe Mode?" = "Sicheren Modus deaktivieren?";
+"Turn Off Safe Mode" = "Sicheren Modus deaktivieren";
+"From the next sync on, bookmark changes are applied without this review. Large changes and conflicts are still held for review. You can turn Safe Mode back on under Sync Strategy." = "Ab der nächsten Synchronisierung werden Lesezeichenänderungen ohne diese Prüfung übernommen. Umfangreiche Änderungen und Konflikte werden weiterhin zur Prüfung zurückgehalten. Du kannst den sicheren Modus unter „Sync-Strategie“ wieder aktivieren.";
+"BrowSync: Allow a Firefox-based Browser to Connect?" = "BrowSync: Einem Firefox-basierten Browser die Verbindung erlauben?";
+"BrowSync: Allow a Chromium-based Browser to Connect?" = "BrowSync: Einem Chromium-basierten Browser die Verbindung erlauben?";

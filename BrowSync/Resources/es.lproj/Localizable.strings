@@ -650,3 +650,17 @@
 "Before turning on bookmark sync for the first time, back up every browser's bookmarks. Back Up Now saves each participating browser's synced folder; you can also export bookmarks with each browser's own tools." = "Antes de activar por primera vez la sincronización de marcadores, haz una copia de los marcadores de cada navegador. «Hacer copia ahora» guarda la carpeta sincronizada de cada navegador participante; también puedes exportar los marcadores con las herramientas de cada navegador.";
 "Keep All" = "Conservar todas";
 "Choose the version every browser should keep. The other versions are replaced in every browser." = "Elige la versión que debe conservar cada navegador. Las demás versiones se sustituyen en todos los navegadores.";
+
+"Choose the browser where you enabled BrowSync" = "Elige el navegador en el que activaste BrowSync";
+"BrowSync extension in a Firefox-based browser" = "Extensión de BrowSync en un navegador basado en Firefox";
+"BrowSync extension in a Chromium-based browser" = "Extensión de BrowSync en un navegador basado en Chromium";
+"If this browser already has another paired BrowSync installation (another profile, or the extension before it was reinstalled), allowing this one replaces it. The other installation stops syncing until you reauthorize it in Settings." = "Si este navegador ya tiene otra instalación de BrowSync vinculada (otro perfil o la extensión antes de reinstalarla), permitir esta la sustituye. La otra instalación deja de sincronizar hasta que vuelvas a autorizarla en Ajustes.";
+"%@ is also running, but BrowSync does not know it as a browser. If you enabled BrowSync there, choose Don't Allow, add it in the Browsers tab, then reauthorize the extension in Settings." = "%@ también se está ejecutando, pero BrowSync no lo reconoce como navegador. Si activaste BrowSync allí, elige «No permitir», añádelo en la pestaña Navegadores y vuelve a autorizar la extensión en Ajustes.";
+"BrowSync extension in an unrecognized browser" = "Extensión de BrowSync en un navegador no reconocido";
+"Add this browser in the Browsers tab. The extension connects after you approve it." = "Añade este navegador en la pestaña Navegadores. La extensión se conectará cuando la autorices.";
+"Automatically confirm from now on" = "Confirmar automáticamente a partir de ahora";
+"Turn Off Safe Mode?" = "¿Desactivar el modo seguro?";
+"Turn Off Safe Mode" = "Desactivar el modo seguro";
+"From the next sync on, bookmark changes are applied without this review. Large changes and conflicts are still held for review. You can turn Safe Mode back on under Sync Strategy." = "A partir de la próxima sincronización, los cambios de marcadores se aplicarán sin esta revisión. Los cambios grandes y los conflictos se seguirán reteniendo para revisión. Puedes volver a activar el modo seguro en Estrategia de sincronización.";
+"BrowSync: Allow a Firefox-based Browser to Connect?" = "BrowSync: ¿Permitir que un navegador basado en Firefox se conecte?";
+"BrowSync: Allow a Chromium-based Browser to Connect?" = "BrowSync: ¿Permitir que un navegador basado en Chromium se conecte?";

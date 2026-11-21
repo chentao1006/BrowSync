@@ -8,6 +8,8 @@ module_cache="${TMPDIR:-/tmp}/browsync-bookmark-root-mapping-module-cache"
 swiftc \
   "$repo_root/BrowSync/Models/Browser.swift" \
   "$repo_root/BrowSync/Models/SyncModels.swift" \
+  "$repo_root/BrowSync/Core/DaemonConnectionPolicy.swift" \
+  "$repo_root/BrowSync/Models/WSMessage.swift" \
   "$repo_root/BrowSyncTests/BookmarkRootMappingTests.swift" \
   -module-cache-path "$module_cache" \
   -o "$test_binary"

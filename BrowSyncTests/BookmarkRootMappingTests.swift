@@ -18,8 +18,226 @@ private func bookmark(_ id: String, _ title: String, parent: String?, folder: Bo
 
 @main
 private enum BookmarkRootMappingTests {
+    static func testBrowserDiscovery() throws {
+        try expect(Browser(rawValue: "librewolf") == .libreWolf && Browser.libreWolf.usesFirefoxExtension,
+                   "LibreWolf has its own built-in identity and uses the Firefox extension")
+        let hosts: [Browser] = [.firefox, .libreWolf]
+        func decide(_ candidates: [Browser], _ reported: String, saved: String? = nil, gecko: Bool = true) -> Browser.PairingDecision {
+            Browser.pairingDecision(candidates: candidates, reportedID: reported, savedBundleID: saved, trustsReportedID: gecko)
+        }
+        try expect(decide(hosts, "firefox") == .choose,
+                   "A generic Gecko identity requires a choice when both hosts are running")
+        try expect(decide(hosts, "librewolf") == .host(.libreWolf),
+                   "An unambiguous product pairs without a picker")
+        try expect(decide(hosts, "firefox", saved: Browser.libreWolf.bundleIdentifier) == .host(.libreWolf),
+                   "Reconnect to the chosen bundle even when the product name is generic")
+        try expect(decide([.firefox], "firefox", saved: Browser.libreWolf.bundleIdentifier) == .unavailable,
+                   "An unavailable bound host must never bind to another browser")
+        try expect(decide([.firefox], "zen") == .unavailable && decide([.firefox], "librewolf") == .unavailable,
+                   "A specific product that is not the only running host is never bound or offered as that host")
+        let floorp = Browser(id: "one.ablaze.floorp", displayName: "Floorp", bundleIdentifier: "one.ablaze.floorp",
+                             sfSymbol: "globe", extensionBasePath: nil, isCustom: false)
+        try expect(decide([floorp], "floorp") == .host(floorp) && decide([floorp], "librewolf") == .unavailable,
+                   "A discovered host accepts its own product name but not another built-in's")
+        let operaGX = Browser(id: "com.operasoftware.operagx", displayName: "Opera GX", bundleIdentifier: "com.operasoftware.OperaGX",
+                              sfSymbol: "globe", extensionBasePath: nil, isCustom: false)
+        try expect(decide([.opera, operaGX], "opera", gecko: false) == .choose,
+                   "A Chromium user-agent token never selects among several running browsers")
+        try expect(decide([operaGX], "opera", gecko: false) == .host(operaGX),
+                   "A sibling app sharing a Chromium user-agent token still pairs when it is the only one running")
+        try expect(decide([.chrome], "edge", gecko: false) == .unavailable,
+                   "A Chromium user-agent token that names another built-in vetoes a built-in sole candidate")
+        try expect(decide([.orion], "safari", gecko: false) == .host(.orion),
+                   "Orion's WebKit user agent falls back to safari, which is generic for the Chromium extension")
+        try expect(decide([.arc], "chrome", gecko: false) == .host(.arc),
+                   "The generic Chrome token pairs with the only running Chromium browser")
+        let files = FileManager.default
+        let directory = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? files.removeItem(at: directory) }
+        func bundle(_ name: String, bundleID: String? = nil) throws -> URL {
+            let url = directory.appendingPathComponent(name + ".app")
+            let contents = url.appendingPathComponent("Contents")
+            for folder in ["MacOS", "Resources"] {
+                try files.createDirectory(at: contents.appendingPathComponent(folder), withIntermediateDirectories: true)
+            }
+            let plist: [String: Any] = ["CFBundleIdentifier": bundleID ?? "test." + name, "CFBundlePackageType": "APPL",
+                                        "CFBundleURLTypes": [["CFBundleURLSchemes": ["http", "https"]]]]
+            let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+            try data.write(to: contents.appendingPathComponent("Info.plist"))
+            try Data().write(to: contents.appendingPathComponent("MacOS/XUL"))
+            try Data("[App]\nName=Future Browser\n".utf8).write(to: contents.appendingPathComponent("Resources/application.ini"))
+            return url
+        }
+        let first = try bundle("First")
+        let browsers = Browser.discoverBrowsers(at: [first, first]).browsers
+        try expect(browsers.map(\.id) == ["test.first"], "Discover an unlisted Gecko product")
+        let second = try bundle("Second")
+        try expect(Browser.discoverBrowsers(at: [first, second]).browsers.map(\.id) == ["test.first", "test.second"], "Keep same-name Gecko products distinct by bundle ID")
+        let chromium = try bundle("UnlistedChromium")
+        try files.removeItem(at: chromium.appendingPathComponent("Contents/MacOS/XUL"))
+        let resources = chromium.appendingPathComponent("Contents/Frameworks/Arbitrary.framework/Resources")
+        try files.createDirectory(at: resources, withIntermediateDirectories: true)
+        for file in ["resources.pak", "icudtl.dat"] {
+            try Data().write(to: resources.appendingPathComponent(file))
+        }
+        let discovered = Browser.discoverBrowsers(at: [first, chromium, chromium])
+        try expect(discovered.browsers.map(\.id) == ["test.first", "test.unlistedchromium"],
+                   "Discover both extension families without adding a preset")
+        try expect(discovered.gecko == ["test.First"], "Select extension transport from bundle contents")
+
+        try expect(Browser.chrome.ownsBundleID("com.google.Chrome.canary") && Browser.edge.ownsBundleID("com.microsoft.edgemac.Beta"),
+                   "Release channels keep the stable browser's identity")
+        try expect(Browser.firefox.ownsBundleID("org.mozilla.firefoxdeveloperedition") && Browser.firefox.ownsBundleID("org.mozilla.nightly"),
+                   "Firefox channels keep the Firefox identity")
+        try expect(!Browser.firefox.ownsBundleID("org.mozilla.thunderbird") && !Browser.chrome.ownsBundleID("com.google.ChromeRemoteDesktop"),
+                   "Unrelated apps from the same vendor are not channels")
+        try expect(!Browser.firefox.ownsBundleID("org.mozilla.librewolf") && Browser.libreWolf.ownsBundleID("org.mozilla.librewolf"),
+                   "Older LibreWolf builds use a Mozilla-namespaced ID but are not Firefox")
+        let customCanary = Browser(id: "com.google.Chrome.canary", displayName: "Canary", bundleIdentifier: "com.google.Chrome.canary",
+                                   sfSymbol: "globe", extensionBasePath: nil, isCustom: true)
+        let registry: [Browser] = [.chrome, .firefox, .libreWolf, customCanary]
+        try expect(Browser.owner(ofBundleID: "com.google.Chrome.canary", in: registry) == customCanary &&
+                   Browser.owner(ofBundleID: "com.google.Chrome.beta", in: registry) == .chrome,
+                   "The most specific registered browser owns a running app")
+        try expect(Browser.runningBrowsers(in: registry, runningBundleIDs: ["com.google.Chrome.canary", "org.mozilla.librewolf"]) == [.libreWolf, customCanary],
+                   "Running Canary is only the custom entry and old LibreWolf is only LibreWolf")
+        let zen = try bundle("Zen", bundleID: "app.zen.browser")
+        let mailClient = try bundle("MailClient", bundleID: "org.example.mail")
+        let mailPlist = mailClient.appendingPathComponent("Contents/Info.plist")
+        try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": "org.example.mail", "CFBundlePackageType": "APPL"],
+                                           format: .xml, options: 0).write(to: mailPlist)
+        let running: [(bundleID: String, url: URL, name: String)] = [
+            ("app.zen.browser", zen, "Zen"), ("org.mozilla.librewolf", zen, "LibreWolf"), ("org.example.mail", mailClient, "Mail Client")
+        ]
+        try expect(Browser.unregisteredRunningBrowserApps(gecko: true, registry: registry, running: running) == ["Zen"] &&
+                   Browser.unregisteredRunningBrowserApps(gecko: false, registry: registry, running: running).isEmpty,
+                   "A running same-engine browser no registered entry owns blocks consent inference; a XUL app without web URLs does not")
+        let cef = try bundle("CEFApp")
+        try files.removeItem(at: cef.appendingPathComponent("Contents/MacOS/XUL"))
+        for framework in ["Chromium Embedded Framework.framework"] {
+            let resources = cef.appendingPathComponent("Contents/Frameworks/\(framework)/Resources")
+            try files.createDirectory(at: resources, withIntermediateDirectories: true)
+            for file in ["resources.pak", "icudtl.dat"] { try Data().write(to: resources.appendingPathComponent(file)) }
+        }
+        try expect(!Browser.isBrowserApp(at: cef, gecko: false), "CEF apps embed Chromium but cannot run the extension")
+        let oldLibreWolf = try bundle("OldLibreWolf", bundleID: "org.mozilla.librewolf")
+        try expect(Browser.discoverBrowsers(at: [oldLibreWolf]).gecko == ["org.mozilla.librewolf"],
+                   "The engine is recorded even for a bundle a built-in alias owns, so a custom entry for it stays Gecko")
+        let canary = try bundle("Canary", bundleID: "com.google.Chrome.canary")
+        let developerEdition = try bundle("DeveloperEdition", bundleID: "org.mozilla.firefoxdeveloperedition")
+        let electron = try bundle("Electron")
+        try files.removeItem(at: electron.appendingPathComponent("Contents/MacOS/XUL"))
+        for framework in ["Electron Framework.framework", "Other.framework"] {
+            let resources = electron.appendingPathComponent("Contents/Frameworks/\(framework)/Resources")
+            try files.createDirectory(at: resources, withIntermediateDirectories: true)
+            for file in ["resources.pak", "icudtl.dat"] {
+                try Data().write(to: resources.appendingPathComponent(file))
+            }
+        }
+        try expect(Browser.discoverBrowsers(at: [canary, developerEdition, electron]).browsers.isEmpty,
+                   "Channels of built-in browsers and Electron apps are not discovered as new browsers")
+    }
+
+    static func testLoopbackPeer() throws {
+        // Synthetic net.inet.tcp.pcblist_n: xinpgen, (xinpcb_n, xsocket_n)*, xinpgen.
+        var data: [UInt8] = []
+        func u32(_ value: UInt32) -> [UInt8] { withUnsafeBytes(of: value.littleEndian) { Array($0) } }
+        func record(kind: UInt32, length: Int, fill: (inout [UInt8]) -> Void) {
+            var bytes = u32(UInt32(length)) + u32(kind) + [UInt8](repeating: 0, count: length - 8)
+            fill(&bytes)
+            data += bytes
+        }
+        func header() { data += u32(24) + [UInt8](repeating: 0, count: 20) }
+        func socket(local: UInt16, foreign: UInt16, last: Int32, effective: Int32) {
+            record(kind: 0x010, length: 32) { bytes in
+                bytes[16] = UInt8(foreign >> 8); bytes[17] = UInt8(foreign & 0xff)
+                bytes[18] = UInt8(local >> 8); bytes[19] = UInt8(local & 0xff)
+            }
+            record(kind: 0x001, length: 104) { bytes in
+                bytes.replaceSubrange(64..<68, with: withUnsafeBytes(of: UInt32(501).littleEndian) { Array($0) })
+                bytes.replaceSubrange(68..<72, with: withUnsafeBytes(of: last.littleEndian) { Array($0) })
+                bytes.replaceSubrange(72..<76, with: withUnsafeBytes(of: effective.littleEndian) { Array($0) })
+            }
+        }
+        header()
+        socket(local: 62333, foreign: 0, last: 900, effective: 0)          // listener
+        socket(local: 62333, foreign: 50001, last: 900, effective: 0)      // our accepted end
+        socket(local: 50001, foreign: 62333, last: 4242, effective: 0)     // Chrome's network service
+        socket(local: 62333, foreign: 50002, last: 900, effective: 0)
+        socket(local: 50002, foreign: 62333, last: 777, effective: 555)    // WebKit networking for an app
+        header()
+        let records = LoopbackPeer.records(fromPCBList: data)
+        try expect(records.count == 5, "Every socket of the TCP table is parsed")
+        func peer(_ port: UInt16, pid: Int32 = 900, uid: UInt32 = 501) -> LoopbackPeer.SocketRecord? {
+            LoopbackPeer.peer(in: records, clientPort: port, serverPort: 62333, serverPID: pid, serverUID: uid)
+        }
+        try expect(peer(50001)?.lastPID == 4242, "The client end of an accepted connection names its process")
+        try expect(peer(50001, pid: 901) == nil && peer(50001, uid: 0) == nil,
+                   "Without our own end carrying our pid and uid the layout is not trusted")
+        try expect(peer(50009) == nil, "An unknown connection has no peer")
+        // Our end of a just-accepted connection may not be listed yet.
+        data.removeAll()
+        header()
+        socket(local: 62333, foreign: 0, last: 900, effective: 0)
+        socket(local: 50003, foreign: 62333, last: 4242, effective: 0)
+        header()
+        let early = LoopbackPeer.records(fromPCBList: data)
+        try expect(LoopbackPeer.peer(in: early, clientPort: 50003, serverPort: 62333, serverPID: 900, serverUID: 501)?.lastPID == 4242,
+                   "Our listening socket proves the layout before our accepted end is listed")
+        try expect(LoopbackPeer.peer(in: early, clientPort: 50003, serverPort: 62333, serverPID: 901, serverUID: 501) == nil,
+                   "A listener of another process does not prove the layout")
+        let paths: [Int32: String] = [
+            4242: "/Applications/Google Chrome.app/Contents/Frameworks/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+            777: "/System/Library/Frameworks/WebKit.framework/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking",
+            555: "/Applications/Orion.app/Contents/MacOS/Orion",
+        ]
+        try expect(peer(50001).flatMap { LoopbackPeer.hostAppURL(of: $0) { paths[$0] } }?.path == "/Applications/Google Chrome.app",
+                   "A direct client is identified by its own, self-checked process")
+        try expect(peer(50002).flatMap { LoopbackPeer.hostAppURL(of: $0) { paths[$0] } }?.path == "/Applications/Orion.app",
+                   "Only a networking service outside any app defers to the app it works for")
+        var direct = peer(50001)!
+        direct.effectivePID = 555
+        try expect(LoopbackPeer.hostAppURL(of: direct) { paths[$0] }?.path == "/Applications/Google Chrome.app",
+                   "An app's own socket never defers to the unchecked effective-process field")
+        try expect(LoopbackPeer.records(fromPCBList: Array(data.prefix(70))).count <= 1 &&
+                   LoopbackPeer.records(fromPCBList: [1, 2, 3]).isEmpty, "Truncated input never crashes")
+        try expect(LoopbackPeer.hostAppURL(forExecutablePath: "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/1/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper")?.path
+                   == "/Applications/Google Chrome.app", "A helper belongs to its outermost app")
+        try expect(LoopbackPeer.hostAppURL(forExecutablePath: "/System/Library/Frameworks/WebKit.framework/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking") == nil,
+                   "A process outside any app has no host app")
+    }
+
+    static func testLegacyGeckoPresentation() throws {
+        // An old Gecko build in LibreWolf reads every per-browser setting
+        // under "firefox"; it must see LibreWolf's values there.
+        let settings = WSMessage(type: .settings, payload: .raw([
+            "bookmarkParticipatingBrowsers": AnyCodable(["firefox": AnyCodable(true), "librewolf": AnyCodable(false)]),
+            "stateParticipatingBrowsers": AnyCodable(["firefox": AnyCodable(false), "librewolf": AnyCodable(true)]),
+            "bookmarkSyncFolders": AnyCodable(["firefox": "/Toolbar/Work", "librewolf": "/Toolbar/Home"]),
+            "bookmarkSourceBrowser": AnyCodable("librewolf"),
+        ]))
+        let presented = settings.presentedAsFirefox(realBrowserID: "librewolf")
+        guard case .raw(let raw) = presented.payload else { throw TestFailure(description: "settings payload is raw") }
+        func map(_ key: String) -> [String: Any] { (raw[key]?.value as? [String: AnyCodable])?.mapValues(\.value) ?? [:] }
+        try expect(map("bookmarkParticipatingBrowsers")["firefox"] as? Bool == false &&
+                   map("stateParticipatingBrowsers")["firefox"] as? Bool == true,
+                   "Participation under firefox is the real host's")
+        try expect(map("bookmarkSyncFolders")["firefox"] as? String == "/Toolbar/Home",
+                   "The folder scope under firefox is the real host's")
+        try expect(raw["bookmarkSourceBrowser"]?.value as? String == "firefox",
+                   "The real host being the one-way source keeps the client read-only")
+        var plan = WSMessage(type: .sync, category: "bookmark_apply_plan")
+        plan.bookmarkSourceBrowser = "firefox"
+        let fromFirefox = plan.presentedAsFirefox(realBrowserID: "librewolf").bookmarkSourceBrowser ?? ""
+        try expect(fromFirefox.split(separator: "-").first.map(String.init) != "firefox",
+                   "Real Firefox as the source never looks like the client itself")
+    }
+
     static func main() throws {
         let tests: [(String, () throws -> Void)] = [
+            ("old Gecko builds see their real host's settings under firefox", testLegacyGeckoPresentation),
+            ("loopback peers are identified from the TCP table", testLoopbackPeer),
+            ("unlisted Gecko browsers are discovered by product metadata", testBrowserDiscovery),
             ("root-to-root keeps system identity", testRootToRootKeepsSystemIdentity),
             ("selected bar-to-root flattens contents", testSelectedBookmarksBarToRoot),
             ("root-to-folder creates portable wrappers", testRootToSpecificFolder),
@@ -778,7 +996,7 @@ private enum BookmarkRootMappingTests {
             observed: [.chrome: [folder, item], .safari: [], .edge: []],
             live: [.chrome: chromeLive, .safari: context(.safari, []), .edge: context(.edge, [])],
             history: [.safari: [record(.safari, 100, [])], .edge: [record(.edge, 100, [])]],
-            deletions: [], pendingURLs: [], now: Date(timeIntervalSince1970: 1000))
+            deletions: [], pendingURLs: [:], now: Date(timeIntervalSince1970: 1000))
         try expect(Set(result.additions.keys) == ["chrome>safari", "chrome>edge"], "missed addition was not offered to every lacking browser")
         try expect(result.additions["chrome>safari"]?.map(\.id) == ["c-f", "c-x"], "missed addition lost its folder chain")
         try expect(result.removals.isEmpty, "absence alone was treated as a deletion")
@@ -793,7 +1011,7 @@ private enum BookmarkRootMappingTests {
             live: [.chrome: chromeLive, .safari: context(.safari, [])],
             history: [.safari: [record(.safari, 100, [safariHad]), record(.safari, 200, [])],
                       .chrome: [record(.chrome, 50, [x]), record(.chrome, 300, [x])]],
-            deletions: [], pendingURLs: [], now: Date(timeIntervalSince1970: 1000))
+            deletions: [], pendingURLs: [:], now: Date(timeIntervalSince1970: 1000))
         try expect(deleted.removals["safari>chrome"]?.map(\.id) == ["c-x"] && deleted.additions.isEmpty,
                    "a newer Safari deletion was not propagated (or the stale copy was re-added)")
 
@@ -802,7 +1020,7 @@ private enum BookmarkRootMappingTests {
             live: [.chrome: chromeLive, .safari: context(.safari, [])],
             history: [.safari: [record(.safari, 100, [safariHad]), record(.safari, 200, [])],
                       .chrome: [record(.chrome, 50, []), record(.chrome, 300, [x])]],
-            deletions: [], pendingURLs: [], now: Date(timeIntervalSince1970: 1000))
+            deletions: [], pendingURLs: [:], now: Date(timeIntervalSince1970: 1000))
         try expect(readded.additions["chrome>safari"] != nil && readded.removals.isEmpty,
                    "a bookmark re-added after the deletion was deleted again")
     }
@@ -812,15 +1030,30 @@ private enum BookmarkRootMappingTests {
         let chromeLive = context(.chrome, [leaf("c-x", "X", "https://x.test/", parent: "chrome-other", browser: .chrome)])
         let pending = BookmarkReconciler.reconcile(
             observed: [.chrome: [x]], live: [.chrome: chromeLive, .edge: context(.edge, [])],
-            history: [:], deletions: [], pendingURLs: ["https://x.test/"])
+            history: [:], deletions: [], pendingURLs: [.edge: ["https://x.test/"]])
         try expect(pending.isEmpty, "a URL already handled by a pending change was reconciled again")
+
+        // A change waiting for an offline browser elsewhere (Firefox here)
+        // must not keep a newly joined browser from receiving the bookmark.
+        let unrelated = BookmarkReconciler.reconcile(
+            observed: [.chrome: [x]], live: [.chrome: chromeLive, .edge: context(.edge, [])],
+            history: [:], deletions: [], pendingURLs: [.chrome: ["https://x.test/"], .firefox: ["https://x.test/"]])
+        try expect(unrelated.additions["chrome>edge"]?.map(\.id) == ["c-x"],
+                   "a pending change between other browsers blocked a missed addition")
+        // A deletion is still never propagated while any change touches it.
+        let pendingDeletion = BookmarkReconciler.reconcile(
+            observed: [.chrome: [x], .safari: []], live: [.chrome: chromeLive, .safari: context(.safari, [])],
+            history: [.safari: [record(.safari, 100, [leaf("s-x", "X", "https://x.test/", parent: "2", browser: .safari)]), record(.safari, 200, [])],
+                      .chrome: [record(.chrome, 50, [x]), record(.chrome, 300, [x])]],
+            deletions: [], pendingURLs: [.firefox: ["https://x.test/"]], now: Date(timeIntervalSince1970: 1000))
+        try expect(pendingDeletion.isEmpty, "a deletion was propagated while a change touching it was pending")
 
         var scoped = context(.edge, [bookmark("e-scope", "Synced", parent: "edge-bar", folder: true, browser: .edge),
                                      leaf("e-x", "X", "https://x.test/", parent: "edge-other", browser: .edge)])
         scoped.scopeRootId = "e-scope"
         let outside = BookmarkReconciler.reconcile(
             observed: [.chrome: [x]], live: [.chrome: chromeLive, .edge: scoped],
-            history: [.edge: [record(.edge, 100, [x]), record(.edge, 200, [])]], deletions: [], pendingURLs: [])
+            history: [.edge: [record(.edge, 100, [x]), record(.edge, 200, [])]], deletions: [], pendingURLs: [:])
         try expect(outside.isEmpty, "a bookmark outside the selected folder was treated as missing or deleted")
     }
 

@@ -63,7 +63,9 @@ final class AnalyticsManager {
         }
 
         dailyHeartbeatTimer = Timer(fire: nextMidnight, interval: 0, repeats: false) { [weak self] _ in
-            self?.sendDailyHeartbeat()
+            Task { @MainActor [weak self] in
+                self?.sendDailyHeartbeat()
+            }
         }
         RunLoop.main.add(dailyHeartbeatTimer!, forMode: .common)
     }
