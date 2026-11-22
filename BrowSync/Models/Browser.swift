@@ -48,7 +48,7 @@ struct Browser: Codable, Identifiable, Hashable {
     private static var lastDiscovery = Date()
     /// Bundle IDs the user already added as custom browsers. Discovery must not
     /// give those apps a second ID, or their existing settings would be orphaned.
-    private static var reservedBundleIDs: Set<String> = []
+    private static var reservedBrowsers: [Browser] = []
 
     private static func scanInstalledBrowsers() -> (browsers: [Browser], gecko: Set<String>) {
         guard let url = URL(string: "https://example.com") else { return ([], []) }
@@ -71,7 +71,7 @@ struct Browser: Codable, Identifiable, Hashable {
 
     static func reserveCustomBrowsers(_ custom: [Browser]) {
         discoveryLock.lock()
-        reservedBundleIDs = Set(custom.map(\.bundleIdentifier))
+        reservedBrowsers = custom
         discoveryLock.unlock()
     }
 
@@ -187,13 +187,21 @@ struct Browser: Codable, Identifiable, Hashable {
     static var standardBrowsers: [Browser] {
         discoveryLock.lock()
         defer { discoveryLock.unlock() }
-        return builtInBrowsers + discovered.browsers.filter { !reservedBundleIDs.contains($0.bundleIdentifier) }
+        let reservedBundles = Set(reservedBrowsers.map(\.bundleIdentifier))
+        return builtInBrowsers + discovered.browsers.filter { !reservedBundles.contains($0.bundleIdentifier) }
     }
 
     static func registeredBrowsers(including custom: [Browser]) -> [Browser] {
         // A custom browser keeps its own ID even when discovery also finds it.
+        discoveryLock.lock()
+        defer { discoveryLock.unlock() }
+        return registry(custom: custom)
+    }
+
+    /// Called with discoveryLock held so discovery and custom entries form one snapshot.
+    private static func registry(custom: [Browser]) -> [Browser] {
         let customBundles = Set(custom.map(\.bundleIdentifier))
-        let standard = standardBrowsers.filter { $0.isBuiltIn || !customBundles.contains($0.bundleIdentifier) }
+        let standard = builtInBrowsers + discovered.browsers.filter { !customBundles.contains($0.bundleIdentifier) }
         let bundles = Set(standard.map(\.bundleIdentifier))
         return standard + custom.filter { !bundles.contains($0.bundleIdentifier) }
     }
@@ -251,18 +259,32 @@ struct Browser: Codable, Identifiable, Hashable {
         return isCustom && appURL.map(Self.isGeckoApp) == true
     }
 
-    // Support legacy allCases for compatibility if it's used heavily without our knowledge.
-    static var allCases: [Browser] { standardBrowsers }
-    
-    // Lookup by ID
+    static var allCases: [Browser] {
+        Self.discoveryLock.lock()
+        defer { Self.discoveryLock.unlock() }
+        return registry(custom: reservedBrowsers)
+    }
+
     init?(rawValue: String) {
-        if let standard = Browser.standardBrowsers.first(where: { $0.id == rawValue }) {
-            self = standard
-        } else {
-            return nil
+        let candidates = Self.allCases
+        if let exact = candidates.first(where: { $0.id == rawValue }) {
+            self = exact
+            return
         }
+        let matches = candidates.filter { $0.id.caseInsensitiveCompare(rawValue) == .orderedSame }
+        guard matches.count == 1 else { return nil }
+        self = matches[0]
     }
     
+    /// Archived snapshot and backup names may contain a legacy instance suffix.
+    /// Overlapping registered IDs cannot establish ownership from a prefix alone.
+    static func archivedBrowser(for identifier: String) -> Browser? {
+        if let exact = Browser(rawValue: identifier) { return exact }
+        let key = identifier.lowercased()
+        let matches = allCases.filter { key.hasPrefix($0.id.lowercased() + "-") }
+        return matches.count == 1 ? matches[0] : nil
+    }
+
     var rawValue: String { id }
 
     // MARK: Codable Support
@@ -284,10 +306,11 @@ struct Browser: Codable, Identifiable, Hashable {
         // Try decoding as a string first (backward compatibility for standard browsers)
         if let container = try? decoder.singleValueContainer(),
            let stringValue = try? container.decode(String.self) {
-            if let standard = Browser.standardBrowsers.first(where: { $0.id == stringValue }) {
-                self = standard
-                return
+            guard let browser = Browser(rawValue: stringValue) else {
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown browser ID")
             }
+            self = browser
+            return
         }
         
         // Otherwise decode as a dictionary

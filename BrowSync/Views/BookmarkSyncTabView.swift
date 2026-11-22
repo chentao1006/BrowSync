@@ -916,7 +916,7 @@ struct RecentBookmarkBackupsWindow: View {
             ? String(rawSource.dropLast("-main".count))
             : rawSource
 
-        if let browser = Browser(rawValue: sourceIdentifier.components(separatedBy: "-").first ?? sourceIdentifier) {
+        if let browser = Browser.archivedBrowser(for: sourceIdentifier) {
             let appURL = appState.browserInfos.first(where: { $0.browser == browser })?.appURL ?? browser.appURL
             return BackupSourcePresentation(
                 displayName: appDisplayName(at: appURL) ?? browser.displayName,

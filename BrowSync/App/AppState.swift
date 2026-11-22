@@ -601,8 +601,7 @@ extension AppState: DaemonServerDelegate {
 
     nonisolated func daemonServer(_ server: DaemonServer, didReceiveSettings message: WSMessage, from clientId: String) {
         Task { @MainActor in
-            guard let browserId = clientId.components(separatedBy: "-").first,
-                  let browser = Browser(rawValue: browserId),
+            guard let browser = server.connectedClients.first(where: { $0.id == clientId })?.browser,
                   case .raw(let raw) = message.payload else { return }
             
             var changed = false

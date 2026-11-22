@@ -575,6 +575,10 @@ struct SyncSettings: Codable, Equatable {
     init() {}
 
     init(from decoder: Decoder) throws {
+        try self.init(from: decoder, migrationBrowsers: Browser.allCases)
+    }
+
+    init(from decoder: Decoder, migrationBrowsers: [Browser]) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         conflictStrategy = try container.decodeIfPresent(ConflictStrategy.self, forKey: .conflictStrategy) ?? .primaryWins
         bookmarkSyncStrategy = try container.decodeIfPresent(BookmarkSyncStrategy.self, forKey: .bookmarkSyncStrategy) ?? .twoWayMerge
@@ -582,7 +586,7 @@ struct SyncSettings: Codable, Equatable {
         bookmarkSyncFolder = try container.decodeIfPresent(String.self, forKey: .bookmarkSyncFolder)
         bookmarkSyncFolders = try container.decodeIfPresent([String: String].self, forKey: .bookmarkSyncFolders) ?? [:]
         if bookmarkSyncFolders.isEmpty, let bookmarkSyncFolder {
-            for browser in Browser.allCases {
+            for browser in migrationBrowsers {
                 bookmarkSyncFolders[browser.rawValue] = bookmarkSyncFolder
             }
         }
@@ -1626,6 +1630,11 @@ enum BookmarkAggregatePlanner {
 /// change that was cancelled, unchecked or failed is still detected by the
 /// next sync instead of disappearing with the next observation.
 enum BookmarkBaseline {
+    /// A new one-way pair has no verified destination content yet.
+    static func initial(strategy: BookmarkSyncStrategy, previous: [Bookmark]?, current: [Bookmark]) -> [Bookmark] {
+        strategy == .oneWay ? [] : previous ?? current
+    }
+
     /// The new baseline after a sync: `observed`, except that every change in
     /// `unhandled` is reverted so it is detected again next time.
     static func advanced(observed: [Bookmark], reverting unhandled: [BookmarkSnapshotChange]) -> [Bookmark] {

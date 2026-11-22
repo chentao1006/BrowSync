@@ -477,6 +477,15 @@ struct SettingsBundle: Codable {
     var sync: SyncSettings
     var router: RouterSettings?
 }
+extension SettingsBundle {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        general = try container.decode(GeneralSettings.self, forKey: .general)
+        let browsers = Browser.registeredBrowsers(including: general.customBrowsers)
+        sync = try SyncSettings(from: container.superDecoder(forKey: .sync), migrationBrowsers: browsers)
+        router = try container.decodeIfPresent(RouterSettings.self, forKey: .router)
+    }
+}
 // ICloudSyncManager.swift
 // BrowSync — iCloud Synchronization
 

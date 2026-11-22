@@ -58,7 +58,7 @@ struct DeletedBookmark: Identifiable, Codable, Equatable {
     }
 
     static func normalizedBrowserId(_ value: String) -> String {
-        value.components(separatedBy: "-").first?.lowercased() ?? value.lowercased()
+        Browser.archivedBrowser(for: value)?.rawValue ?? value
     }
 
     var browsers: Set<Browser> {

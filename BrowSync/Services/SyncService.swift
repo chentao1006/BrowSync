@@ -272,7 +272,7 @@ final class SyncService: ObservableObject {
             return String(localized: "Backup", bundle: LanguageBundle(language: AppState.shared.settingsService.general.language).bundle)
         }
         let id = reviewTarget(clientId)
-        return Browser(rawValue: id.components(separatedBy: "-").first ?? id)?.displayName ?? id
+        return Browser.archivedBrowser(for: id)?.displayName ?? id
     }
 
     /// The browser instance a review key refers to.
@@ -510,7 +510,7 @@ final class SyncService: ObservableObject {
     /// Browser workers report create/update/move activity immediately. Keep
     /// the restartable quiet-period timer in the long-lived native app.
     private func handleIncomingBookmarkChangeSignal(clientId: String) {
-        let browserId = clientId.components(separatedBy: "-").first ?? clientId
+        let browserId = browserIdForClient(clientId)
         guard let browser = Browser(rawValue: browserId),
               settings.bookmarkParticipatingBrowsers.contains(browser),
               settings.bookmarkSyncStrategy != .oneWay || settings.bookmarkSourceBrowser == browser else {
@@ -1589,9 +1589,14 @@ final class SyncService: ObservableObject {
         !isSafariPushDeferred(to: clientId)
     }
 
+    private func browserIdForClient(_ clientId: String) -> String {
+        daemon?.connectedClients.first(where: { $0.id == clientId })?.browser.rawValue
+            ?? Browser(rawValue: clientId)?.rawValue ?? clientId
+    }
+
     private func requestFreshBookmarkSnapshot(for clientId: String) {
         // Safari's own deduplication is recomputed on its next push.
-        guard let browser = Browser(rawValue: clientId.components(separatedBy: "-").first ?? clientId),
+        guard let browser = Browser(rawValue: browserIdForClient(clientId)),
               browser != .safari else { return }
         let request = WSMessage(type: .sync, site: "*", category: "bookmarks", payload: nil, messageId: UUID().uuidString, timestamp: Date().timeIntervalSince1970)
         daemon?.broadcast(request, participatingBrowsers: [browser])
@@ -1640,7 +1645,7 @@ final class SyncService: ObservableObject {
     }
 
     private func snapshotForClient(_ clientId: String) -> [Bookmark] {
-        let browserId = clientId.components(separatedBy: "-").first ?? clientId
+        let browserId = browserIdForClient(clientId)
         return backupService?.getSnapshot(sourceBrowser: clientId)
             ?? backupService?.getSnapshot(sourceBrowser: browserId)
             ?? []
@@ -1648,7 +1653,7 @@ final class SyncService: ObservableObject {
 
     private func saveSnapshotAliases(bookmarks: [Bookmark], clientId: String) {
         backupService?.saveSnapshot(bookmarks: bookmarks, sourceBrowser: clientId)
-        let browserId = clientId.components(separatedBy: "-").first ?? clientId
+        let browserId = browserIdForClient(clientId)
         if browserId != clientId {
             backupService?.saveSnapshot(bookmarks: bookmarks, sourceBrowser: browserId)
         }
@@ -1669,7 +1674,7 @@ final class SyncService: ObservableObject {
     private func shouldRejectUnexpectedEmptyBookmarkSnapshot(_ bookmarks: [Bookmark], from clientId: String) -> Bool {
         guard bookmarks.isEmpty else { return false }
 
-        let browserId = clientId.components(separatedBy: "-").first ?? clientId
+        let browserId = browserIdForClient(clientId)
         let previousCount = max(
             snapshotForClient(clientId).count,
             bookmarkCounts[browserId] ?? 0
@@ -1766,7 +1771,7 @@ final class SyncService: ObservableObject {
         guard let files = try? FileManager.default.contentsOfDirectory(at: bookmarksDir, includingPropertiesForKeys: nil) else { return }
         for file in files where file.pathExtension == "json" {
             let clientId = file.deletingPathExtension().lastPathComponent
-            let browserId = clientId.components(separatedBy: "-").first ?? clientId
+            let browserId = Browser.archivedBrowser(for: clientId)?.rawValue ?? clientId
             guard let data = try? Data(contentsOf: file),
                   let bookmarks = try? JSONDecoder().decode([Bookmark].self, from: data) else { continue }
             let existing = bookmarkCounts[browserId] ?? 0
@@ -2162,7 +2167,7 @@ final class SyncService: ObservableObject {
         }
 
         if category == "bookmark_folder_missing" {
-            let browserId = clientId.components(separatedBy: "-").first ?? clientId
+            let browserId = browserIdForClient(clientId)
             if let browser = Browser(rawValue: browserId),
                case .raw(let raw) = message.payload,
                let folder = raw["folder"]?.value as? String {
@@ -2203,7 +2208,7 @@ final class SyncService: ObservableObject {
         let preSyncAutoBookmarks = snapshotForClient(clientId)
         
         if category == "bookmarks" || category == "bookmark_incremental" || category == "bookmarks_removed" || category == "bookmark_backup" || category == "tabSharing" {
-            let browserId = clientId.components(separatedBy: "-").first ?? clientId
+            let browserId = browserIdForClient(clientId)
             if let browser = Browser(rawValue: browserId) {
                 // Ensure the message carries the verified true sender ID
                 filteredMessage.browser = browserId
@@ -2239,7 +2244,7 @@ final class SyncService: ObservableObject {
                         timestamp: Date().timeIntervalSince1970
                     )
                     await MainActor.run {
-                        if let b = Browser(rawValue: clientId.components(separatedBy: "-").first ?? clientId) {
+                        if let b = Browser(rawValue: browserIdForClient(clientId)) {
                             self.daemon?.broadcast(req, participatingBrowsers: [b])
                         }
                     }
@@ -2252,7 +2257,7 @@ final class SyncService: ObservableObject {
             // local tree. Keep it both as the deletion-detection snapshot and
             // as a user-visible, restorable automatic backup.
             guard !shouldRejectUnexpectedEmptyBookmarkSnapshot(bms, from: clientId) else { return }
-            let browserId = clientId.components(separatedBy: "-").first ?? clientId
+            let browserId = browserIdForClient(clientId)
             if let browser = Browser(rawValue: browserId),
                let backupBookmarks = backupBookmarksForSource(bms, browser: browser) {
                 let didSaveBackup = backupService?.savePreSyncBackup(
@@ -2272,7 +2277,7 @@ final class SyncService: ObservableObject {
                 forceAcceptedEmptyBookmarkMessageIds.remove($0) != nil
             } ?? false
             if !wasForceAccepted, shouldRejectUnexpectedEmptyBookmarkSnapshot(bms, from: clientId) {
-                let browserId = clientId.components(separatedBy: "-").first ?? clientId
+                let browserId = browserIdForClient(clientId)
                 let previousCount = max(preSyncAutoBookmarks.count, bookmarkCounts[browserId] ?? 0)
                 pendingEmptyBookmarkSnapshots[clientId] = PendingEmptyBookmarkSnapshot(message: filteredMessage, clientId: clientId)
                 AppState.shared.notificationService.notifyUnexpectedEmptyBookmarkSnapshot(
@@ -2282,7 +2287,7 @@ final class SyncService: ObservableObject {
                 if let browser = Browser(rawValue: browserId) { resolveManualBackup(browser, saved: false) }
                 return
             }
-            let browserId = clientId.components(separatedBy: "-").first ?? clientId
+            let browserId = browserIdForClient(clientId)
             let browser = Browser(rawValue: browserId)
             guard let sourceBrowserForFolder = browser else {
                 return
@@ -2465,7 +2470,7 @@ final class SyncService: ObservableObject {
             persist(payload: payload, category: category, from: clientId, isFullMirror: filteredMessage.isFullMirror ?? false)
             
             if category == "tabSharing", case .tabs(let tabs) = payload {
-                let browserId = clientId.components(separatedBy: "-").first ?? clientId
+                let browserId = browserIdForClient(clientId)
                 if let browser = Browser(rawValue: browserId) {
                     let localDeviceName = Host.current().localizedName ?? "Local Device"
                     let localTabs = tabs.map { tab -> BrowserTab in
@@ -2488,7 +2493,7 @@ final class SyncService: ObservableObject {
                     // A held or refused change was not applied; reporting its
                     // moves as "synced" would contradict the review prompt.
                     if currentMessageSafariWriteWasHeld { break }
-                    if let source = Browser(rawValue: clientId.components(separatedBy: "-").first ?? clientId) {
+                    if let source = Browser(rawValue: browserIdForClient(clientId)) {
                         autoStats.bookmarkSourceBrowserIds.insert(source.id)
                     }
                     // Notifications summarize the accepted snapshot delta,
@@ -3026,7 +3031,7 @@ final class SyncService: ObservableObject {
     }
 
     private func isClient(_ clientId: String, from browser: Browser) -> Bool {
-        let clientBrowserId = clientId.components(separatedBy: "-").first?.lowercased() ?? clientId.lowercased()
+        let clientBrowserId = browserIdForClient(clientId).lowercased()
         return clientBrowserId == browser.id.lowercased()
     }
 
@@ -3298,7 +3303,7 @@ final class SyncService: ObservableObject {
     private func sanitizeIncomingBookmarksForSafari(_ bookmarks: [Bookmark], from clientId: String) -> [Bookmark] {
         guard !clientId.lowercased().contains("safari") else { return bookmarks }
 
-        let browserId = clientId.components(separatedBy: "-").first ?? clientId
+        let browserId = browserIdForClient(clientId)
         let browser = Browser(rawValue: browserId)
 
         // A bookmark the user manually restored still matches its old tombstone
@@ -3403,7 +3408,7 @@ final class SyncService: ObservableObject {
             if category == "bookmarks" || category == "bookmark_backup" {
                 save(bookmarks, to: targetDir.appendingPathComponent("\(clientId).json"))
                 // Update bookmark count for this browser
-                let browserId = clientId.components(separatedBy: "-").first ?? clientId
+                let browserId = browserIdForClient(clientId)
                 bookmarkCounts[browserId] = bookmarks.count
             }
             // Bookmark payloads are observations only. Safari is written
@@ -4297,7 +4302,7 @@ extension SyncService {
     private func syncBaseline(source: Browser, target: Browser, current: [Bookmark]) -> [Bookmark] {
         if let baseline = backupService?.getSyncBaseline(source: source, target: target) { return baseline }
         let recent = backupService?.getRecentSnapshots(sourceBrowser: source.rawValue, limit: 2) ?? []
-        let initial = recent.count == 2 ? recent[0].bookmarks : current
+        let initial = BookmarkBaseline.initial(strategy: settings.bookmarkSyncStrategy, previous: recent.count == 2 ? recent[0].bookmarks : nil, current: current)
         backupService?.saveSyncBaseline(bookmarks: initial, source: source, target: target)
         log("Established the bookmark sync baseline \(source.displayName) → \(target.displayName).")
         return initial
@@ -4393,7 +4398,7 @@ extension SyncService {
 extension SyncService {
     /// The browser a backup belongs to ("safari", "chrome-<instance>", ...).
     static func restoreBrowser(forBackupSource source: String) -> Browser? {
-        Browser(rawValue: (source.components(separatedBy: "-").first ?? source).lowercased())
+        Browser.archivedBrowser(for: source)
     }
 
     /// Restores a backup into the browser it was taken from, inside that

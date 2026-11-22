@@ -18,6 +18,71 @@ private func bookmark(_ id: String, _ title: String, parent: String?, folder: Bo
 
 @main
 private enum BookmarkRootMappingTests {
+    static func testCustomBrowserMessages() throws {
+        let id = "test.Example-Browser"
+        let custom = Browser(id: id, displayName: "Example", bundleIdentifier: id,
+                             sfSymbol: "globe", extensionBasePath: nil, isCustom: true)
+        Browser.reserveCustomBrowsers([custom])
+        defer { Browser.reserveCustomBrowsers([]) }
+        try expect(Browser.archivedBrowser(for: id + "-" + id + "-main") == custom,
+                   "Backup names preserve a hyphenated custom identity")
+        for category in ["bookmarks", "bookmark_backup"] {
+            let row: [String: Any] = ["id": "123", "title": "Example", "parentId": "1", "isFolder": false,
+                                      "url": "https://example.com", "sourceBrowser": id]
+            let envelope: [String: Any] = ["type": "sync", "browser": id, "category": category,
+                                           "payload": ["kind": "bookmarks", "bookmarks": [row]]]
+            let data = try JSONSerialization.data(withJSONObject: envelope)
+            let decoded = try JSONDecoder().decode(WSMessage.self, from: data)
+            guard case .bookmarks(let rows) = decoded.payload else { throw TestFailure(description: category) }
+            try expect(rows.map(\.sourceBrowser) == [custom], "Full message retains the configured custom source")
+        }
+        try expect(Browser(rawValue: id.lowercased()) == custom && Browser.allCases.contains(custom),
+                   "Lookup and participant enumeration use the configured ID")
+        Browser.reserveCustomBrowsers([])
+        try expect(Browser(rawValue: id) == nil && !Browser.allCases.contains(custom),
+                   "Removing the custom entry invalidates the lookup")
+    }
+
+    static func testFirstOneWayObservation() throws {
+        let source = Browser(id: "test.Aside", displayName: "Aside", bundleIdentifier: "test.Aside",
+                             sfSymbol: "globe", extensionBasePath: nil, isCustom: true)
+        let folders = (0..<13).map { bookmark("f\($0)", "Folder \($0)", parent: "1", folder: true, browser: source) }
+        let items = (0..<94).map { bookmark("b\($0)", "Bookmark \($0)", parent: "f\($0 % 13)", browser: source) }
+        let current = folders + items
+        let initial = BookmarkBaseline.initial(strategy: .oneWay, previous: nil, current: current)
+        let delta = BookmarkSnapshotDiffer.diff(older: snapshot("initial", initial), newer: snapshot("now", current))
+        let desired = BookmarkSnapshotDiffer.payload(for: delta, current: current)
+        let plist = syntheticSafariPlist()
+        let folder = "Bookmarks Bar/Synced"
+        let target = try unwrap(SafariPlist.nativeContext(plist: plist, data: try plistData(plist), folderPath: folder).context,
+                                "Synthetic Safari scope is unavailable")
+        let plan = BookmarkAggregatePlanner.plan(target: .safari, context: target,
+            contributions: [.init(source: source, desired: desired, removals: delta.removed)], conflicts: [])
+        try expect(plan.operations.count == 107 && plan.operations.allSatisfy { $0.kind == .create },
+                   "Initial one-way plan creates 94 bookmarks and 13 folders and preserves Safari-only content")
+        let written = try unwrap(SafariPlist.applying(plan.operations, to: plist, scopeRootId: target.scopeRootId).plist,
+                                 "Safari rejected the initial operations")
+        let actual = SafariPlist.parseBookmarks(written)
+        for item in items {
+            let parent = folders.first { $0.id == item.parentId }
+            let nativeParent = actual.first { $0.title == parent?.title && $0.parentId == target.scopeRootId }
+            try expect(nativeParent != nil && actual.contains { $0.url == item.url && $0.parentId == nativeParent?.id },
+                       "Bookmark missing from its expected Safari folder")
+        }
+        let outsideBefore = try outsideOfSynced(plist), outsideAfter = try outsideOfSynced(written)
+        try expect(outsideBefore == outsideAfter && actual.contains { $0.id == "A" }, "Safari-only content changed")
+        let reread = try unwrap(SafariPlist.nativeContext(plist: written, data: try plistData(written), folderPath: folder).context,
+                                "Failed to reread synthetic Safari tree")
+        let retry = BookmarkAggregatePlanner.plan(target: .safari, context: reread,
+            contributions: [.init(source: source, desired: desired, removals: [])], conflicts: [])
+        try expect(retry.operations.isEmpty, "A repeated initial sync duplicated existing content")
+        let verified = BookmarkBaseline.advanced(observed: current, reverting: [])
+        try expect(BookmarkSnapshotDiffer.diff(older: snapshot("verified", verified), newer: snapshot("again", current)).isEmpty,
+                   "A verified initial sync leaves no delta for an unchanged source")
+        try expect(BookmarkBaseline.initial(strategy: .twoWayMerge, previous: nil, current: current) == current,
+                   "Two-way baseline initialization retains its previous behavior")
+    }
+
     static func testBrowserDiscovery() throws {
         try expect(Browser(rawValue: "librewolf") == .libreWolf && Browser.libreWolf.usesFirefoxExtension,
                    "LibreWolf has its own built-in identity and uses the Firefox extension")
@@ -235,6 +300,8 @@ private enum BookmarkRootMappingTests {
 
     static func main() throws {
         let tests: [(String, () throws -> Void)] = [
+            ("initial one-way sync contributes the existing custom source library", testFirstOneWayObservation),
+            ("custom browser IDs decode in sync and backup envelopes", testCustomBrowserMessages),
             ("old Gecko builds see their real host's settings under firefox", testLegacyGeckoPresentation),
             ("loopback peers are identified from the TCP table", testLoopbackPeer),
             ("unlisted Gecko browsers are discovered by product metadata", testBrowserDiscovery),
