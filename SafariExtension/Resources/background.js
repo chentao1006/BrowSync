@@ -644,7 +644,8 @@ async function applySync(message) {
           await chrome.storage.local.set({ [key]: byOrigin[origin] }).catch(e => console.warn('[BrowSync] Failed to set storage chunk:', e));
         }
       }
-      await broadcastToContentScripts(category, items, message.site);
+      const applied = await broadcastToContentScripts(category, items, message.site);
+      if (applied?.length) reportStateWrites(message.messageId, applied);
       break;
     }
     case 'cookies':
@@ -665,8 +666,13 @@ async function applySync(message) {
       }
       const acceptedCookies = await filterIncomingCookiesBySource(payload.cookies || [], message.browser);
       if (acceptedCookies.length === 0) break;
-      await applyCookieSync(acceptedCookies);
-      await showStateSyncUpdatePrompt(acceptedCookies);
+      const written = await applyCookieSync(acceptedCookies);
+      if (written?.length) {
+        const writtenCookies = new Set(written);
+        const applied = payload.cookies.flatMap((cookie, index) => writtenCookies.has(cookie) ? [index] : []);
+        reportStateWrites(message.messageId, applied);
+        await showStateSyncUpdatePrompt(written);
+      }
       break;
     case 'tabSharing':
       if (!(await canShareTabs())) break;
@@ -1402,6 +1408,7 @@ attachCookiesListener();
 
 async function applyCookieSync(cookies) {
   if (!(await canSyncCookies())) return;
+  const written = [];
   let successCount = 0;
   let failCount = 0;
   const failures = [];
@@ -1426,10 +1433,15 @@ async function applyCookieSync(cookies) {
 
     if (cookie.removed) {
       try {
+        let removed = false;
         for (const testUrl of urlsToTry) {
-          await chrome.cookies.remove({ url: testUrl, name: cookie.name }).catch(() => {});
+          if (await chrome.cookies.remove({ url: testUrl, name: cookie.name }).catch(() => null)) removed = true;
         }
-        successCount++;
+        if (removed && localCookies.has(cookieKey) &&
+            !(await chrome.cookies.getAll({ name: cookie.name })).some(current => cookieIdentity(current) === cookieKey)) {
+          written.push(cookie);
+          successCount++;
+        }
         await setCookieTimestamp(cookie, updatedAt);
         const tKey = `tombstone_cookies_${cookieIdentity(cookie)}`;
         await chrome.storage.local.set({ [tKey]: { ...cookie, updatedAt } }).catch(() => {});
@@ -1512,6 +1524,7 @@ async function applyCookieSync(cookies) {
       }
     }
     if (ok) {
+      written.push(cookie);
       successCount++;
       await setCookieTimestamp(cookie, updatedAt);
       if (cookie.domain.includes('github.com')) {
@@ -1547,6 +1560,7 @@ async function applyCookieSync(cookies) {
     messageId: crypto.randomUUID(),
     timestamp: Date.now()
   });
+  return written;
 }
 
 // ─── Content script relay (localStorage / sessionStorage) ───────────────────
@@ -1706,22 +1720,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
+function reportStateWrites(requestId, applied) {
+  if (!requestId || !applied.length) return;
+  send({ type: 'sync', browser: DETECTED_BROWSER, category: 'state_apply_result',
+    payload: { kind: 'raw', raw: { requestId, applied } },
+    messageId: crypto.randomUUID(), timestamp: Date.now() });
+}
+
 async function broadcastToContentScripts(category, items, site) {
   if (!(await canSyncState())) return;
   if (!chrome.tabs) return;
   const tabs = await chrome.tabs.query({});
+  const applied = new Set();
   for (const tab of tabs) {
     if (!tab.url || !tab.id) continue;
     if (site && site !== '*' && safeHostname(tab.url) !== site) continue;
     try {
-      await chrome.tabs.sendMessage(tab.id, {
+      const result = await chrome.tabs.sendMessage(tab.id, {
         source: 'browsync-background',
         type: 'apply_storage',
         storageType: category,
         items,
       });
+      for (const index of result?.applied || []) applied.add(index);
     } catch (_) { }
   }
+  return [...applied];
 }
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────

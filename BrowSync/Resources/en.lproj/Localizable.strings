@@ -698,3 +698,5 @@
 "From the next sync on, bookmark changes are applied without this review. Large changes and conflicts are still held for review. You can turn Safe Mode back on under Sync Strategy." = "From the next sync on, bookmark changes are applied without this review. Large changes and conflicts are still held for review. You can turn Safe Mode back on under Sync Strategy.";
 "BrowSync: Allow a Firefox-based Browser to Connect?" = "BrowSync: Allow a Firefox-based Browser to Connect?";
 "BrowSync: Allow a Chromium-based Browser to Connect?" = "BrowSync: Allow a Chromium-based Browser to Connect?";
+
+"Browsers involved: %@" = "Browsers involved: %@";

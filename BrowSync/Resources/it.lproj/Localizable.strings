@@ -664,3 +664,5 @@
 "From the next sync on, bookmark changes are applied without this review. Large changes and conflicts are still held for review. You can turn Safe Mode back on under Sync Strategy." = "Dalla prossima sincronizzazione, le modifiche ai segnalibri vengono applicate senza questa revisione. Le modifiche consistenti e i conflitti vengono comunque trattenuti per la revisione. Puoi riattivare la modalità sicura in Strategia di sincronizzazione.";
 "BrowSync: Allow a Firefox-based Browser to Connect?" = "BrowSync: consentire la connessione a un browser basato su Firefox?";
 "BrowSync: Allow a Chromium-based Browser to Connect?" = "BrowSync: consentire la connessione a un browser basato su Chromium?";
+
+"Browsers involved: %@" = "Browser coinvolti: %@";

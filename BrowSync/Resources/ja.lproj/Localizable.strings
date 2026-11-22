@@ -666,3 +666,5 @@
 "From the next sync on, bookmark changes are applied without this review. Large changes and conflicts are still held for review. You can turn Safe Mode back on under Sync Strategy." = "次回の同期から、ブックマークの変更はこの確認なしで適用されます。大規模な変更や競合は引き続き確認のために保留されます。セーフモードは「同期戦略」で再びオンにできます。";
 "BrowSync: Allow a Firefox-based Browser to Connect?" = "BrowSync：Firefox ベースのブラウザの接続を許可しますか？";
 "BrowSync: Allow a Chromium-based Browser to Connect?" = "BrowSync：Chromium ベースのブラウザの接続を許可しますか？";
+
+"Browsers involved: %@" = "対象ブラウザ：%@";

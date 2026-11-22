@@ -666,3 +666,5 @@
 "From the next sync on, bookmark changes are applied without this review. Large changes and conflicts are still held for review. You can turn Safe Mode back on under Sync Strategy." = "다음 동기화부터 북마크 변경 사항이 이 확인 없이 적용됩니다. 대규모 변경과 충돌은 계속 확인을 위해 보류됩니다. 동기화 전략에서 안전 모드를 다시 켤 수 있습니다.";
 "BrowSync: Allow a Firefox-based Browser to Connect?" = "BrowSync: Firefox 기반 브라우저의 연결을 허용하시겠습니까?";
 "BrowSync: Allow a Chromium-based Browser to Connect?" = "BrowSync: Chromium 기반 브라우저의 연결을 허용하시겠습니까?";
+
+"Browsers involved: %@" = "관련 브라우저: %@";

@@ -74,6 +74,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         pendingAutoSyncStats.cookies += stats.cookies
         pendingAutoSyncStats.localStorage += stats.localStorage
         pendingAutoSyncStats.sessionStorage += stats.sessionStorage
+        pendingAutoSyncStats.stateBrowsers.formUnion(stats.stateBrowsers)
         pendingAutoSyncStats.syncedSites.formUnion(stats.syncedSites)
         pendingAutoSyncCategories.formUnion(categories)
 
@@ -172,6 +173,10 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
                 if stats.cookies > 0 { parts.append(String(format: String(localized: "%d cookies", bundle: langBundle), stats.cookies)) }
                 if storageCount > 0 { parts.append(String(format: String(localized: "%d storage items", bundle: langBundle), storageCount)) }
                 content.body = String(format: String(localized: "Synced %@.", bundle: langBundle), parts.joined(separator: ", "))
+            }
+
+            if hasState && !stats.stateBrowsers.isEmpty {
+                content.subtitle = String(format: String(localized: "Browsers involved: %@", bundle: langBundle), stats.stateBrowsers.map(\.displayName).sorted().joined(separator: ", "))
             }
 
             if hasState && !stats.syncedSites.isEmpty {

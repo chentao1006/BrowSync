@@ -113,7 +113,7 @@
 
   // ── Apply storage ──────────────────────────────────────────────────────────
 
-  api.runtime.onMessage.addListener((message) => {
+  api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.source !== 'browsync-background') return;
     if (!stateSyncActive) return;
     if (message.type === 'state_sync_updated') {
@@ -125,7 +125,7 @@
     const storage = message.storageType === 'sessionStorage' ? sessionStorage : localStorage;
     const items = message.items || [];
 
-    applyStorageItems(storage, items);
+    sendResponse({ applied: applyStorageItems(storage, items) });
   });
 
   function showStateSyncUpdateBanner() {
@@ -217,16 +217,21 @@
   }
 
   function applyStorageItems(storage, items) {
+    const applied = [];
     try {
-      for (const item of items) {
+      for (const [index, item] of items.entries()) {
         if (item.origin && item.origin !== location.origin) continue;
         if (item.key === '__clear__') {
+          if (!storage.length) continue;
           storage.clear();
         } else if (item.value == null) {
+          if (storage.getItem(item.key) === null) continue;
           storage.removeItem(item.key);
         } else {
+          if (storage.getItem(item.key) === item.value) continue;
           storage.setItem(item.key, item.value);
         }
+        applied.push(index);
       }
       
       // Update snapshots so we don't echo these applied changes back
@@ -238,6 +243,7 @@
     } catch (e) {
       console.warn('[BrowSync] Error applying storage:', e);
     }
+    return applied;
   }
 
   // ── Fetch cached sync data on load ─────────────────────────────────────────

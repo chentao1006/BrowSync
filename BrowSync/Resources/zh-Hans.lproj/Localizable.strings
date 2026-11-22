@@ -726,3 +726,5 @@
 "From the next sync on, bookmark changes are applied without this review. Large changes and conflicts are still held for review. You can turn Safe Mode back on under Sync Strategy." = "从下一次同步起，书签更改将不经此确认直接应用。大量更改和冲突仍会先交给你确认。你可以在“同步策略选择”中重新开启安全模式。";
 "BrowSync: Allow a Firefox-based Browser to Connect?" = "BrowSync：允许一个基于 Firefox 的浏览器连接？";
 "BrowSync: Allow a Chromium-based Browser to Connect?" = "BrowSync：允许一个基于 Chromium 的浏览器连接？";
+
+"Browsers involved: %@" = "涉及浏览器：%@";

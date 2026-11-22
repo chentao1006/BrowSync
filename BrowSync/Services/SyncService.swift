@@ -25,6 +25,7 @@ struct SyncStats {
     var localStorage: Int = 0
     var sessionStorage: Int = 0
     /// Domains/origins included in this sync, for the completion notification.
+    var stateBrowsers = Set<Browser>()
     var syncedSites = Set<String>()
     /// Browsers where the reported bookmark changes originated.
     var bookmarkSourceBrowserIds = Set<String>()
@@ -55,6 +56,17 @@ final class SyncService: ObservableObject {
     /// Bookmark count per browser ID (e.g. "safari", "chrome"). Updated on sync.
     @Published var bookmarkCounts: [String: Int] = [:]
     
+    private struct PendingStateWrite {
+        let clientID: String
+        let source: Browser
+        let target: Browser
+        let category: String
+        let sites: [String]
+        let manualSession: UUID?
+        let expires: Date
+    }
+    private var pendingStateWrites: [String: PendingStateWrite] = [:]
+    private var manualSession = UUID()
     private var currentManualSyncStats = SyncStats()
     private var activeManualSyncID: UUID?
 
@@ -1859,6 +1871,7 @@ final class SyncService: ObservableObject {
         activeManualSyncID = syncID
         lastManualSyncWasCancelled = false
         isSyncing = true
+        manualSession = UUID()
         currentManualSyncStats = SyncStats()
         
         let connectedClients = daemon?.connectedClients.map { "\($0.browser.rawValue)-\($0.id)" }.joined(separator: ", ") ?? "none"
@@ -2008,22 +2021,32 @@ final class SyncService: ObservableObject {
         return site
     }
 
-    private func syncedSites(for payload: WSPayload, site: String?) -> Set<String> {
-        func displaySite(_ value: String) -> String? {
-            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty, trimmed != "*" else { return nil }
-            let host = URL(string: trimmed)?.host ?? trimmed
-            let normalized = host.hasPrefix(".") ? String(host.dropFirst()) : host
-            return normalized.isEmpty ? nil : normalized
+    private func recordStateWrite(_ message: WSMessage, from clientID: String) {
+        guard case .raw(let raw) = message.payload,
+              let id = raw["requestId"]?.value as? String,
+              let pending = pendingStateWrites[id], pending.clientID == clientID else { return }
+        pendingStateWrites.removeValue(forKey: id)
+        guard pending.expires > Date(), settings.enabledCategories.contains(.browserData),
+              let indices = raw["applied"]?.value as? [Int], !indices.isEmpty,
+              indices.allSatisfy(pending.sites.indices.contains) else { return }
+        let applied = Set(indices)
+        var stats = SyncStats()
+        switch pending.category {
+        case "cookies": stats.cookies = applied.count
+        case "localStorage": stats.localStorage = applied.count
+        case "sessionStorage": stats.sessionStorage = applied.count
+        default: return
         }
-
-        switch payload {
-        case .cookies(let cookies):
-            return Set(cookies.compactMap { displaySite($0.domain) })
-        case .localStorage(let items), .sessionStorage(let items):
-            return Set(items.compactMap { displaySite($0.origin) })
-        default:
-            return Set(site.flatMap(displaySite).map { [$0] } ?? [])
+        stats.syncedSites = Set(applied.compactMap { normalizedSite(pending.sites[$0]) })
+        stats.stateBrowsers = [pending.source, pending.target]
+        if isSyncing && pending.manualSession == manualSession {
+            currentManualSyncStats.cookies += stats.cookies
+            currentManualSyncStats.localStorage += stats.localStorage
+            currentManualSyncStats.sessionStorage += stats.sessionStorage
+            currentManualSyncStats.stateBrowsers.formUnion(stats.stateBrowsers)
+            currentManualSyncStats.syncedSites.formUnion(stats.syncedSites)
+        } else if AppState.shared.settingsService.general.notifySyncComplete {
+            AppState.shared.notificationService.notifyAutoSyncComplete(stats: stats, categories: [.browserData])
         }
     }
 
@@ -2373,6 +2396,11 @@ final class SyncService: ObservableObject {
             return
         }
 
+        if category == "state_apply_result" {
+            recordStateWrite(message, from: clientId)
+            return
+        }
+
         if category == "cookie_apply_result" {
             if case .raw(let raw) = filteredMessage.payload,
                let summary = raw["summary"]?.value as? String {
@@ -2428,10 +2456,6 @@ final class SyncService: ObservableObject {
         
         var countStr = ""
         if let payload = filteredMessage.payload {
-            let involvedSites = syncedSites(for: payload, site: filteredMessage.site)
-            if isSyncing {
-                currentManualSyncStats.syncedSites.formUnion(involvedSites)
-            }
             switch payload {
             case .bookmarks(let b): 
                 countStr = " (\(b.count) items)"
@@ -2440,13 +2464,10 @@ final class SyncService: ObservableObject {
                 if isSyncing { currentManualSyncStats.tabs += t.count }
             case .cookies(let c): 
                 countStr = " (\(c.count) items)"
-                if isSyncing { currentManualSyncStats.cookies += c.count }
             case .localStorage(let l): 
                 countStr = " (\(l.count) items)"
-                if isSyncing { currentManualSyncStats.localStorage += l.count }
             case .sessionStorage(let s): 
                 countStr = " (\(s.count) items)"
-                if isSyncing { currentManualSyncStats.sessionStorage += s.count }
             default: break
             }
         }
@@ -2484,47 +2505,24 @@ final class SyncService: ObservableObject {
                 }
             }
             
-            // Auto-sync Notification
-            if !isSyncing && AppState.shared.settingsService.general.notifySyncComplete {
-                var autoStats = SyncStats()
-                autoStats.syncedSites = syncedSites(for: payload, site: filteredMessage.site)
-                switch payload {
-                case .bookmarks(let bookmarks):
-                    // A held or refused change was not applied; reporting its
-                    // moves as "synced" would contradict the review prompt.
-                    if currentMessageSafariWriteWasHeld { break }
-                    if let source = Browser(rawValue: browserIdForClient(clientId)) {
-                        autoStats.bookmarkSourceBrowserIds.insert(source.id)
-                    }
-                    // Notifications summarize the accepted snapshot delta,
-                    // not an inferred difference between unrelated browsers.
-                    populateAutomaticBookmarkChangeStats(
-                        previous: preSyncAutoBookmarks,
-                        current: bookmarks,
-                        stats: &autoStats,
-                        ignoringSafariEchoFor: clientId
-                    )
-                    
-                case .cookies(let c): autoStats.cookies = c.count
-                case .localStorage(let l): autoStats.localStorage = l.count
-                case .sessionStorage(let s): autoStats.sessionStorage = s.count
-                default: break
+            if case .bookmarks(let bookmarks) = payload,
+               !currentMessageSafariWriteWasHeld, !isSyncing,
+               AppState.shared.settingsService.general.notifySyncComplete {
+                var stats = SyncStats()
+                if let source = Browser(rawValue: browserIdForClient(clientId)) {
+                    stats.bookmarkSourceBrowserIds.insert(source.id)
                 }
-                
-                if !autoStats.isEmpty {
-                    var categories: [SyncCategory] = []
-                    if autoStats.bookmarksAdded > 0 || autoStats.bookmarksDeleted > 0 || autoStats.bookmarksModified > 0 ||
-                        autoStats.bookmarkFoldersAdded > 0 || autoStats.bookmarkFoldersDeleted > 0 || autoStats.bookmarkFoldersModified > 0 {
-                        categories.append(.bookmarks)
-                    }
-                    if autoStats.stateItems > 0 { categories.append(.browserData) }
-                    
-                    if !categories.isEmpty {
-                        AppState.shared.notificationService.notifyAutoSyncComplete(stats: autoStats, categories: categories)
-                    }
+                populateAutomaticBookmarkChangeStats(
+                    previous: preSyncAutoBookmarks,
+                    current: bookmarks,
+                    stats: &stats,
+                    ignoringSafariEchoFor: clientId
+                )
+                if !stats.isEmpty {
+                    AppState.shared.notificationService.notifyAutoSyncComplete(stats: stats, categories: [.bookmarks])
                 }
             }
-            
+
             let isBookmarkCategory = (category == "bookmarks" || category == "bookmarks_removed" || category == "bookmark_backup")
             let isPro = AppState.shared.purchaseService.isProUnlocked
             let effectiveBookmarkAutoSync = isPro && settings.bookmarkAutoSync && settings.enabledCategories.contains(.bookmarks)
@@ -2572,20 +2570,34 @@ final class SyncService: ObservableObject {
                     }
                 }
                 
-                // Broadcast cookies to all clients.
-                // If any live cookie just beat a tombstone winner, the sender's cookie
-                // may have already been deleted by the tombstone broadcast — send it back
-                // to everyone (including the sender) so it gets restored.
-                if category == "cookies", case .cookies(let cookies) = filteredMessage.payload {
-                    let hasResurrection = cookies.contains { c in
-                        let removed = c.removed == true
-                        return !removed && tombstoneWinnerKeys.contains(cookieVersionKey(c))
+                if isStatePayload {
+                    guard let source = Browser(rawValue: browserIdForClient(clientId)),
+                          settings.stateParticipatingBrowsers.contains(source) else { return }
+                    var targets = settings.stateParticipatingBrowsers.subtracting([source])
+                    if case .cookies(let cookies) = payload,
+                       cookies.contains(where: { $0.removed != true && tombstoneWinnerKeys.contains(cookieVersionKey($0)) }) {
+                        targets.insert(source)
                     }
-                    if hasResurrection {
-                        log("Broadcasting cookies to ALL (including sender) — live cookie resurrects a previously deleted one")
-                        daemon?.broadcast(filteredMessage, excluding: nil)
-                    } else {
-                        daemon?.broadcast(filteredMessage, excluding: clientId)
+                    let sites: [String]
+                    switch payload {
+                    case .cookies(let items): sites = items.map(\.domain)
+                    case .localStorage(let items), .sessionStorage(let items): sites = items.map(\.origin)
+                    default: return
+                    }
+                    let now = Date()
+                    pendingStateWrites = pendingStateWrites.filter { $0.value.expires > now }
+                    for client in daemon?.connectedClients ?? [] where targets.contains(client.browser) {
+                        var outgoing = filteredMessage
+                        let id = UUID().uuidString
+                        outgoing.messageId = id
+                        if client.browser != source {
+                            pendingStateWrites[id] = PendingStateWrite(
+                                clientID: client.id, source: source, target: client.browser,
+                                category: category, sites: sites, manualSession: isSyncing ? manualSession : nil,
+                                expires: now.addingTimeInterval(120)
+                            )
+                        }
+                        daemon?.send(outgoing, toClientId: client.id)
                     }
                 } else if isBookmarkCategory {
                     // A Safari-native write may be held for review, but that
